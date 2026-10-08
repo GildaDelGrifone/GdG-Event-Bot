@@ -299,8 +299,13 @@ All maintenance utilities are located in the `scripts/` directory:
   - `bot/event_generator/`: the `/event_generate` feature.
   - `bot/common/`: shared helpers (`@admin_only`, seat parsing, media downloads, HTML/reply fallbacks, admin preview cards).
   - Runtime state lives in `bot/state.py`.
-  - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).
-  - See `GEMINI.md` §3.1 for details.
+  - `core/` holds the services:
+    - `core/db/`: SQLite data access, imported as `from core.db import ...`.
+    - `core/scheduler/`: the APScheduler jobs (recap, archiving, repost digest) plus `runner.py`.
+    - `core/wordpress/`: the WordPress REST client, imported as `from core.wordpress import ...`.
+    - `ai_parser.py` (Gemini), `instagram.py`, `log_utils.py` and `config.py`.
+  - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings (including `DB_PATH` for a temporary database) and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).
+  - See `GEMINI.md` §3.1 (`bot/`) and §3.2 (`core/`) for details.
 - **Running the test suite:**
   ```bash
   pip install pytest

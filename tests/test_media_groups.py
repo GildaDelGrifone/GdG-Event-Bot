@@ -5,19 +5,20 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 
 
 class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def _create_dummy_image_bytes(self, width, height, color):
         import io
@@ -153,7 +154,16 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
         with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
              patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
              patch("core.config.DATA_DIR", self.temp_dir.name), \
-             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep):
+             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep), \
+             patch("bot.handlers.extraction.parse_event_message", return_value={
+                 "is_event": True,
+                 "title": "Sessione Speciale D&D",
+                 "date": "Sabato 05-09-2026 21:00",
+                 "normalized_date": "05-09-2026",
+                 "seats": "4/4",
+                 "max_seats": 4,
+                 "booked_seats": 0,
+             }):
 
             await process_message(update1, context)
             await process_message(update2, context)

@@ -110,7 +110,7 @@ class TestImageCompression(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(len(collage_bytes), MAX_PHOTO_FILE_SIZE)
 
     async def test_scheduler_emergency_recompression_on_photo_invalid_dimensions(self):
-        from core.scheduler import generate_daily_recap
+        from core.scheduler.recap import generate_daily_recap
 
         mock_bot = MagicMock()
         mock_bot.send_photo = AsyncMock(side_effect=[
@@ -130,8 +130,8 @@ class TestImageCompression(unittest.IsolatedAsyncioTestCase):
             "image_path": self._create_dummy_image_file("event.jpg", 1000, 1000)
         }
 
-        with patch("core.scheduler.get_pending_events_for_recap", return_value=[dummy_event]), \
-             patch("core.scheduler.mark_events_as_recap"):
+        with patch("core.scheduler.recap.get_pending_events_for_recap", return_value=[dummy_event]), \
+             patch("core.scheduler.recap.mark_events_as_recap"):
 
             res = await generate_daily_recap(mock_bot, manual_date="07-10-2026", is_manual=True)
             self.assertTrue(res)

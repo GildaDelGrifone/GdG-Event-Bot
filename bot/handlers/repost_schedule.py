@@ -16,7 +16,7 @@ from core.db import (
     update_scheduled_event_content,
 )
 from utils.date_utils import parse_user_date, format_standard_event_date
-from utils.templates import format_schedule_repost_message
+from utils.templates import REPOST_UPDATE_REMINDER, format_schedule_repost_message
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, command_tokens, reply_in_chunks, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
@@ -197,9 +197,6 @@ async def event_repost_list_command(update: Update, context: ContextTypes.DEFAUL
             f"  👉 Invia per preparare il post: <code>/event_repost_invoke {sched_id}</code>\n"
             f"  ⚙️ Gestisci programmazione: <code>/event_repost_schedule {sched_id}</code>\n"
         )
-    lines.append(
-        "💡 <i>Promemoria:</i> Puoi aggiornare il contenuto di un evento programmato rispondendo a un messaggio con il nuovo testo/locandina e usando:\n"
-        "<code>/event_repost_update ID</code>"
-    )
+    lines.append(REPOST_UPDATE_REMINDER)
 
     await reply_in_chunks(message, lines, limit=4000, parse_mode="HTML")

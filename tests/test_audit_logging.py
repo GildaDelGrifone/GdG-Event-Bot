@@ -3,14 +3,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import os
 import tempfile
 import core.db as db
+from core import config
 
 
 class TestAuditLogging(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_logging.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_data = {
@@ -29,7 +30,7 @@ class TestAuditLogging(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_booking_logging_success_and_failure(self):
         from bot.service.booking import handle_seat_booking
@@ -184,15 +185,15 @@ class TestAuditLogging(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(ev["title"], "New Glorious Title")
 
     async def test_scheduler_logging(self):
-        from core.scheduler import archive_today_images, archive_completed_month_logs
+        from core.scheduler.archive import archive_today_images, archive_completed_month_logs
 
-        with patch("core.scheduler.logger") as mock_logger:
+        with patch("core.scheduler.archive.logger") as mock_logger:
             await archive_today_images()
             info_calls = [c[0][0] for c in mock_logger.info.call_args_list]
             self.assertTrue(any("archive_today_images" in msg for msg in info_calls))
 
-        with patch("core.scheduler.logger") as mock_logger, \
-             patch("core.log_utils.zip_completed_months", return_value=[]):
+        with patch("core.scheduler.archive.logger") as mock_logger, \
+             patch("core.scheduler.archive.zip_completed_months", return_value=[]):
             await archive_completed_month_logs()
             info_calls = [c[0][0] for c in mock_logger.info.call_args_list]
             self.assertTrue(any("archive_completed_month_logs" in msg for msg in info_calls))
@@ -202,11 +203,11 @@ class TestAuditLogging(unittest.IsolatedAsyncioTestCase):
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        with patch("core.wordpress.requests.post", return_value=mock_resp), \
-             patch("core.wordpress.WP_URL", "https://example.com"), \
-             patch("core.wordpress.WP_USERNAME", "admin"), \
-             patch("core.wordpress.WP_APP_PASSWORD", "pass"), \
-             patch("core.wordpress.logger") as mock_logger:
+        with patch("core.wordpress.client.requests.post", return_value=mock_resp), \
+             patch("core.config.WP_URL", "https://example.com"), \
+             patch("core.config.WP_USERNAME", "admin"), \
+             patch("core.config.WP_APP_PASSWORD", "pass"), \
+             patch("core.wordpress.content.logger") as mock_logger:
             success = update_article_status(1234, "publish")
             self.assertTrue(success)
             info_calls = [c[0][0] for c in mock_logger.info.call_args_list]

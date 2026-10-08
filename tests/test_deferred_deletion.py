@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from core.ai_parser import GeminiQuotaError
 
 
@@ -12,13 +13,13 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_single_message_non_event_preserved_in_channel(self):
         from bot.handlers.ingestion import process_message

@@ -243,3 +243,8 @@ def format_schedule_repost_message(scheduled_event):
         f"<code>/event_repost_schedule {sched_id} DD-MM-YYYY [HH:MM]</code>\n"
         f"(es. <code>/event_repost_schedule {sched_id} 09-10-2026 21:00</code>)"
     )
+
+REPOST_UPDATE_REMINDER = (
+    "💡 <i>Promemoria:</i> Puoi aggiornare il contenuto di un evento programmato rispondendo a un messaggio con il nuovo testo/locandina e usando:\n"
+    "<code>/event_repost_update ID</code>"
+)

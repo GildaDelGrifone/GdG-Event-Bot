@@ -1,16 +1,25 @@
-import google.generativeai as genai
 import json
 import logging
 import re
-from core.config import GEMINI_API_KEY, GEMINI_MODEL
+
+import google.generativeai as genai
+
+from core import config
 
 logger = logging.getLogger(__name__)
 
+GEMINI_DEPLETED_ALERT = "🚨 Errore Gemini AI (Crediti esauriti):\n429 Your prepayment credits are depleted."
+TRUTHY_TOKENS = {"true", "1", "yes", "si", "sì"}
+
+# "Posti: X/Y" always means X free seats out of Y at the table; the bot only manages the X free ones
+_SEATS_FRACTION_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)\s*/\s*(\d+)', re.IGNORECASE)
+_SEATS_SINGLE_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)(?!\s*/)', re.IGNORECASE)
+
+genai.configure(api_key=config.GEMINI_API_KEY)
+
+
 class GeminiQuotaError(Exception):
     """Raised when Gemini API quota is exceeded or prepayment credits are depleted."""
-    pass
-
-GEMINI_DEPLETED_ALERT = "🚨 Errore Gemini AI (Crediti esauriti):\n429 Your prepayment credits are depleted."
 
 
 def strip_json_fence(text):
@@ -26,17 +35,30 @@ def is_quota_error(err):
     err_str = str(err).lower()
     return "429" in err_str or "prepayment credits are depleted" in err_str or "quota" in err_str or "resourceexhausted" in err_str
 
-genai.configure(api_key=GEMINI_API_KEY)
 
-def parse_event_message(message_text):
-    prompt = f"""
-    You are an AI parser for a tabletop games association in Italy (Gilda del Grifone). 
+def coerce_bool(value):
+    return value.strip().lower() in TRUTHY_TOKENS if isinstance(value, str) else bool(value)
+
+
+def generate_text(prompt):
+    """Runs prompt on config.GEMINI_MODEL; quota/credit failures surface as GeminiQuotaError."""
+    try:
+        return genai.GenerativeModel(config.GEMINI_MODEL).generate_content(prompt).text
+    except Exception as e:
+        if is_quota_error(e):
+            raise GeminiQuotaError(str(e)) from e
+        raise
+
+
+def _event_prompt(message_text):
+    return f"""
+    You are an AI parser for a tabletop games association in Italy (Gilda del Grifone).
     Analyze the following message and extract the event information into a strict JSON format.
     The message usually announces a game session (roleplaying, board game, etc.).
-    
-    If the message is NOT an event announcement (e.g. general chat, irrelevant to games), 
+
+    If the message is NOT an event announcement (e.g. general chat, irrelevant to games),
     return EXACTLY: {{"is_event": false}}
-    
+
     If it is an event, extract the following fields:
     - "title": The title of the event or game.
     - "date": The date and time (keep the string exactly as in the message or format nicely).
@@ -54,7 +76,7 @@ def parse_event_message(message_text):
       max_seats = X
       booked_seats = 0
       seats = "X/X" (or "0/0 Completo" if X is 0)
-      
+
       Examples:
       - "Posti: 2/2" -> 2 free seats -> booked_seats = 0, max_seats = 2, seats = "2/2"
       - "Posti: 1/4" -> 1 free seat -> booked_seats = 0, max_seats = 1, seats = "1/1"
@@ -72,93 +94,83 @@ def parse_event_message(message_text):
       Format them cleanly as short bulleted lines (using "• ") or concise text. If none of these exist in the message, output "".
     - "description": The synopsis or pitch of the event (focus on the story or game description; do not duplicate lines already extracted into extra_info).
     - "is_roleplay": Boolean (true or false). Output true if the event is a tabletop roleplaying game session (RPG / GDR, e.g., D&D, Pathfinder, Call of Cthulhu, Sine Requie, Cyberpunk, etc.) where someone acts as Master / Game Master / Dungeon Master. Output false if it is a board game, card game, tournament, or other non-RPG event (where the organizer is a Host).
-    
+
     Return ONLY valid JSON.
-    
+
     Message:
     {message_text}
     """
+
+
+def _apply_seat_safety_net(data, message_text):
+    """Overrides the AI's seat fields with what the "Posti: X[/Y]" line actually says."""
+    m = _SEATS_FRACTION_RE.search(message_text) or _SEATS_SINGLE_RE.search(message_text)
+    if not m:
+        return
+    free = int(m.group(1))
+    data['max_seats'] = free
+    data['booked_seats'] = 0
+    data['seats'] = "0/0 Completo" if free == 0 else f"{free}/{free}"
+
+
+def parse_event_message(message_text):
     try:
         logger.info("AI Parser: Sending message to Gemini for event extraction...")
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = model.generate_content(prompt)
-        text = strip_json_fence(response.text)
-            
-        data = json.loads(text)
-        
-        # Deterministic regex safety-net for "Posti [liberi]: X/Y"
+        data = json.loads(strip_json_fence(generate_text(_event_prompt(message_text))))
+
         if isinstance(data, dict) and data.get("is_event", True):
             data['extra_info'] = str(data.get('extra_info') or '').strip()
-            raw_rp = data.get('is_roleplay')
-            if isinstance(raw_rp, str):
-                data['is_roleplay'] = raw_rp.strip().lower() in ['true', '1', 'yes', 'si', 'sì']
-            else:
-                data['is_roleplay'] = bool(raw_rp)
-            m = re.search(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)\s*/\s*(\d+)', message_text, re.IGNORECASE)
-            if m:
-                free = int(m.group(1))
-                data['max_seats'] = free
-                data['booked_seats'] = 0
-                if free == 0:
-                    data['seats'] = "0/0 Completo"
-                else:
-                    data['seats'] = f"{free}/{free}"
-            else:
-                m_single = re.search(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)(?!\s*/)', message_text, re.IGNORECASE)
-                if m_single:
-                    val = int(m_single.group(1))
-                    data['max_seats'] = val
-                    data['booked_seats'] = 0
-                    if val == 0:
-                        data['seats'] = "0/0 Completo"
-                    else:
-                        data['seats'] = f"{val}/{val}"
+            data['is_roleplay'] = coerce_bool(data.get('is_roleplay'))
+            _apply_seat_safety_net(data, message_text)
             logger.info(f"AI Parser: Successfully parsed event '{data.get('title')}' for date '{data.get('date')}'.")
-        elif isinstance(data, dict) and data.get("is_event") is False:
+        elif isinstance(data, dict):
             logger.info("AI Parser: Message identified as non-event (is_event=False).")
-                        
         return data
+    except GeminiQuotaError as e:
+        logger.error(f"Error parsing message with AI: {e}")
+        raise
     except Exception as e:
         logger.error(f"Error parsing message with AI: {e}")
-        if is_quota_error(e):
-            raise GeminiQuotaError(str(e)) from e
         return None
 
-def generate_wordpress_article(recap_text, event_list):
+
+def _article_prompt(recap_text, event_list):
     events_details = ""
     for ev in event_list:
         link = ev.get('message_link') or 'Link non disponibile'
         img_url = ev.get('wp_media_url')
         img_info = f" | Image URL: {img_url}" if img_url else ""
         events_details += f"- {ev.get('title')}: {link}{img_info}\n"
-        
-    prompt = f"""
+
+    return f"""
     You are an AI generating an engaging article for a tabletop games association's WordPress blog.
     Write an article in Italian summarizing the events for the upcoming game nights based on the recap text.
     Make it enthusiastic and welcoming.
-    
+
     CRITICAL INSTRUCTIONS:
     - You must include the direct Telegram event link for each event in the article text, using the provided list below. Do not use placeholders like [Inserisci qui i link diretti agli eventi].
     - If you cite Destard or ManueleAbi, specify clearly that they are Telegram usernames. For example, use "l'utente Telegram @Destard (https://t.me/Destard)" and "l'utente Telegram @ManueleAbi (https://t.me/ManueleAbi)".
     - If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using an HTML <img> tag with a maximum size constraint (e.g., <img src="..." alt="..." style="max-width:400px; max-height:400px; width:auto; height:auto; margin-bottom:15px;">). Do not mention or include HTML tags for the daily collage, as the system will automatically attach it as the article's featured image (Immagine in evidenza).
-    
+
     Recap Info:
     {recap_text}
-    
+
     Event Links to include:
     {events_details}
-    
+
     Return the response as HTML (just the content to put in the post body, no <html> or <body> tags).
     """
+
+
+def generate_wordpress_article(recap_text, event_list):
     try:
         logger.info("AI Parser: Requesting WordPress article generation from Gemini...")
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = model.generate_content(prompt)
+        article = generate_text(_article_prompt(recap_text, event_list)).strip()
         logger.info("AI Parser: Successfully generated WordPress article content.")
-        return response.text.strip()
+        return article
+    except GeminiQuotaError as e:
+        logger.error(f"Error generating WP article with AI: {e}")
+        raise
     except Exception as e:
         logger.error(f"Error generating WP article with AI: {e}")
-        if is_quota_error(e):
-            raise GeminiQuotaError(str(e)) from e
         return None
-

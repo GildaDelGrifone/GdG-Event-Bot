@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from bot.callbacks.notices import format_subscribers_tags, send_cancellation_notice, send_reactivation_notice
 from bot.callbacks.subscribers import format_subscribers_management_view
 from bot.callbacks.router import handle_callback_query
@@ -32,8 +33,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_data = {
@@ -54,7 +55,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         db.book_seat(self.event_id, 1001, "mario")
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     def test_db_admin_subscribers(self):
@@ -907,7 +908,7 @@ class TestDeepLinkAndBookingKeyboard(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_deeplink.db")
-        self.patch_db = patch("core.db.DB_PATH", self.db_path)
+        self.patch_db = patch("core.config.DB_PATH", self.db_path)
         self.patch_db.start()
         db.init_db()
 
@@ -1036,7 +1037,7 @@ class TestSubscribersWithoutUsername(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_subs_no_uname.db")
-        self.db_patch = patch("core.db.DB_PATH", self.db_path)
+        self.db_patch = patch("core.config.DB_PATH", self.db_path)
         self.db_patch.start()
         db.init_db()
 
@@ -1222,8 +1223,8 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         # Create an event that is still NOT published (status: pending)
@@ -1242,7 +1243,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         assert ev["status"] == "pending"
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_send_admin_action_notice_direct_unpublished_ignored(self):
@@ -1410,8 +1411,8 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_id = db.insert_event({
@@ -1424,7 +1425,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         db.book_seat(self.event_id, 200, "player2", "Giocatore Due")
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_subs_command_with_arg(self):

@@ -6,14 +6,15 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 
 
 class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.initial_event = {
@@ -33,7 +34,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_delete_event_cleans_event_and_reservations(self):
         from core.db import delete_event, get_event, get_reservations_for_event, book_seat
@@ -624,7 +625,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         mock_app = MagicMock()
         mock_app.bot = mock_bot
 
-        with patch("core.scheduler.start_scheduler"), \
+        with patch("main.start_scheduler"), \
              patch("main.ADMIN_CHAT_ID", "-100123456"):
             await post_init(mock_app)
 
@@ -659,12 +660,12 @@ class TestEventNextCommand(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_next_command_non_admin_ignored(self):

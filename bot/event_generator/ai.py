@@ -2,15 +2,10 @@ import json
 import logging
 from datetime import datetime
 
-import google.generativeai as genai
-
-from core.config import GEMINI_MODEL
-from core.ai_parser import GeminiQuotaError, is_quota_error, strip_json_fence
+from core.ai_parser import GeminiQuotaError, coerce_bool, generate_text, strip_json_fence
 from utils.date_utils import DAYS_IT
 
 logger = logging.getLogger(__name__)
-
-TRUTHY_TOKENS = {"true", "1", "yes", "si", "sì"}
 
 
 def _build_prompt(prompt_text, now):
@@ -56,8 +51,7 @@ def normalize_generated_event(data):
     data["description"] = str(data.get("description") or "").strip()
     data["booked_seats"] = 0
 
-    raw_rp = data.get("is_roleplay")
-    data["is_roleplay"] = raw_rp.strip().lower() in TRUTHY_TOKENS if isinstance(raw_rp, str) else bool(raw_rp)
+    data["is_roleplay"] = coerce_bool(data.get("is_roleplay"))
 
     games = data.get("games")
     if not isinstance(games, list):
@@ -74,11 +68,11 @@ def generate_event_data_with_ai(prompt_text: str) -> dict | None:
     """Asks Gemini for standardized event fields plus the list of games to look up on BoardGameGeek."""
     try:
         logger.info("Event Generator: Sending prompt to Gemini for event generation...")
-        response = genai.GenerativeModel(GEMINI_MODEL).generate_content(_build_prompt(prompt_text, datetime.now()))
-        data = json.loads(strip_json_fence(response.text))
+        data = json.loads(strip_json_fence(generate_text(_build_prompt(prompt_text, datetime.now()))))
         return normalize_generated_event(data) if isinstance(data, dict) else None
+    except GeminiQuotaError as e:
+        logger.error(f"Error generating event with Gemini: {e}")
+        raise
     except Exception as e:
         logger.error(f"Error generating event with Gemini: {e}")
-        if is_quota_error(e):
-            raise GeminiQuotaError(str(e)) from e
         return None

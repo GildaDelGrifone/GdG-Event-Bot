@@ -5,10 +5,12 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from bot.handlers.edit import event_edit_command
 from bot.handlers.extraction import handle_event_extraction
 from bot.handlers.recap import manual_recap_command
-from core.scheduler import generate_daily_recap, archive_today_images
+from core.scheduler.recap import generate_daily_recap
+from core.scheduler.archive import archive_today_images
 from utils.date_utils import (
     parse_user_date,
     format_standard_event_date,
@@ -156,8 +158,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events_date.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_data = {
@@ -180,7 +182,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         )
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_edit_date_invalid_format_rejects(self):
@@ -409,7 +411,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -429,7 +431,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock(side_effect=[Exception("Message not found"), None])
 
         with patch("core.config.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         # First attempt with reply_to_message_id failed, second fallback attempt without it succeeded
@@ -449,7 +451,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -499,8 +501,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.create_collage", return_value=None):
+             patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.scheduler.recap.create_collage", return_value=None):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -513,8 +515,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        with patch("core.scheduler.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.datetime") as mock_dt:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.scheduler.recap.datetime") as mock_dt:
             mock_now = MagicMock()
             mock_now.weekday.return_value = 0
             mock_now.strftime.side_effect = lambda fmt: "01-01-2099" if "%d" in fmt else "Monday"
@@ -564,8 +566,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.edit_message_reply_markup = AsyncMock()
 
-        with patch("core.scheduler.PUBLIC_CHANNEL_ID", "-100123456"), \
-             patch("core.scheduler.DISCUSSION_GROUP_ID", "-100999999"):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100999999"):
             await archive_today_images(bot=bot)
 
         calls = bot.edit_message_reply_markup.call_args_list

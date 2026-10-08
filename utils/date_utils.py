@@ -194,3 +194,31 @@ def validate_event_date_anomalies(event_data: dict, raw_text: str = None, refere
                 )
                 
     return warnings
+
+
+def event_date_tuple(event):
+    return parse_date_tuple_from_str(event.get('normalized_date')) or parse_date_tuple_from_str(event.get('date'))
+
+
+def are_events_on_same_day(ev1, ev2):
+    if not ev1 or not ev2:
+        return False
+    norm1 = ev1.get('normalized_date')
+    norm2 = ev2.get('normalized_date')
+    if norm1 and norm2:
+        d1, d2 = parse_date_tuple_from_str(norm1), parse_date_tuple_from_str(norm2)
+        if d1 and d2:
+            return d1 == d2
+        if norm1.strip() and norm2.strip():
+            return norm1.strip().lower() == norm2.strip().lower()
+
+    date1 = ev1.get('date')
+    date2 = ev2.get('date')
+    d1 = parse_date_tuple_from_str(norm1 or date1)
+    d2 = parse_date_tuple_from_str(norm2 or date2)
+    if d1 and d2:
+        return d1 == d2
+
+    if date1 and date2 and date1.strip() and date2.strip():
+        return date1.strip().lower() == date2.strip().lower()
+    return False

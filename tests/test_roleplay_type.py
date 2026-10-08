@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from core.ai_parser import parse_event_message
 from utils.templates import format_public_event_message, format_instagram_story
 
@@ -108,13 +109,13 @@ class TestRoleplayTypeDatabase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def test_insert_and_get_is_roleplay(self):
         ev_rpg = {
@@ -166,9 +167,9 @@ class TestRoleplayTypeDatabase(unittest.TestCase):
             ''')
             conn.commit()
 
-        orig = db.DB_PATH
+        orig = config.DB_PATH
         try:
-            db.DB_PATH = legacy_db_path
+            config.DB_PATH = legacy_db_path
             db.init_db()
             with sqlite3.connect(legacy_db_path) as conn:
                 cursor = conn.cursor()
@@ -176,15 +177,15 @@ class TestRoleplayTypeDatabase(unittest.TestCase):
                 cols = [c[1] for c in cursor.fetchall()]
                 self.assertIn("is_roleplay", cols)
         finally:
-            db.DB_PATH = orig
+            config.DB_PATH = orig
 
 
 class TestEventEditTypeCommand(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_id = db.insert_event({
@@ -198,7 +199,7 @@ class TestEventEditTypeCommand(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_event_edit_type_to_boardgame(self):
         from bot.handlers.edit import event_edit_command

@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from bot.event_generator.bgg import fetch_bgg_game_image
 from bot.event_generator.ai import generate_event_data_with_ai
 from bot.event_generator.pipeline import enforce_caption_limit, process_event_generation
@@ -16,13 +17,13 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def test_fetch_bgg_game_image_exact_match(self):
         with patch("requests.get") as mock_get:

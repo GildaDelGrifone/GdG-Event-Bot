@@ -23,7 +23,7 @@ from bot.handlers.repost_schedule import (
 from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
-from core.scheduler import start_scheduler
+from core.scheduler.runner import start_scheduler, stop_scheduler
 from core.log_utils import DailyMonthlyLogHandler
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
@@ -43,7 +43,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 async def post_init(application: Application):
-    from core.scheduler import start_scheduler
     start_scheduler(application.bot)
 
     # Default commands for users in private chats / groups
@@ -96,7 +95,6 @@ async def post_init(application: Application):
         logger.error(f"Errore durante l'impostazione dei comandi bot via API: {e}")
 
 async def post_shutdown(application: Application):
-    from core.scheduler import stop_scheduler
     stop_scheduler()
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

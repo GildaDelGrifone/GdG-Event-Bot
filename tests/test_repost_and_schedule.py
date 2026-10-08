@@ -5,25 +5,26 @@ from datetime import datetime, date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from bot.handlers.repost import event_repost_command, event_repost_invoke_command
 from bot.handlers.repost_schedule import event_repost_schedule_command, event_repost_update_command, event_repost_list_command
 from bot.handlers.edit import event_edit_command
 from utils.templates import format_schedule_repost_message
 from bot.keyboards import get_schedule_repost_keyboard
 from bot.callbacks.router import handle_callback_query
-from core.scheduler import send_daily_scheduled_reposts
+from core.scheduler.reposts import send_daily_scheduled_reposts
 from utils.date_utils import parse_user_date, format_standard_event_date
 
 
 class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = os.path.join(self.temp_dir.name, "test_bot.db")
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = os.path.join(self.temp_dir.name, "test_bot.db")
         db.init_db()
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     # 1. Date utils: "oggi", "LUN", "MER", "VEN"
@@ -277,7 +278,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        with patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await send_daily_scheduled_reposts(bot)
 
         bot.send_message.assert_called_once()

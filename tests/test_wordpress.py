@@ -17,7 +17,7 @@ class TestWordPressPostCategory(unittest.TestCase):
             "link": "https://example.com/post-123",
         }
 
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_without_category_env(self, mock_post):
         mock_post.return_value = self.mock_response_post
         with patch.object(config, "WP_URL", "https://example.com"), \
@@ -32,7 +32,7 @@ class TestWordPressPostCategory(unittest.TestCase):
             payload = call_kwargs.get("json", {})
             self.assertNotIn("categories", payload)
 
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_empty_category_env(self, mock_post):
         mock_post.return_value = self.mock_response_post
         for empty_val in ["", "   ", None]:
@@ -47,7 +47,7 @@ class TestWordPressPostCategory(unittest.TestCase):
                 payload = mock_post.call_args[1].get("json", {})
                 self.assertNotIn("categories", payload, f"Failed for empty_val: {empty_val}")
 
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_integer_category_env(self, mock_post):
         mock_post.return_value = self.mock_response_post
         with patch.object(config, "WP_URL", "https://example.com"), \
@@ -62,7 +62,7 @@ class TestWordPressPostCategory(unittest.TestCase):
             self.assertIn("categories", payload)
             self.assertEqual(payload["categories"], [42])
 
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_comma_separated_categories(self, mock_post):
         mock_post.return_value = self.mock_response_post
         with patch.object(config, "WP_URL", "https://example.com"), \
@@ -77,7 +77,7 @@ class TestWordPressPostCategory(unittest.TestCase):
             self.assertIn("categories", payload)
             self.assertEqual(payload["categories"], [7, 15, 23])
 
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_explicit_category_override(self, mock_post):
         mock_post.return_value = self.mock_response_post
         with patch.object(config, "WP_URL", "https://example.com"), \
@@ -91,8 +91,8 @@ class TestWordPressPostCategory(unittest.TestCase):
             payload = mock_post.call_args[1].get("json", {})
             self.assertEqual(payload["categories"], [99])
 
-    @patch("core.wordpress.requests.get")
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.get")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_category_slug_resolved(self, mock_post, mock_get):
         mock_post.return_value = self.mock_response_post
         mock_get_resp = MagicMock()
@@ -112,8 +112,8 @@ class TestWordPressPostCategory(unittest.TestCase):
             self.assertIn("categories", payload)
             self.assertEqual(payload["categories"], [88])
 
-    @patch("core.wordpress.requests.get")
-    @patch("core.wordpress.requests.post")
+    @patch("core.wordpress.client.requests.get")
+    @patch("core.wordpress.client.requests.post")
     def test_publish_article_with_unresolvable_category(self, mock_post, mock_get):
         mock_post.return_value = self.mock_response_post
         mock_get_resp = MagicMock()
@@ -143,7 +143,7 @@ class TestWordPressPostCategory(unittest.TestCase):
 
     def test_get_category_ids_helper(self):
         with patch.object(config, "WP_POST_CATEGORY", None), \
-             patch("core.wordpress.WP_POST_CATEGORY", None):
+             patch("core.config.WP_POST_CATEGORY", None):
             self.assertIsNone(get_category_ids(None))
             self.assertIsNone(get_category_ids(""))
             self.assertIsNone(get_category_ids("   "))
