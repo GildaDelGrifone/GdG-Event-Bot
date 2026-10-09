@@ -5,13 +5,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
-from bot.event_generator import (
-    fetch_bgg_game_image,
-    generate_event_data_with_ai,
-    enforce_caption_limit,
-    process_event_generation,
-    event_generate_command,
-)
+from core import config
+from bot.event_generator.bgg import fetch_bgg_game_image
+from bot.event_generator.ai import generate_event_data_with_ai
+from bot.event_generator.pipeline import enforce_caption_limit, process_event_generation
+from bot.event_generator.command import event_generate_command
 from core.ai_parser import GeminiQuotaError
 
 
@@ -19,16 +17,16 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def test_fetch_bgg_game_image_exact_match(self):
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             # 1. Search response
             search_resp = MagicMock()
             search_resp.status_code = 200
@@ -57,12 +55,15 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
             result = fetch_bgg_game_image("Catan")
             self.assertEqual(result, b"CATAN_IMAGE_BYTES")
             self.assertEqual(mock_get.call_count, 3)
+            # Verify BGG token was passed in search request headers
+            search_headers = mock_get.call_args_list[0][1]["headers"]
+            self.assertEqual(search_headers.get("Authorization"), "Bearer test_token")
             # Check detail URL used objectid 13 (exact match)
             self.assertIn("objectid=13", mock_get.call_args_list[1][0][0])
             self.assertEqual(mock_get.call_args_list[2][0][0], "https://example.com/catan_orig.jpg")
 
     def test_fetch_bgg_game_image_filters_accessory(self):
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             search_resp = MagicMock()
             search_resp.status_code = 200
             search_resp.json.return_value = {
@@ -91,9 +92,73 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
 
     def test_fetch_bgg_game_image_empty_or_error(self):
         self.assertIsNone(fetch_bgg_game_image(""))
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             mock_get.return_value.status_code = 404
             self.assertIsNone(fetch_bgg_game_image("NonexistentGame"))
+
+    def test_fetch_game_image_fallback_wikipedia(self):
+        with patch.object(config, "BGG_API_TOKEN", None), patch("requests.get") as mock_get:
+            # 1. Wikipedia search
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": [{"title": "Catan"}]}}
+            # 2. Wikipedia summary
+            wiki_summary = MagicMock()
+            wiki_summary.status_code = 200
+            wiki_summary.json.return_value = {"thumbnail": {"source": "https://upload.wikimedia.org/catan.jpg"}}
+            # 3. Image download
+            wiki_img = MagicMock()
+            wiki_img.status_code = 200
+            wiki_img.content = b"X" * 600
+
+            mock_get.side_effect = [wiki_search, wiki_summary, wiki_img]
+
+            result = fetch_bgg_game_image("Catan")
+            self.assertEqual(result, b"X" * 600)
+            self.assertEqual(mock_get.call_count, 3)
+
+    def test_fetch_game_image_fallback_bing_when_wikipedia_empty(self):
+        with patch.object(config, "BGG_API_TOKEN", None), patch("requests.get") as mock_get:
+            # 1. Wikipedia search returns no results
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": []}}
+            # 2. Bing search HTML
+            bing_resp = MagicMock()
+            bing_resp.status_code = 200
+            bing_resp.text = '<a class="thumb" murl="https://example.com/midgard.jpg"></a>'
+            # 3. Bing image download
+            bing_img = MagicMock()
+            bing_img.status_code = 200
+            bing_img.content = b"Y" * 1200
+
+            mock_get.side_effect = [wiki_search, bing_resp, bing_img]
+
+            result = fetch_bgg_game_image("Champions of Midgard")
+            self.assertEqual(result, b"Y" * 1200)
+
+    def test_fetch_game_image_bgg_error_falls_back_to_web(self):
+        with patch.object(config, "BGG_API_TOKEN", "bad_token"), patch("requests.get") as mock_get:
+            # 1. BGG search returns 401
+            bgg_resp = MagicMock()
+            bgg_resp.status_code = 401
+            # 2. Wikipedia search
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": [{"title": "Monopoly"}]}}
+            # 3. Wikipedia summary
+            wiki_summary = MagicMock()
+            wiki_summary.status_code = 200
+            wiki_summary.json.return_value = {"thumbnail": {"source": "https://upload.wikimedia.org/mono.jpg"}}
+            # 4. Wikipedia image download
+            wiki_img = MagicMock()
+            wiki_img.status_code = 200
+            wiki_img.content = b"M" * 600
+
+            mock_get.side_effect = [bgg_resp, wiki_search, wiki_summary, wiki_img]
+
+            result = fetch_bgg_game_image("Monopoly")
+            self.assertEqual(result, b"M" * 600)
 
     def test_generate_event_data_with_ai_success(self):
         fake_ai_json = {
@@ -179,10 +244,10 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         fake_photo_msg.message_id = 12345
         context.bot.send_photo.return_value = fake_photo_msg
 
-        with patch("bot.event_generator.generate_event_data_with_ai", return_value=ev_data), \
-             patch("bot.event_generator.fetch_bgg_game_image", return_value=b"SINGLE_IMG_BYTES"), \
-             patch("bot.event_generator.create_collage_from_bytes") as mock_collage, \
-             patch("bot.event_generator.save_image_locally", return_value=self.temp_dir.name + "/test.jpg"), \
+        with patch("bot.event_generator.pipeline.generate_event_data_with_ai", return_value=ev_data), \
+             patch("bot.event_generator.pipeline.fetch_bgg_game_image", return_value=b"SINGLE_IMG_BYTES"), \
+             patch("bot.event_generator.pipeline.create_collage_from_bytes") as mock_collage, \
+             patch("bot.event_generator.pipeline.save_image_locally", return_value=self.temp_dir.name + "/test.jpg"), \
              patch("os.path.exists", return_value=True), \
              patch("builtins.open", MagicMock()):
 
@@ -208,10 +273,10 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         fake_photo_msg.message_id = 54321
         context.bot.send_photo.return_value = fake_photo_msg
 
-        with patch("bot.event_generator.generate_event_data_with_ai", return_value=ev_data), \
-             patch("bot.event_generator.fetch_bgg_game_image", side_effect=[b"IMG_1", b"IMG_2"]), \
-             patch("bot.event_generator.create_collage_from_bytes", return_value=b"COLLAGE_BYTES") as mock_collage, \
-             patch("bot.event_generator.save_image_locally", return_value=self.temp_dir.name + "/collage.jpg"), \
+        with patch("bot.event_generator.pipeline.generate_event_data_with_ai", return_value=ev_data), \
+             patch("bot.event_generator.pipeline.fetch_bgg_game_image", side_effect=[b"IMG_1", b"IMG_2"]), \
+             patch("bot.event_generator.pipeline.create_collage_from_bytes", return_value=b"COLLAGE_BYTES") as mock_collage, \
+             patch("bot.event_generator.pipeline.save_image_locally", return_value=self.temp_dir.name + "/collage.jpg"), \
              patch("os.path.exists", return_value=True), \
              patch("builtins.open", MagicMock()):
 
@@ -239,10 +304,10 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         fake_photo_msg.message_id = 99999
         context.bot.send_photo.return_value = fake_photo_msg
 
-        with patch("bot.event_generator.generate_event_data_with_ai", return_value=ev_data), \
-             patch("bot.event_generator.fetch_bgg_game_image", side_effect=[b"IMG_1", None]), \
-             patch("bot.event_generator.create_collage_from_bytes") as mock_collage, \
-             patch("bot.event_generator.save_image_locally", return_value=self.temp_dir.name + "/single.jpg"), \
+        with patch("bot.event_generator.pipeline.generate_event_data_with_ai", return_value=ev_data), \
+             patch("bot.event_generator.pipeline.fetch_bgg_game_image", side_effect=[b"IMG_1", None]), \
+             patch("bot.event_generator.pipeline.create_collage_from_bytes") as mock_collage, \
+             patch("bot.event_generator.pipeline.save_image_locally", return_value=self.temp_dir.name + "/single.jpg"), \
              patch("os.path.exists", return_value=True), \
              patch("builtins.open", MagicMock()):
 
@@ -257,7 +322,7 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         update.effective_message = update.message
         context = MagicMock()
 
-        with patch("bot.event_generator.ADMIN_CHAT_ID", "12345"):
+        with patch("core.config.ADMIN_CHAT_ID", "12345"):
             await event_generate_command(update, context)
             update.message.reply_text.assert_called_once_with("Non sei autorizzato.")
 
@@ -271,7 +336,7 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         update.effective_message = update.message
         context = MagicMock()
 
-        with patch("bot.event_generator.ADMIN_CHAT_ID", "12345"):
+        with patch("core.config.ADMIN_CHAT_ID", "12345"):
             await event_generate_command(update, context)
             update.message.reply_text.assert_called_once()
             self.assertIn("Uso del comando /event_generate", update.message.reply_text.call_args[0][0])
@@ -286,8 +351,8 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         update.effective_message = update.message
         context = MagicMock()
 
-        with patch("bot.event_generator.ADMIN_CHAT_ID", "12345"), \
-             patch("bot.event_generator.process_event_generation", AsyncMock(return_value=(True, "Successo"))):
+        with patch("core.config.ADMIN_CHAT_ID", "12345"), \
+             patch("bot.event_generator.command.process_event_generation", AsyncMock(return_value=(True, "Successo"))):
             await event_generate_command(update, context)
             status_msg.edit_text.assert_called_once_with("✅ Successo")
 
@@ -316,8 +381,8 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         update.channel_post = channel_post
         context = MagicMock()
 
-        with patch("bot.event_generator.ADMIN_CHAT_ID", "12345"), \
-             patch("bot.event_generator.process_event_generation", AsyncMock(return_value=(True, "Successo"))):
+        with patch("core.config.ADMIN_CHAT_ID", "12345"), \
+             patch("bot.event_generator.command.process_event_generation", AsyncMock(return_value=(True, "Successo"))):
             await event_generate_command(update, context)
             status_msg.edit_text.assert_called_once_with("✅ Successo")
 

@@ -120,8 +120,8 @@ class TestLogUtils(unittest.TestCase):
 
 class TestSchedulerLogArchiving(unittest.IsolatedAsyncioTestCase):
     async def test_scheduler_archive_completed_month_logs(self):
-        from core.scheduler import archive_completed_month_logs
-        with patch("core.log_utils.zip_completed_months") as mock_zip:
+        from core.scheduler.archive import archive_completed_month_logs
+        with patch("core.scheduler.archive.zip_completed_months") as mock_zip:
             mock_zip.return_value = ["/path/to/bot_logs_2026-08.zip"]
             await archive_completed_month_logs()
             mock_zip.assert_called_once()

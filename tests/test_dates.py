@@ -5,12 +5,12 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
-from bot.handlers import (
-    event_edit_command,
-    handle_event_extraction,
-    manual_recap_command,
-)
-from core.scheduler import generate_daily_recap, archive_today_images
+from core import config
+from bot.handlers.edit import event_edit_command
+from bot.handlers.extraction import handle_event_extraction
+from bot.handlers.recap import manual_recap_command
+from core.scheduler.recap import generate_daily_recap
+from core.scheduler.archive import archive_today_images
 from utils.date_utils import (
     parse_user_date,
     format_standard_event_date,
@@ -158,8 +158,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events_date.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_data = {
@@ -182,7 +182,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         )
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_edit_date_invalid_format_rejects(self):
@@ -200,7 +200,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         update.message.text = "/event_edit_date domani sera"
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await event_edit_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -225,7 +225,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         update.message.text = "/event_edit_date 31-02-2026"
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await event_edit_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -250,8 +250,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         update.message.text = "/event_edit_date 05-09-2026 21:00"
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()):
             await event_edit_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -286,9 +286,9 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         update.message.text = "/event_edit_date 09-09-2026 21:00"
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.DATA_DIR", self.temp_dir.name), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.DATA_DIR", self.temp_dir.name), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()):
             await event_edit_command(update, context)
 
         ev = db.get_event(self.event_id)
@@ -312,8 +312,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.parse_event_message", return_value=parsed_past), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
+        with patch("bot.handlers.extraction.parse_event_message", return_value=parsed_past), \
+             patch("core.config.ADMIN_CHAT_ID", "999"), \
              patch("utils.date_utils.date") as mock_date:
             mock_date.today.return_value = date(2026, 9, 1)
             mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
@@ -345,8 +345,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.parse_event_message", return_value=parsed_mismatch), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
+        with patch("bot.handlers.extraction.parse_event_message", return_value=parsed_mismatch), \
+             patch("core.config.ADMIN_CHAT_ID", "999"), \
              patch("utils.date_utils.date") as mock_date:
             mock_date.today.return_value = date(2026, 9, 1)
             mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
@@ -387,8 +387,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         update.message.text = "/event_edit_date 04-09-2026 21:00"
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()), \
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()), \
              patch("utils.date_utils.date") as mock_date:
             mock_date.today.return_value = date(2026, 9, 1)
             mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
@@ -410,8 +410,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.args = []
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -430,8 +430,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.args = []
         context.bot.send_message = AsyncMock(side_effect=[Exception("Message not found"), None])
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         # First attempt with reply_to_message_id failed, second fallback attempt without it succeeded
@@ -450,8 +450,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.args = ["15-09-2026"]
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -468,7 +468,7 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.args = ["not-a-valid-date"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await manual_recap_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -500,9 +500,9 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         context.args = []
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.create_collage", return_value=None):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.scheduler.recap.create_collage", return_value=None):
             await manual_recap_command(update, context)
 
         context.bot.send_message.assert_called_once()
@@ -515,8 +515,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        with patch("core.scheduler.ADMIN_CHAT_ID", "999"), \
-             patch("core.scheduler.datetime") as mock_dt:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.scheduler.recap.datetime") as mock_dt:
             mock_now = MagicMock()
             mock_now.weekday.return_value = 0
             mock_now.strftime.side_effect = lambda fmt: "01-01-2099" if "%d" in fmt else "Monday"
@@ -566,8 +566,8 @@ class TestDateEditingAndValidation(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.edit_message_reply_markup = AsyncMock()
 
-        with patch("core.scheduler.PUBLIC_CHANNEL_ID", "-100123456"), \
-             patch("core.scheduler.DISCUSSION_GROUP_ID", "-100999999"):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100999999"):
             await archive_today_images(bot=bot)
 
         calls = bot.edit_message_reply_markup.call_args_list

@@ -1,7 +1,6 @@
 # Sensitive and Environment Files
 .env
 .env.*
-.environments
 *.env
 *.pem
 *.key

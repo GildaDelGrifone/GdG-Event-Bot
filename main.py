@@ -10,19 +10,20 @@ from core.config import (
     LOGS_DIR
 )
 from core.db import init_db
-from bot.handlers import (
-    process_message, manual_trigger_command, manual_recap_command, 
-    handle_discussion_forward, event_edit_command, bot_pause_command, 
-    bot_resume_command, bot_status_command, event_next_command,
-    event_sub_add_command, event_sub_remove_command, handle_admin_reply,
-    cache_admin_media_group, start_command, event_subs_command,
-    event_repost_command, event_repost_schedule_command,
-    event_repost_invoke_command, event_repost_update_command,
-    event_repost_list_command
+from bot.handlers.albums import cache_admin_media_group
+from bot.handlers.control import bot_pause_command, bot_resume_command, bot_status_command
+from bot.handlers.edit import event_edit_command
+from bot.handlers.ingestion import process_message, manual_trigger_command
+from bot.handlers.public import event_next_command, event_subs_command, start_command
+from bot.handlers.recap import manual_recap_command, handle_discussion_forward
+from bot.handlers.repost import event_repost_command, event_schedule_invoke_command
+from bot.handlers.repost_schedule import (
+    event_schedule_command, event_schedule_update_command, event_schedule_list_command,
 )
-from bot.event_generator import event_generate_command
-from bot.callbacks import handle_approval
-from core.scheduler import start_scheduler
+from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
+from bot.event_generator.command import event_generate_command
+from bot.callbacks.router import handle_callback_query
+from core.scheduler.runner import start_scheduler, stop_scheduler
 from core.log_utils import DailyMonthlyLogHandler
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
@@ -42,7 +43,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 async def post_init(application: Application):
-    from core.scheduler import start_scheduler
     start_scheduler(application.bot)
 
     # Default commands for users in private chats / groups
@@ -76,10 +76,10 @@ async def post_init(application: Application):
         BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
         BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
         BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
-        BotCommand("event_repost_schedule", "[ID] [DATA HH:MM] Programma ripubblicazione evento"),
-        BotCommand("event_repost_invoke", "<ID> Prepara il post dell'evento programmato"),
-        BotCommand("event_repost_update", "<ID> Aggiorna il contenuto dell'evento programmato"),
-        BotCommand("event_repost_list", "Mostra tutti gli eventi programmati per il repost"),
+        BotCommand("event_schedule", "[ID] [DATA HH:MM] Programma ripubblicazione evento"),
+        BotCommand("event_schedule_invoke", "<ID> Prepara il post dell'evento programmato"),
+        BotCommand("event_schedule_update", "<ID> Aggiorna il contenuto dell'evento programmato"),
+        BotCommand("event_schedule_list", "Mostra tutti gli eventi programmati per il repost"),
     ]
 
     try:
@@ -95,7 +95,6 @@ async def post_init(application: Application):
         logger.error(f"Errore durante l'impostazione dei comandi bot via API: {e}")
 
 async def post_shutdown(application: Application):
-    from core.scheduler import stop_scheduler
     stop_scheduler()
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -149,10 +148,10 @@ def main():
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
     application.add_handler(CommandHandler(["event_repost", "er"], event_repost_command, block=False))
-    application.add_handler(CommandHandler("event_repost_schedule", event_repost_schedule_command, block=False))
-    application.add_handler(CommandHandler("event_repost_invoke", event_repost_invoke_command, block=False))
-    application.add_handler(CommandHandler("event_repost_update", event_repost_update_command, block=False))
-    application.add_handler(CommandHandler("event_repost_list", event_repost_list_command, block=False))
+    application.add_handler(CommandHandler("event_schedule", event_schedule_command, block=False))
+    application.add_handler(CommandHandler("event_schedule_invoke", event_schedule_invoke_command, block=False))
+    application.add_handler(CommandHandler("event_schedule_update", event_schedule_update_command, block=False))
+    application.add_handler(CommandHandler("event_schedule_list", event_schedule_list_command, block=False))
 
     # Caption command handlers (PTB CommandHandler only matches message.text, not message.caption)
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_edit_"), event_edit_command, block=False))
@@ -160,10 +159,10 @@ def main():
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_generate|eg)(\s|$|@)"), event_generate_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(recap_generate|rg)(\s|$|@)"), manual_recap_command))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_repost|er)(\s|$|@)"), event_repost_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_repost_schedule(\s|$|@)"), event_repost_schedule_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_repost_invoke(\s|$|@)"), event_repost_invoke_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_repost_update(\s|$|@)"), event_repost_update_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_repost_list(\s|$|@)"), event_repost_list_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule(\s|$|@)"), event_schedule_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule_invoke(\s|$|@)"), event_schedule_invoke_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule_update(\s|$|@)"), event_schedule_update_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule_list(\s|$|@)"), event_schedule_list_command, block=False))
     
     # Listen to admin chat for prompt replies and album photos caching
     if ADMIN_CHAT_ID:
@@ -200,7 +199,7 @@ def main():
     application.add_handler(MessageHandler(filters.ALL, debug_all))
         
     # Callback queries (buttons)
-    application.add_handler(CallbackQueryHandler(handle_approval))
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
 
     # Global error handler
     application.add_error_handler(global_error_handler)

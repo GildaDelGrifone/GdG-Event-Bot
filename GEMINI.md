@@ -5,17 +5,19 @@
 - [2. End-to-End Workflows](#2-end-to-end-workflows)
   - [2.1. Event Ingestion & Interception](#21-event-ingestion--interception)
   - [2.2. AI Parsing (`core/ai_parser.py`)](#22-ai-parsing-coreai_parserpy)
-  - [2.3. Admin Review & Approval (`bot/callbacks.py`)](#23-admin-review--approval-botcallbackspy)
+  - [2.3. Admin Review & Approval (`bot/callbacks/events.py`)](#23-admin-review--approval-botcallbackseventspy)
   - [2.4. Interactive Live Booking System](#24-interactive-live-booking-system)
   - [2.5. Cancellation System](#25-cancellation-system)
-  - [2.6. Daily Recap Generation (`core/scheduler.py` & `bot/handlers.py`)](#26-daily-recap-generation-coreschedulerpy--bothandlerspy)
-  - [2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks.py`)](#27-post-recap-wordpress--story-pipeline-botcallbackspy)
-  - [2.8. Nightly Image Archiving (`core/scheduler.py` & `unzip_images.py`)](#28-nightly-image-archiving-coreschedulerpy--unzip_imagespy)
-  - [2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler.py`)](#29-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerpy)
-  - [2.10. Event Reposting & Repost Scheduling (`bot/handlers.py` & `core/scheduler.py`)](#210-event-reposting--repost-scheduling-bothandlerspy--coreschedulerpy)
+  - [2.6. Daily Recap Generation (`core/scheduler/recap.py` & `bot/handlers/recap.py`)](#26-daily-recap-generation-coreschedulerrecappy--bothandlersrecappy)
+  - [2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks/recap.py`)](#27-post-recap-wordpress--story-pipeline-botcallbacksrecappy)
+  - [2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `unzip_images.py`)](#28-nightly-image-archiving-coreschedulerarchivepy--unzip_imagespy)
+  - [2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#29-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
+  - [2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#210-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
 - [3. Directory Structure](#3-directory-structure)
+  - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
+  - [3.2. `core/` Package Architecture](#32-core-package-architecture)
 - [4. Database Schema (SQLite: `bot_database.db`)](#4-database-schema-sqlite-bot_databasedb)
-- [5. Environment Variables (`.environments`)](#5-environment-variables-environments)
+- [5. Environment Variables (`.env`)](#5-environment-variables-env)
 - [6. Templates & Character Limit Handling](#6-templates--character-limit-handling)
 - [7. Instagram Story Publishing Status & Unpause Guide](#7-instagram-story-publishing-status--unpause-guide)
 
@@ -37,7 +39,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 ## 2. End-to-End Workflows
 
 ### 2.1. Event Ingestion & Interception
-1. **Public Channel Interception (`bot/handlers.py`):**
+1. **Public Channel Interception (`bot/handlers/ingestion.py`, `albums.py`, `extraction.py`):**
    - The bot listens to `PUBLIC_CHANNEL_ID`.
    - When an admin posts a message with text and an image:
      - **Programmatic Pre-Filters:**
@@ -61,7 +63,7 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Operates through the identical parsing and review pipeline.
 3. **AI Event Generation (`/event_generate` or `/eg`):**
    - Admins can send `/event_generate <istruzioni>` or `/eg <istruzioni>` (or reply to a message with the command) in `ADMIN_CHAT_ID`.
-   - Handled in `bot/event_generator.py`:
+   - Handled in the `bot/event_generator/` package (`command.py` → `pipeline.py`, using `ai.py` and `bgg.py`):
      - Gemini AI interprets natural language instructions (games, date, host, seats, extra info, RPG vs board game) and writes an engaging synopsis/pitch in Italian constrained to <= 400 characters.
      - For each identified game, queries the BoardGameGeek JSON API (`https://api.geekdo.com/api/geekitems`) to find the best match and download the official box cover image.
      - If multiple games were requested, builds a uniform horizontal collage via `utils/image_utils.create_collage_from_bytes`. If a single game was requested, preserves the single image without collaging.
@@ -97,9 +99,9 @@ The system automates the ingestion, standardization, social sharing, and booking
     🚨 Errore Gemini AI (Crediti esauriti):
     429 Your prepayment credits are depleted.
     ```
-  - This alert is triggered during event parsing (`handle_event_extraction`) and recap WordPress article generation (`handle_approval`).
+  - This alert is triggered during event parsing (`handle_event_extraction`) and recap WordPress article generation (`bot/callbacks/recap.py`), via the shared `notify_quota_depleted` helper in `bot/common/previews.py`.
 
-### 2.3. Admin Review & Approval (`bot/callbacks.py`)
+### 2.3. Admin Review & Approval (`bot/callbacks/events.py`)
 - For messages intercepted and deleted from `PUBLIC_CHANNEL_ID`, the raw `original_text` of the event is sent to `ADMIN_CHAT_ID` as a separate message so admins can verify if the AI made any mistakes (omitted for manual `/event_process` or `/ep` triggers where the original message is already in `ADMIN_CHAT_ID`).
 - Then, the parsed event is sent to `ADMIN_CHAT_ID` with inline keyboard buttons: `[Publish]`, `[Discard]`, `[Cancel]`, and `[👥 Gestisci Iscritti]`.
 - For privacy, the `Master/Host` field is omitted from generated Instagram Story images, but is displayed in the admin review message and the public channel post.
@@ -147,7 +149,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - **Commands:**
   - `/event_sub_add <event_id> @username [posti]` - also works in reply to an event message without `<event_id>`.
   - `/event_sub_remove <event_id> @username [posti]` - also works in reply to an event message without `<event_id>`.
-- **Public Group Notifications (`send_admin_action_notice` in `bot/service.py`):**
+- **Public Group Notifications (`send_admin_action_notice` in `bot/service/notices.py`):**
   - When an event admin adds or removes subscribers or seats for a public event, a notification is posted to `DISCUSSION_GROUP_ID` (replying to `discussion_message_id` if available).
   - Explicitly states that the action was performed by an **event admin** (`admin degli eventi`) to avoid confusion with group or server administrators, tags the target user, specifies the seat count, and formats the event name in bold hyperlinking to the event post if available.
 
@@ -165,7 +167,7 @@ The system automates the ingestion, standardization, social sharing, and booking
   - A notification is sent to the public discussion group (`DISCUSSION_GROUP_ID`) tagging the original subscribers to inform them that the event has been reactivated with the bold event title (hyperlinked to the event post if available, `disable_web_page_preview=True`). If no subscribers, sends a general reactivation notice.
   - Admin post keyboard switches back to `[❌ Annulla Evento]` and `[👥 Gestisci Iscritti]`.
 
-### 2.7. Daily Recap Generation (`core/scheduler.py` & `bot/handlers.py`)
+### 2.7. Daily Recap Generation (`core/scheduler/recap.py` & `bot/handlers/recap.py`)
 1. **Triggering:**
    - **Automatic:** Scheduled daily at **16:00** via APScheduler. Automatically checks if today is Monday, Wednesday, Friday, Saturday, or Sunday. Remains silent if no events are scheduled.
    - **Manual:** Triggered via `/recap_generate` (or `/rg`) or `/recap_generate DD-MM-YYYY` / `/rg DD-MM-YYYY` (bypasses weekday check). If no events are scheduled for today (or the target date), notifies the admin directly in `ADMIN_CHAT_ID` (`Nessun evento in programma per oggi.`) without generating an empty recap.
@@ -183,7 +185,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 5. **Approval:**
    - Sends collage + recap text to `ADMIN_CHAT_ID` with `[Publish Recap]` and `[Discard Recap]`.
 
-### 2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks.py`)
+### 2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks/recap.py`)
 When `[Publish Recap]` is clicked:
 1. **Public Telegram Recap:** The collage + text is published to `PUBLIC_CHANNEL_ID`. The links message (`recap_links_text`) is NOT posted to the public channel; it is sent exclusively as a reply to the automatic channel forward in the Discussion Chat group (`DISCUSSION_GROUP_ID`).
 2. **Instagram Recap Story:**
@@ -191,7 +193,7 @@ When `[Publish Recap]` is clicked:
    - Collage pinned at top, header `Proposte del [Data]`, bulleted event list with seats, and footer:
      `Ci vediamo alle 20:45, alla Gilda del Grifone in Via Ada Negri 8/A, Torino!`
    - Sent to `ADMIN_CHAT_ID` for review.
-3. **WordPress Article Generation (`core/wordpress.py` & `core/ai_parser.py`):**
+3. **WordPress Article Generation (`core/wordpress/` & `core/ai_parser.py`):**
    - Uploads each individual event image to WordPress Media Library (style set to max 400x400px).
    - Uploads the recap collage as `featured_media`.
    - Calls Gemini AI with event details, links, and image URLs to write an engaging recap article in Italian.
@@ -201,39 +203,40 @@ When `[Publish Recap]` is clicked:
 4. **WordPress One-Click Publish:**
    - Clicking `[Pubblica su WordPress]` changes post status from `draft` to `publish` via REST API.
 
-### 2.8. Nightly Image Archiving (`core/scheduler.py` & `scripts/unzip_images.py`)
+### 2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)
 - Automatically runs daily at **23:59** via APScheduler.
 - Checks today's folder (`[DATA_DIR]/YYYY/MM/DD/`) for images (`.jpg`, `.jpeg`, `.png`, `.webp`).
 - Compresses them into `archive.zip` inside the same folder and removes the original loose image files to save disk space.
 - Utility script `scripts/unzip_images.py` allows restoring images from `archive.zip` by specifying a folder, date, or date range.
 
-### 2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler.py`)
+### 2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)
 - Application logging is recorded simultaneously to stdout/terminal and daily log files in `[DATA_DIR]/logs/bot.log`.
 - Log files rotate daily at midnight via `DailyMonthlyLogHandler` (`TimedRotatingFileHandler`).
-- Upon each daily rotation (as well as on startup and via a nightly check at 00:05 in `core/scheduler.py`), the system checks whether the previous month has ended.
+- Upon each daily rotation (as well as on startup and via a nightly check at 00:05 in `core/scheduler/archive.py`), the system checks whether the previous month has ended.
 - Daily logs from ended months are aggregated and compressed into `[DATA_DIR]/logs/bot_logs_YYYY-MM.zip`, and the loose daily log files for that month are deleted to save disk space.
 
-### 2.10. Event Reposting & Repost Scheduling (`bot/handlers.py` & `core/scheduler.py`)
+### 2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)
 - **Direct Reposting (`/event_repost DATE SEATS` or `/er DATE SEATS`):**
   - Allows admins to reply to any event announcement or bot preview to re-process and repost it with a single command.
   - Groups AI parsing (`/event_process`), date modification (`/event_edit_date`), and seats capacity adjustment (`/event_edit_seats`) into one operation.
   - Supports calendar dates (`DD-MM-YYYY [HH:MM]`), `"oggi"` (today), and relative weekday shortcuts `"LUN"`, `"MER"`, `"VEN"` (which target the next upcoming Monday, Wednesday, or Friday, skipping today if it's already that weekday).
+  - `SEATS` accepts `X/Y`, a bare integer (free = total), or an unlimited token (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`), parsed by the same `parse_seats_input` helper as `/event_edit_seats`. Unlimited seats display as `no limit`.
   - Prompts admin for confirmation via standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
-- **Interactive Repost Scheduling (`/event_repost_schedule`):**
-  - Replying to an event message with `/event_repost_schedule` opens an interactive management card with inline toggle buttons:
+- **Interactive Repost Scheduling (`/event_schedule`):**
+  - Replying to an event message with `/event_schedule` opens an interactive management card with inline toggle buttons:
     - Line 1: `[Lunedì] [Mercoledì] [Venerdì]` (standard opening days).
     - Line 2: `[Sabato] [Domenica]` (special opening days).
     - Buttons display dynamic emoji checkboxes (`✅` when active, `⬜` when inactive) to toggle recurring schedule days.
-  - Admins can also specify a one-off scheduled date via `/event_repost_schedule [ID] DD-MM-YYYY [HH:MM]`.
+  - Admins can also specify a one-off scheduled date via `/event_schedule [ID] DD-MM-YYYY [HH:MM]`.
 - **Scheduled Repost Notification & Invocation (10:00 AM Cron):**
   - Runs daily at **10:00 AM** via APScheduler.
   - Queries `scheduled_events` for entries matching today's date or active weekday.
-  - Sends a consolidated digest to `ADMIN_CHAT_ID` listing each scheduled event with a clickable invocation command: `/event_repost_invoke <SCHEDULED_ID>`.
-  - Invoking `/event_repost_invoke <SCHEDULED_ID>` prepares the event with date set to today and outputs the approval card ready for publishing.
-- **Scheduled Content Overwrite (`/event_repost_update <SCHEDULED_ID>`):**
-  - Admins can reply to any new event post with `/event_repost_update <SCHEDULED_ID>` to overwrite the text and image template of an existing scheduled event entry in SQLite.
-- **Scheduled Events List (`/event_repost_list`):**
-  - Displays all scheduled repost entries stored in SQLite with their IDs, active recurring days, specific dates, and direct clickable `/event_repost_invoke <ID>` commands for instant posting.
+  - Sends a consolidated digest to `ADMIN_CHAT_ID` listing each scheduled event with a clickable invocation command: `/event_schedule_invoke <SCHEDULED_ID>`.
+  - Invoking `/event_schedule_invoke <SCHEDULED_ID>` prepares the event with date set to today and outputs the approval card ready for publishing.
+- **Scheduled Content Overwrite (`/event_schedule_update <SCHEDULED_ID>`):**
+  - Admins can reply to any new event post with `/event_schedule_update <SCHEDULED_ID>` to overwrite the text and image template of an existing scheduled event entry in SQLite.
+- **Scheduled Events List (`/event_schedule_list`):**
+  - Displays all scheduled repost entries stored in SQLite with their IDs, active recurring days, specific dates, and direct clickable `/event_schedule_invoke <ID>` commands for instant posting.
 
 ---
 
@@ -243,18 +246,65 @@ When `[Publish Recap]` is clicked:
 GdG-Event-Bot/
 ├── bot/
 │   ├── __init__.py
-│   ├── handlers.py       # Message interceptors, command handlers (/event_process, /ep, /recap_generate, /rg)
-│   ├── callbacks.py      # Inline keyboard callback handlers (publish, discard, cancel, book, unbook, wp publish)
-│   └── keyboards.py      # Telegram inline keyboard layouts
+│   ├── state.py          # Runtime state: pause flag + last published recap (runtime_state)
+│   ├── keyboards.py      # Telegram inline keyboard layouts (+ SCHEDULE_DAYS)
+│   ├── common/           # Helpers shared by every bot package
+│   │   ├── auth.py       # admin_only decorator, is_admin_chat, describe_user
+│   │   ├── messages.py   # resolve_message, command parsing, HTML fallback, reply fallback, chunked replies
+│   │   ├── media.py      # Photo/document download helpers
+│   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
+│   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
+│   ├── handlers/         # Telegram command & message handlers (registered in main.py)
+│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status
+│   │   ├── public.py     # /start, /event_next, /event_subs
+│   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
+│   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads
+│   │   ├── extraction.py # handle_event_extraction: AI parse -> pending event -> admin approval card
+│   │   ├── edit.py       # /event_edit_* (EDIT_COMMAND_FIELDS / FIELD_EDITORS)
+│   │   ├── subscribers.py # /event_sub_add, /event_sub_remove, ForceReply add-subscriber prompt
+│   │   ├── recap.py      # /recap_generate and discussion-group forward handling
+│   │   ├── repost.py     # /event_repost, /event_schedule_invoke
+│   │   └── repost_schedule.py # /event_schedule, /event_schedule_update, /event_schedule_list
+│   ├── callbacks/        # Inline button (CallbackQuery) handlers
+│   │   ├── router.py     # handle_callback_query + CALLBACK_ROUTES prefix table
+│   │   ├── events.py     # Publish / discard / cancel / reactivate event cards
+│   │   ├── notices.py    # Cancellation / reactivation notices to the discussion group
+│   │   ├── recap.py      # Publish / discard recap, WordPress draft & publish
+│   │   ├── booking.py    # ➕ Prenota / 🚫 Esauriti / ➖ Annulla
+│   │   ├── subscribers.py # 👥 Gestisci Iscritti panel (± seats, add prompt, close)
+│   │   └── schedule.py   # Repost schedule weekday toggles, delete, close
+│   ├── service/          # Telegram side effects shared by handlers and callbacks
+│   │   ├── posts.py      # update_event_messages: sync channel post + discussion reply (with RetryAfter retry)
+│   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
+│   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
+│   │   └── mentions.py   # User/subscriber mention formatting
+│   └── event_generator/  # /event_generate (/eg)
+│       ├── command.py    # Telegram command handler
+│       ├── pipeline.py   # Generation pipeline, caption limit, admin preview
+│       ├── ai.py         # Gemini prompt + response normalization
+│       └── bgg.py        # BoardGameGeek search and cover download
 ├── core/
 │   ├── __init__.py
-│   ├── config.py         # Loads environment variables (.environments), paths, constants
-│   ├── db.py             # SQLite CRUD operations for events and reservations
-│   ├── ai_parser.py      # Gemini API integration: message extraction and WP article generation
-│   ├── scheduler.py      # APScheduler job running daily at 16:00 for recaps
+│   ├── config.py         # Loads environment variables (.env), paths, constants
+│   ├── ai_parser.py      # Gemini: generate_text, event extraction (+ seat safety net), WP article writing
 │   ├── log_utils.py      # Daily rotating log handler and monthly log zip archiving
-│   ├── wordpress.py      # WordPress REST API: media uploads, post drafting, and publishing
-│   └── instagram.py      # Meta Graph API: container creation & story publishing
+│   ├── instagram.py      # Meta Graph API: container creation & story publishing
+│   ├── db/               # SQLite data access (public API: `from core.db import ...`)
+│   │   ├── connection.py # get_connection, transaction(), fetch_one/fetch_all/execute, @db_safe
+│   │   ├── schema.py     # CREATE TABLEs + COLUMN_MIGRATIONS applied by init_db()
+│   │   ├── events.py     # events table: insert/update/delete, lookups, recap & upcoming queries
+│   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts
+│   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
+│   │   └── scheduled.py  # scheduled_events (repost templates)
+│   ├── scheduler/        # APScheduler jobs
+│   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
+│   │   ├── recap.py      # 16:00 daily recap card for admin approval
+│   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
+│   │   └── reposts.py    # 10:00 digest of scheduled reposts due today
+│   └── wordpress/        # WordPress REST API (public API: `from core.wordpress import ...`)
+│       ├── client.py     # Credentials, auth headers, wp_get / wp_post (with timeouts)
+│       ├── categories.py # WP_POST_CATEGORY / slug / name -> category IDs
+│       └── content.py    # upload_media, publish_article (draft), update_article_status
 ├── utils/
 │   ├── __init__.py
 │   ├── date_utils.py     # Date parsing, format validation (DD-MM-YYYY [HH:MM]), and anomaly checks
@@ -263,21 +313,62 @@ GdG-Event-Bot/
 ├── scripts/              # Utility and maintenance scripts
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
-
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
+├── tests/                # unittest/pytest suite (mocks Telegram, uses temporary SQLite DBs)
 ├── data/                 # Default local storage for SQLite DB, fonts, and images
 │   ├── Roboto-Bold.ttf
 │   ├── Roboto-Regular.ttf
 │   └── bot_database.db
-├── .environments         # Environment configuration (secrets, tokens, IDs) - GIT IGNORED
-├── .gitignore            # Git rules ignoring .environments, __pycache__, and data contents
+├── .env         # Environment configuration (secrets, tokens, IDs) - GIT IGNORED
+├── .gitignore            # Git rules ignoring .env, __pycache__, and data contents
 ├── requirements.txt      # Python dependencies
 ├── main.py               # Application entry point
 ├── README.md             # User and operator manual
 └── GEMINI.md             # This document (technical and architectural specification)
 ```
+
+
+### 3.1. `bot/` Package Architecture
+- **Layering:** `handlers/` and `callbacks/` are the Telegram entry points. Both use `service/` for side effects shared across features (refreshing event posts, booking flows, discussion-group notices). Every layer uses `common/` helpers and `keyboards.py`. `event_generator/` is a self-contained feature package. Dependencies point one way (entry points → service → common), and no package imports `handlers/` or `callbacks/`. The one exception is shared runtime state, which lives in `bot/state.py`.
+- **Package `__init__.py` files are empty.** Import from the specific module (e.g. `from bot.handlers.edit import event_edit_command`). Re-exporting would create two paths to the same function and make test patches silently miss.
+- **Configuration is read at call time** through `from core import config` / `config.ADMIN_CHAT_ID` (also `PUBLIC_CHANNEL_ID`, `DISCUSSION_GROUP_ID`, `ALLOW_GROUP_EVENT_NEXT`, `DATA_DIR`, `TELEGRAM_BOT_USERNAME`). Tests patch these once at `core.config.*` (see §3.2). Patch functions where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `bot.callbacks.events.update_event_messages`.
+- **`bot/common/`:**
+  - `auth.py`: `@admin_only()` / `@admin_only(notify=True)` restricts a handler to `ADMIN_CHAT_ID` (`notify=True` replies `Non sei autorizzato.` to outsiders). Also `is_admin_chat`, and `describe_user(user, role="Admin")` for the `Admin <id> (@username)` identifier in audit logs. Do not hand-write chat-ID checks in new admin commands.
+  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT`, `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
+  - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`.
+  - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`.
+  - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap WordPress generation and `/event_generate`.
+- **`bot/state.py`:** `runtime_state` (`BotRuntimeState`) holds the pause flag (`is_paused`) and the last published recap (`last_recap_message_id`, `last_recap_events`). `bot/callbacks/recap.py` records a published recap via `remember_published_recap(message_id, events)`; `bot/handlers/recap.py` reads it when the recap is auto-forwarded into the discussion group.
+- **`bot/handlers/`:**
+  - `albums.py` owns `media_groups` / `admin_media_groups`, module-level dicts (changed in place, never reassigned) that buffer album photos for channel ingestion and for admin `/ep` / `/event_edit_image`.
+  - `extraction.handle_event_extraction` is the single ingestion pipeline. Channel posts, albums, `/ep`, `/event_repost` and `/event_schedule_invoke` all go through it.
+  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field. `FIELD_EDITORS` maps fields that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
+  - Shared flows: `subscribers._add_subscriber_and_notify` (used by the ForceReply prompt and `/event_sub_add`), `subscribers._parse_subscriber_command` (shared by `/event_sub_add` and `/event_sub_remove`), `public._reply_with_participants` (used by `/event_subs` and the `start=subs_<id>` deep link), and `repost.extract_repost_content` (shared by repost and repost scheduling).
+- **`bot/callbacks/`:** `router.handle_callback_query` is the only `CallbackQueryHandler` registered in `main.py`. It walks `CALLBACK_ROUTES`, an ordered `(prefix, handler)` table, and calls `handler(query, context, payload)` with the callback data that follows the prefix. To add a button, give it a new callback prefix (one that is not a prefix of an existing entry; a test enforces this), write the handler in the matching feature module, and add one row to `CALLBACK_ROUTES`.
+- **`bot/service/`:**
+  - `posts.update_event_messages` re-renders an event's channel post (edit caption/text, switching kind only on Telegram's "no caption/text" error) and its discussion-group booking reply, retrying on `RetryAfter`.
+  - `booking.py` handles seat booking/unbooking and same-day conflict warnings.
+  - `notices.py` provides `send_admin_action_notice` and `send_discussion_notice`.
+  - `mentions.format_subscriber_tag` is the single tag formatter for stored reservations (`@username`, `tg://user` link, or name).
+
+
+### 3.2. `core/` Package Architecture
+- **Configuration is read at call time** (`config.ADMIN_CHAT_ID`, `config.DB_PATH`, `config.WP_URL`, `config.IG_ACCESS_TOKEN`, …), never copied at import. Tests and scripts redirect the database by setting/patching `core.config.DB_PATH`.
+- **`core.db` and `core.wordpress` are facades.** Their `__init__.py` re-exports the public API (`__all__`), so callers write `from core.db import get_event`. The submodules call each other directly, so patch a DB/WordPress function in the module that *uses* it. HTTP for WordPress goes through `core.wordpress.client` (patch `core.wordpress.client.requests.*`). `core.scheduler` is a set of job modules with an empty `__init__.py`, the same as the `bot/` packages: import `core.scheduler.runner.start_scheduler`, `core.scheduler.recap.generate_daily_recap`, etc.
+- **DB plumbing (`core/db/connection.py`):**
+  - `transaction()` yields a cursor with dict-like rows, commits or rolls back, and always closes the connection.
+  - `fetch_one` / `fetch_all` / `execute` / `execute_many` wrap single statements.
+  - `@db_safe(default)` logs `DB error in <function>: …` and returns `default` (`default=list` gives a fresh `[]`), so callers keep the old "never raises" contract.
+  - `get_connection()` returns a raw connection for scripts.
+  - SQL string literals use single quotes (`status IN ('approved', 'cancelled')`); double quotes are reserved for identifiers.
+- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start.
+- **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
+- **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
+- **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
+- **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
+- **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
 
 ---
 
@@ -330,7 +421,7 @@ GdG-Event-Bot/
 
 ---
 
-## 5. Environment Variables (`.environments`)
+## 5. Environment Variables (`.env`)
 
 | Variable | Description | Example / Format |
 |---|---|---|
@@ -359,6 +450,7 @@ Defined in `utils/templates.py`:
 - **Full Recap Template (`recap_generate_text`):** Header + Event list with bold titles + Footer.
 - **Recap Discussion Comment (`recap_links_text`):** Header + list of active events with bold hyperlinked titles to channel posts.
 - **Slim Recap Template:** Automatically activated if the full recap exceeds Telegram's 1024-character caption limit. Has minimal fixed headers/footers.
+- **Repost Schedule Card (`format_schedule_repost_message`):** Management card for a `scheduled_events` row (active weekdays, specific date, `/event_schedule` usage). Shared by `/event_schedule` and the weekday toggle callbacks.
 
 ---
 
@@ -366,7 +458,7 @@ Defined in `utils/templates.py`:
 
 ### Current Status
 - Story canvas generation with Pillow is **active and functional** (1080x1920 with top image, wrapped titles/systems, seat badges, and footer).
-- In `bot/callbacks.py`, direct calls to `publish_instagram_story()` are temporarily commented out while Meta developer page linking is established. The bot sends the generated story image to `ADMIN_CHAT_ID` for preview.
+- Instagram publishing is disabled while Meta developer page linking is established. The bot sends the generated story image to `ADMIN_CHAT_ID` for preview instead (`_send_story_preview` in `bot/callbacks/events.py` for events, `_run_post_recap_pipeline` in `bot/callbacks/recap.py` for recaps).
 
 ### Steps to Re-enable Meta Graph API Publishing:
 1. Ensure the Instagram account is converted to a Professional/Business account.
@@ -377,5 +469,5 @@ Defined in `utils/templates.py`:
    - Grant access to the linked Page and IG Account.
    - Run `me/accounts?fields=instagram_business_account` to get numeric `IG_ACCOUNT_ID`.
    - Extend token in [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/) to get 60-day `IG_ACCESS_TOKEN`.
-4. Update `.environments` with `IG_ACCESS_TOKEN` and `IG_ACCOUNT_ID`.
-5. In `bot/callbacks.py`, uncomment the WordPress temporary upload and `publish_instagram_story()` calls in `handle_approval` and `handle_recap_approval`.
+4. Update `.env` with `IG_ACCESS_TOKEN` and `IG_ACCOUNT_ID`.
+5. Call `core.instagram.publish_instagram_story()` (after a temporary WordPress media upload for a public image URL) from `_send_story_preview` in `bot/callbacks/events.py` and from `_run_post_recap_pipeline` in `bot/callbacks/recap.py`.

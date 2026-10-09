@@ -4,20 +4,13 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
-from bot.callbacks import (
-    format_subscribers_tags,
-    format_subscribers_management_view,
-    send_cancellation_notice,
-    send_reactivation_notice,
-    handle_approval,
-)
-from bot.handlers import (
-    event_sub_add_command,
-    event_sub_remove_command,
-    handle_admin_reply,
-    handle_discussion_forward,
-    start_command,
-)
+from core import config
+from bot.callbacks.notices import format_subscribers_tags, send_cancellation_notice, send_reactivation_notice
+from bot.callbacks.subscribers import format_subscribers_management_view
+from bot.callbacks.router import handle_callback_query
+from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
+from bot.handlers.recap import handle_discussion_forward
+from bot.handlers.public import start_command
 from bot.keyboards import (
     get_approval_keyboard,
     get_approved_event_keyboard,
@@ -25,13 +18,8 @@ from bot.keyboards import (
     get_subscribers_management_keyboard,
     get_event_booking_keyboard,
 )
-from bot.service import (
-    send_admin_action_notice,
-    handle_seat_booking,
-    handle_seat_unbooking,
-    format_conflict_warning_message,
-    send_conflict_warning,
-)
+from bot.service.notices import send_admin_action_notice
+from bot.service.booking import handle_seat_booking, handle_seat_unbooking, format_conflict_warning_message, send_conflict_warning
 from utils.templates import (
     format_event_title_link,
     format_event_participants_message,
@@ -45,8 +33,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_data = {
@@ -67,7 +55,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         db.book_seat(self.event_id, 1001, "mario")
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     def test_db_admin_subscribers(self):
@@ -157,7 +145,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         ev = db.get_event(self.event_id)
 
-        with patch("bot.callbacks.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             await send_cancellation_notice(context, ev)
             context.bot.send_message.assert_called_once()
             call_kwargs = context.bot.send_message.call_args[1]
@@ -232,9 +220,9 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.callbacks.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.callbacks.update_event_messages", AsyncMock()):
-            await handle_approval(update, context)
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.callbacks.events.update_event_messages", AsyncMock()):
+            await handle_callback_query(update, context)
             ev = db.get_event(self.event_id)
             self.assertEqual(ev["status"], "cancelled")
             query.edit_message_caption.assert_called_once()
@@ -243,7 +231,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
 
             query.data = f"reactivate_event_{self.event_id}"
             query.edit_message_caption.reset_mock()
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
             ev = db.get_event(self.event_id)
             self.assertEqual(ev["status"], "approved")
             query.edit_message_caption.assert_called_once()
@@ -259,8 +247,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.args = [str(self.event_id), "@peach", "2"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             await event_sub_add_command(update, context)
             update.message.reply_text.assert_called_once()
             self.assertIn("registrato con successo", update.message.reply_text.call_args[0][0])
@@ -302,7 +290,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         # 1. Open management view from event message
-        await handle_approval(update, context)
+        await handle_callback_query(update, context)
         context.bot.send_message.assert_called_once()
         msg_call = context.bot.send_message.call_args[1]
         self.assertIn("Gestione Iscritti", msg_call["text"])
@@ -310,7 +298,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
 
         # 2. Refresh view when on management message
         query.message.text = "👥 Gestione Iscritti\n📌 Avventura D&D"
-        await handle_approval(update, context)
+        await handle_callback_query(update, context)
         query.edit_message_text.assert_called_once()
 
         # 3. sub_inc_
@@ -318,8 +306,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         res_id = subs[0]["id"]
         query.data = f"sub_inc_{self.event_id}_{res_id}"
         query.edit_message_text.reset_mock()
-        with patch("bot.callbacks.update_event_messages", AsyncMock()):
-            await handle_approval(update, context)
+        with patch("bot.callbacks.subscribers.update_event_messages", AsyncMock()):
+            await handle_callback_query(update, context)
             query.edit_message_text.assert_called_once()
             subs_after = db.get_reservations_for_event(self.event_id)
             self.assertEqual(subs_after[0]["seats_booked"], 2)
@@ -327,8 +315,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         # 4. sub_dec_
         query.data = f"sub_dec_{self.event_id}_{res_id}"
         query.edit_message_text.reset_mock()
-        with patch("bot.callbacks.update_event_messages", AsyncMock()):
-            await handle_approval(update, context)
+        with patch("bot.callbacks.subscribers.update_event_messages", AsyncMock()):
+            await handle_callback_query(update, context)
             query.edit_message_text.assert_called_once()
             subs_after = db.get_reservations_for_event(self.event_id)
             self.assertEqual(subs_after[0]["seats_booked"], 1)
@@ -336,14 +324,14 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         # 5. sub_addnew_
         query.data = f"sub_addnew_{self.event_id}"
         context.bot.send_message.reset_mock()
-        await handle_approval(update, context)
+        await handle_callback_query(update, context)
         context.bot.send_message.assert_called_once()
         self.assertIn("Invia l'username Telegram, rispondendo a questo messaggio, da aggiungere", context.bot.send_message.call_args[1]["text"])
 
         # 6. close_subs_
         query.data = f"close_subs_{self.event_id}"
         query.message.delete = AsyncMock()
-        await handle_approval(update, context)
+        await handle_callback_query(update, context)
         query.message.delete.assert_called_once()
 
     async def test_admin_commands_reply_mode(self):
@@ -362,8 +350,8 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.args = ["@bowser", "1"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             await event_sub_add_command(update, context)
             update.message.reply_text.assert_called_once()
             self.assertIn("registrato con successo", update.message.reply_text.call_args[0][0])
@@ -388,7 +376,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         admin_user.username = "head_admin"
         admin_user.first_name = "Super"
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             # 1. Add single seat
             await send_admin_action_notice(
                 context,
@@ -489,12 +477,12 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         subs = db.get_reservations_for_event(self.event_id)
         res_id = subs[0]["id"]
 
-        with patch("bot.callbacks.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.callbacks.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.callbacks.subscribers.update_event_messages", AsyncMock()):
             # sub_inc_
             query.data = f"sub_inc_{self.event_id}_{res_id}"
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
             context.bot.send_message.assert_called_once()
             call_kwargs = context.bot.send_message.call_args[1]
             self.assertEqual(call_kwargs["chat_id"], -100123456)
@@ -505,7 +493,7 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
             # sub_dec_
             context.bot.send_message.reset_mock()
             query.data = f"sub_dec_{self.event_id}_{res_id}"
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
             context.bot.send_message.assert_called_once()
             call_kwargs = context.bot.send_message.call_args[1]
             self.assertEqual(call_kwargs["chat_id"], -100123456)
@@ -523,10 +511,10 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.args = [str(self.event_id), "@wario", "2"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             # /event_sub_add
             await event_sub_add_command(update, context)
             context.bot.send_message.assert_called_once()
@@ -688,9 +676,9 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.bot.edit_message_caption = AsyncMock()
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.PUBLIC_CHANNEL_ID", "-1007890"), \
-             patch("bot.service.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-1007890"), \
+             patch("bot.service.booking.update_event_messages", AsyncMock()):
             # Mario books ev2 while already booked on self.event_id
             await handle_seat_booking(ev2_id, user, query, context)
 
@@ -730,9 +718,9 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.PUBLIC_CHANNEL_ID", "-1007890"), \
-             patch("bot.service.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-1007890"), \
+             patch("bot.service.booking.update_event_messages", AsyncMock()):
             await handle_seat_booking(self.event_id, user, query, context)
 
             # Reservation succeeds as normal
@@ -769,9 +757,9 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
         db.update_event_status(ev2_id, "approved")
         db.book_seat(ev2_id, 1001, "mario")
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.PUBLIC_CHANNEL_ID", "-1007890"), \
-             patch("bot.service.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-1007890"), \
+             patch("bot.service.booking.update_event_messages", AsyncMock()):
             await handle_seat_unbooking(ev2_id, user, query, context)
 
             res = db.get_reservation_by_user(ev2_id, user_id=1001)
@@ -869,13 +857,13 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
             }
         ]
 
-        with patch("bot.callbacks.PUBLIC_CHANNEL_ID", "-100111111"), \
-             patch("bot.callbacks.get_pending_events_for_recap", return_value=test_events), \
-             patch("core.ai_parser.generate_wordpress_article", return_value=None), \
-             patch("core.wordpress.upload_media", return_value=None), \
-             patch("utils.image_utils.create_collage", return_value=None), \
-             patch("utils.image_utils.create_recap_story_image", return_value=None):
-            await handle_approval(update, context)
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100111111"), \
+             patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
+             patch("bot.callbacks.recap.generate_wordpress_article", return_value=None), \
+             patch("bot.callbacks.recap.upload_media", return_value=None), \
+             patch("bot.callbacks.recap.create_collage", return_value=None), \
+             patch("bot.callbacks.recap.create_recap_story_image", return_value=None):
+            await handle_callback_query(update, context)
 
         # Confirm copy_message was sent to PUBLIC_CHANNEL_ID
         context.bot.copy_message.assert_called_once_with(
@@ -889,9 +877,9 @@ class TestSubscriberManagement(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(str(call.kwargs.get("chat_id")), "-100111111")
 
         # Confirm bot.handlers last_recap_message_id is tracked for the discussion group forward
-        import bot.handlers
-        self.assertEqual(bot.handlers.last_recap_message_id, 777)
-        self.assertEqual(bot.handlers.last_recap_events, test_events)
+        import bot.state
+        self.assertEqual(bot.state.runtime_state.last_recap_message_id, 777)
+        self.assertEqual(bot.state.runtime_state.last_recap_events, test_events)
 
         # Simulate Telegram automatically forwarding the recap post into DISCUSSION_GROUP_ID
         fwd_update = MagicMock()
@@ -920,7 +908,7 @@ class TestDeepLinkAndBookingKeyboard(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_deeplink.db")
-        self.patch_db = patch("core.db.DB_PATH", self.db_path)
+        self.patch_db = patch("core.config.DB_PATH", self.db_path)
         self.patch_db.start()
         db.init_db()
 
@@ -941,7 +929,7 @@ class TestDeepLinkAndBookingKeyboard(unittest.IsolatedAsyncioTestCase):
         self.temp_dir.cleanup()
 
     def test_booking_keyboard_without_bot_username(self):
-        with patch("bot.keyboards.TELEGRAM_BOT_USERNAME", None):
+        with patch("core.config.TELEGRAM_BOT_USERNAME", None):
             kb = get_event_booking_keyboard(self.event_id)
             self.assertEqual(len(kb.inline_keyboard), 1)
             row = kb.inline_keyboard[0]
@@ -1049,7 +1037,7 @@ class TestSubscribersWithoutUsername(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_subs_no_uname.db")
-        self.db_patch = patch("core.db.DB_PATH", self.db_path)
+        self.db_patch = patch("core.config.DB_PATH", self.db_path)
         self.db_patch.start()
         db.init_db()
 
@@ -1161,9 +1149,9 @@ class TestSubscribersWithoutUsername(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.PUBLIC_CHANNEL_ID", "-1007890"), \
-             patch("bot.service.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-1007890"), \
+             patch("bot.service.booking.update_event_messages", AsyncMock()):
             await handle_seat_booking(self.event_id, user, query, context)
 
             res = db.get_reservation_by_user(self.event_id, user_id=8893283822)
@@ -1189,7 +1177,7 @@ class TestSubscribersWithoutUsername(unittest.IsolatedAsyncioTestCase):
         admin_user.username = "admin_user"
         admin_user.first_name = "Admin"
 
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             await send_admin_action_notice(
                 context=context,
                 event=event,
@@ -1225,7 +1213,7 @@ class TestSubscribersWithoutUsername(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.args = ["event_next"]
 
-        with patch("bot.handlers.event_next_command", new_callable=AsyncMock) as mock_event_next:
+        with patch("bot.handlers.public.event_next_command", new_callable=AsyncMock) as mock_event_next:
             await start_command(update, context)
             mock_event_next.assert_called_once_with(update, context)
 
@@ -1235,8 +1223,8 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         # Create an event that is still NOT published (status: pending)
@@ -1255,7 +1243,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         assert ev["status"] == "pending"
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_send_admin_action_notice_direct_unpublished_ignored(self):
@@ -1265,7 +1253,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
 
         # 1. Pending event with no telegram_message_id
         ev = db.get_event(self.pending_event_id)
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             await send_admin_action_notice(
                 context,
                 ev,
@@ -1279,7 +1267,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         # 2. Pending event even if telegram_message_id is set
         ev_with_msg_id = dict(ev)
         ev_with_msg_id["telegram_message_id"] = 998877
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             await send_admin_action_notice(
                 context,
                 ev_with_msg_id,
@@ -1293,7 +1281,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         # 3. Discarded event
         ev_discarded = dict(ev)
         ev_discarded["status"] = "discarded"
-        with patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"):
             await send_admin_action_notice(
                 context,
                 ev_discarded,
@@ -1315,10 +1303,10 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.args = [str(self.pending_event_id), "@player1", "2"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             await event_sub_add_command(update, context)
 
             subs = db.get_reservations_for_event(self.pending_event_id)
@@ -1344,10 +1332,10 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
         context.args = [str(self.pending_event_id), "@player1", "1"]
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             await event_sub_remove_command(update, context)
 
             subs = db.get_reservations_for_event(self.pending_event_id)
@@ -1370,10 +1358,10 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.handlers.subscribers.update_event_messages", AsyncMock()):
             await handle_admin_reply(update, context)
 
             subs = db.get_reservations_for_event(self.pending_event_id)
@@ -1399,12 +1387,12 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
-        with patch("bot.callbacks.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.service.DISCUSSION_GROUP_ID", "-100123456"), \
-             patch("bot.callbacks.update_event_messages", AsyncMock()):
+        with patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100123456"), \
+             patch("bot.callbacks.subscribers.update_event_messages", AsyncMock()):
             # sub_inc_
             query.data = f"sub_inc_{self.pending_event_id}_{res_id}"
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
 
             subs_after = db.get_reservations_for_event(self.pending_event_id)
             self.assertEqual(subs_after[0]["seats_booked"], 2)
@@ -1412,7 +1400,7 @@ class TestUnpublishedEventSubscribers(unittest.IsolatedAsyncioTestCase):
 
             # sub_dec_
             query.data = f"sub_dec_{self.pending_event_id}_{res_id}"
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
 
             subs_after = db.get_reservations_for_event(self.pending_event_id)
             self.assertEqual(subs_after[0]["seats_booked"], 1)
@@ -1423,8 +1411,8 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.event_id = db.insert_event({
@@ -1437,11 +1425,11 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         db.book_seat(self.event_id, 200, "player2", "Giocatore Due")
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_subs_command_with_arg(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         context = MagicMock()
@@ -1456,7 +1444,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("@player2", text)
 
     async def test_event_subs_command_with_regex_text(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         update.message.text = f"/event_subs_{self.event_id}"
@@ -1470,7 +1458,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Trono di Spade", text)
 
     async def test_event_subs_command_with_subs_alias_text(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         update.message.text = f"/subs_{self.event_id}"
@@ -1484,7 +1472,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Trono di Spade", text)
 
     async def test_event_subs_command_missing_arg(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         update.message.text = "/event_subs"
@@ -1498,7 +1486,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Specifica l'ID", text)
 
     async def test_event_subs_command_invalid_arg(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         context = MagicMock()
@@ -1511,7 +1499,7 @@ class TestEventSubsCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ID evento non valido", text)
 
     async def test_event_subs_command_event_not_found(self):
-        from bot.handlers import event_subs_command
+        from bot.handlers.public import event_subs_command
         update = MagicMock()
         update.message.reply_text = AsyncMock()
         context = MagicMock()

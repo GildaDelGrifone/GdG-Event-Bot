@@ -10,7 +10,7 @@ This application monitors a Telegram channel, extracts event information using *
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-- [Configuration (`.environments`)](#configuration-environments)
+- [Configuration (`.env`)](#configuration-env)
 - [Running the Application](#running-the-application)
 - [Telegram Commands & Workflow](#telegram-commands--workflow)
   - [1. New Event Flow](#1-new-event-flow)
@@ -20,6 +20,7 @@ This application monitors a Telegram channel, extracts event information using *
   - [5. Bot Control Commands](#5-bot-control-commands)
 - [Storage & Folder Structure](#storage--folder-structure)
 - [Maintenance & Diagnostic Scripts](#maintenance--diagnostic-scripts)
+- [Development & Tests](#development--tests)
 
 ---
 
@@ -66,15 +67,15 @@ This application monitors a Telegram channel, extracts event information using *
 
 4. **Set up configuration:**
    ```bash
-   cp .environments.example .environments
-   # Edit .environments with your tokens and credentials
+   cp .env.example .env
+   # Edit .env with your tokens and credentials
    ```
 
 ---
 
-## Configuration (`.environments`)
+## Configuration (`.env`)
 
-Create or edit the `.environments` file in the root directory:
+Create or edit the `.env` file in the root directory:
 
 ```env
 # Telegram Configuration
@@ -154,7 +155,7 @@ In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already 
 - `/event_edit_system <Sistema/Gioco>`
 - `/event_edit_host <Master o Host>`
 - `/event_edit_type <rpg o boardgame>` (cambia la tipologia dell'evento tra Gioco di Ruolo con 'Master' o Gioco da Tavolo con 'Host')
-- `/event_edit_seats <X/Y, numero intero, oppure null>`
+- `/event_edit_seats <X/Y, numero intero, oppure null>` (`X/Y` imposta posti liberi/totali; un intero imposta il totale mantenendo le prenotazioni; `null`, `nessuno`, `illimitati`, `unlimited`, `none` o `0` rendono i posti illimitati, mostrati come `no limit`)
 - `/event_edit_booked <numero intero>`
 - `/event_edit_extra <Difficoltà, avvertenze, tag, oppure null per rimuovere>`
 - `/event_edit_description <Descrizione o sinossi>`
@@ -183,11 +184,11 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
 
 In `ADMIN_CHAT_ID` only:
-- `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`).
-- `/event_repost_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
-- `/event_repost_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
-- `/event_repost_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
-- `/event_repost_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_repost_invoke` commands.
+- `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
+- `/event_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
+- `/event_schedule_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
+- `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
+- `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused.
@@ -287,3 +288,26 @@ All maintenance utilities are located in the `scripts/` directory:
   ```
   Tests connectivity and permissions of `IG_ACCESS_TOKEN` against Meta Graph API.
 
+---
+
+## Development & Tests
+
+- **Code layout:** the `bot/` code is split into packages:
+  - `bot/handlers/`: one module per command family (`control`, `public`, `ingestion`, `albums`, `extraction`, `edit`, `subscribers`, `recap`, `repost`, `repost_schedule`).
+  - `bot/callbacks/`: inline-button handlers, dispatched by the `CALLBACK_ROUTES` prefix table in `router.py`.
+  - `bot/service/`: shared Telegram side effects (post sync, booking, notices).
+  - `bot/event_generator/`: the `/event_generate` feature.
+  - `bot/common/`: shared helpers (`@admin_only`, seat parsing, media downloads, HTML/reply fallbacks, admin preview cards).
+  - Runtime state lives in `bot/state.py`.
+  - `core/` holds the services:
+    - `core/db/`: SQLite data access, imported as `from core.db import ...`.
+    - `core/scheduler/`: the APScheduler jobs (recap, archiving, repost digest) plus `runner.py`.
+    - `core/wordpress/`: the WordPress REST client, imported as `from core.wordpress import ...`.
+    - `ai_parser.py` (Gemini), `instagram.py`, `log_utils.py` and `config.py`.
+  - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings (including `DB_PATH` for a temporary database) and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).
+  - See `GEMINI.md` §3.1 (`bot/`) and §3.2 (`core/`) for details.
+- **Running the test suite:**
+  ```bash
+  pip install pytest
+  python3 -m pytest tests
+  ```

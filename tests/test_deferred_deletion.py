@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 from core.ai_parser import GeminiQuotaError
 
 
@@ -12,16 +13,17 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_single_message_non_event_preserved_in_channel(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         public_channel_id = "-100123456789"
@@ -48,9 +50,9 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             "reason": "General announcement about venue closure"
         }
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.parse_event_message", return_value=non_event_data) as mock_parser:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("bot.handlers.extraction.parse_event_message", return_value=non_event_data) as mock_parser:
 
             await process_message(update, context)
 
@@ -65,7 +67,8 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(events), 0)
 
     async def test_single_message_confirmed_event_deleted_from_channel(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         public_channel_id = "-100123456789"
@@ -100,9 +103,9 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             "description": "Avventura livello 1"
         }
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.parse_event_message", return_value=event_data) as mock_parser:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("bot.handlers.extraction.parse_event_message", return_value=event_data) as mock_parser:
 
             await process_message(update, context)
 
@@ -110,7 +113,8 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             # Confirmed event MUST be deleted from the public channel
             message.delete.assert_called_once()
     async def test_media_group_non_event_all_messages_preserved(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         media_group_id = "album_notice_1"
@@ -158,11 +162,11 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
                 media_groups[media_group_id]["last_received"] = 0
             return
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.asyncio.sleep", side_effect=fast_sleep), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"collage"), \
-             patch("bot.handlers.parse_event_message", return_value=non_event_data) as mock_parser:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"collage"), \
+             patch("bot.handlers.extraction.parse_event_message", return_value=non_event_data) as mock_parser:
 
             await process_message(update1, context)
             await process_message(update2, context)
@@ -181,7 +185,8 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(events), 0)
 
     async def test_media_group_confirmed_event_all_messages_deleted(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         media_group_id = "album_event_1"
@@ -238,11 +243,11 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
                 media_groups[media_group_id]["last_received"] = 0
             return
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.asyncio.sleep", side_effect=fast_sleep), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"collage"), \
-             patch("bot.handlers.parse_event_message", return_value=event_data) as mock_parser:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"collage"), \
+             patch("bot.handlers.extraction.parse_event_message", return_value=event_data) as mock_parser:
 
             await process_message(update1, context)
             await process_message(update2, context)
@@ -261,7 +266,8 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(events), 1)
 
     async def test_quota_error_preserves_channel_message(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         public_channel_id = "-100123456789"
@@ -283,9 +289,9 @@ class TestDeferredMessageDeletion(unittest.IsolatedAsyncioTestCase):
         update = MagicMock(message=message, channel_post=None)
 
         err_text = "429 Your prepayment credits are depleted."
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.parse_event_message", side_effect=GeminiQuotaError(err_text)):
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("bot.handlers.extraction.parse_event_message", side_effect=GeminiQuotaError(err_text)):
 
             await process_message(update, context)
 

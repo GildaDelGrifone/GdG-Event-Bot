@@ -225,3 +225,26 @@ def format_event_participants_message(event, reservations):
 
     return text
 
+
+def format_schedule_repost_message(scheduled_event):
+    sched_id = scheduled_event['id']
+    title = scheduled_event.get('title') or "Evento"
+    days = scheduled_event.get('schedule_days') or []
+    days_str = ", ".join(days) if days else "Nessuno (seleziona con i pulsanti sotto)"
+    spec_date = scheduled_event.get('specific_date') or "Nessuna data specifica"
+
+    return (
+        f"📅 <b>Programmazione Repost Evento #{sched_id}</b>\n"
+        f"🏷️ <b>Titolo:</b> {html.escape(title)}\n\n"
+        f"🗓️ <b>Giorni settimanali attivi:</b> {days_str}\n"
+        f"📌 <b>Data specifica impostata:</b> {spec_date}\n\n"
+        f"Tocca i pulsanti in basso per attivare/disattivare i giorni in cui ripubblicare l'evento.\n\n"
+        f"👉 Per programmare una data specifica (stessa sintassi di /event_edit_date):\n"
+        f"<code>/event_schedule {sched_id} DD-MM-YYYY [HH:MM]</code>\n"
+        f"(es. <code>/event_schedule {sched_id} 09-10-2026 21:00</code>)"
+    )
+
+REPOST_UPDATE_REMINDER = (
+    "💡 <i>Promemoria:</i> Puoi aggiornare il contenuto di un evento programmato rispondendo a un messaggio con il nuovo testo/locandina e usando:\n"
+    "<code>/event_schedule_update ID</code>"
+)

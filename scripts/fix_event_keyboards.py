@@ -38,7 +38,8 @@ from core.config import (
     ADMIN_CHAT_ID,
     DB_PATH
 )
-from core.db import get_connection, parse_date_tuple
+from core.db import get_connection
+from utils.date_utils import event_date_tuple
 from bot.keyboards import (
     get_event_booking_keyboard,
     get_approval_keyboard,
@@ -146,7 +147,7 @@ async def fix_keyboards(
         today_tuple = (now_dt.year, now_dt.month, now_dt.day)
         upcoming_events = []
         for ev in events:
-            dt = parse_date_tuple(ev.get("normalized_date")) or parse_date_tuple(ev.get("date"))
+            dt = event_date_tuple(ev)
             if dt and dt >= today_tuple:
                 upcoming_events.append(ev)
         events = upcoming_events

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 from telegram.error import BadRequest, RetryAfter
-from bot.service import _execute_with_retry, update_event_messages
+from bot.service.posts import _execute_with_retry, update_event_messages
 
 class TestService(unittest.IsolatedAsyncioTestCase):
     async def test_execute_with_retry_success(self):
@@ -46,7 +46,7 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         context.bot.edit_message_caption = AsyncMock()
         context.bot.edit_message_text = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"):
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_caption.assert_called_once()
@@ -67,8 +67,8 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_text = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"), \
-             patch("bot.service.logger") as mock_logger:
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.logger") as mock_logger:
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_caption.assert_called_once()
@@ -90,7 +90,7 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_text = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"):
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_caption.assert_called_once()
@@ -111,8 +111,8 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_text = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"), \
-             patch("bot.service.logger") as mock_logger:
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.logger") as mock_logger:
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_caption.assert_called_once()
@@ -135,7 +135,7 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_caption = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"):
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_text.assert_called_once()
@@ -156,8 +156,8 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_caption = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"), \
-             patch("bot.service.logger") as mock_logger:
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.logger") as mock_logger:
             await update_event_messages(context, event_id=1, event=event)
 
         context.bot.edit_message_text.assert_called_once()
@@ -179,7 +179,7 @@ class TestService(unittest.IsolatedAsyncioTestCase):
         )
         context.bot.edit_message_text = AsyncMock()
 
-        with patch("bot.service.PUBLIC_CHANNEL_ID", "-100123"), \
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
              patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await update_event_messages(context, event_id=1, event=event)
 
@@ -207,4 +207,102 @@ class TestService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(context.bot.edit_message_reply_markup.call_count, 2)
         mock_sleep.assert_called_once_with(0.01)
+
+
+    async def test_update_event_messages_admin_chat_query_does_not_strip_admin_card(self):
+        event = {
+            "id": 1,
+            "title": "Test Event",
+            "date": "2026-10-10",
+            "status": "cancelled",
+            "telegram_message_id": None,
+            "discussion_message_id": 999,
+            "discussion_chat_id": -100456,
+        }
+        context = MagicMock()
+        context.bot.edit_message_reply_markup = AsyncMock()
+
+        admin_query = MagicMock()
+        admin_query.message.chat_id = -100999
+        admin_query.message.message_id = 777
+        admin_query.edit_message_reply_markup = AsyncMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "-100999"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.update_discussion_message_info") as mock_update_db:
+            await update_event_messages(context, event_id=1, event=event, current_query=admin_query)
+
+        # Admin query message's markup must NOT be modified
+        admin_query.edit_message_reply_markup.assert_not_called()
+        mock_update_db.assert_not_called()
+
+        # The actual discussion message must be updated with None (cancelled)
+        context.bot.edit_message_reply_markup.assert_called_once_with(
+            chat_id=-100456, message_id=999, reply_markup=None
+        )
+
+    async def test_update_event_messages_reactivate_restores_discussion_buttons(self):
+        event = {
+            "id": 1,
+            "title": "Test Event",
+            "date": "2026-10-10",
+            "status": "approved",
+            "telegram_message_id": None,
+            "discussion_message_id": 999,
+            "discussion_chat_id": -100456,
+        }
+        context = MagicMock()
+        context.bot.username = "test_bot"
+        context.bot.edit_message_reply_markup = AsyncMock()
+
+        admin_query = MagicMock()
+        admin_query.message.chat_id = -100999
+        admin_query.message.message_id = 777
+        admin_query.edit_message_reply_markup = AsyncMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "-100999"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.update_discussion_message_info") as mock_update_db:
+            await update_event_messages(context, event_id=1, event=event, current_query=admin_query)
+
+        # Admin query message's markup must NOT be modified
+        admin_query.edit_message_reply_markup.assert_not_called()
+        mock_update_db.assert_not_called()
+
+        # The actual discussion message must have booking buttons restored
+        context.bot.edit_message_reply_markup.assert_called_once()
+        call_kwargs = context.bot.edit_message_reply_markup.call_args[1]
+        self.assertEqual(call_kwargs["chat_id"], -100456)
+        self.assertEqual(call_kwargs["message_id"], 999)
+        self.assertIsNotNone(call_kwargs["reply_markup"])
+
+    async def test_update_event_messages_discussion_query_updates_in_place(self):
+        event = {
+            "id": 1,
+            "title": "Test Event",
+            "date": "2026-10-10",
+            "status": "approved",
+            "telegram_message_id": None,
+            "discussion_message_id": 999,
+            "discussion_chat_id": -100456,
+        }
+        context = MagicMock()
+        context.bot.username = "test_bot"
+        context.bot.edit_message_reply_markup = AsyncMock()
+
+        disc_query = MagicMock()
+        disc_query.message.chat_id = -100456
+        disc_query.message.message_id = 888
+        disc_query.edit_message_reply_markup = AsyncMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "-100999"), \
+             patch("core.config.PUBLIC_CHANNEL_ID", "-100123"), \
+             patch("bot.service.posts.update_discussion_message_info") as mock_update_db:
+            await update_event_messages(context, event_id=1, event=event, current_query=disc_query)
+
+        # Discussion query message's markup IS updated in place
+        disc_query.edit_message_reply_markup.assert_called_once()
+        mock_update_db.assert_called_once_with(1, 888, -100456)
+        # bot.edit_message_reply_markup is not called because it returned early
+        context.bot.edit_message_reply_markup.assert_not_called()
 

@@ -4,19 +4,20 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 
 
 class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def test_parse_event_message_depleted_credits_raises_quota_error(self):
         from core.ai_parser import parse_event_message, GeminiQuotaError
@@ -53,15 +54,15 @@ class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
                 generate_wordpress_article("Recap text", [])
 
     async def test_handle_event_extraction_sends_admin_alert_on_quota_depleted(self):
-        from bot.handlers import handle_event_extraction
+        from bot.handlers.extraction import handle_event_extraction
         from core.ai_parser import GeminiQuotaError, GEMINI_DEPLETED_ALERT
 
         context = MagicMock()
         context.bot.send_message = AsyncMock()
 
         err_text = "429 Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing."
-        with patch("bot.handlers.parse_event_message", side_effect=GeminiQuotaError(err_text)), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("bot.handlers.extraction.parse_event_message", side_effect=GeminiQuotaError(err_text)), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
 
             success = await handle_event_extraction(
                 text="Titolo: Sessione D&D...",
@@ -78,7 +79,7 @@ class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_manual_trigger_command_reports_error_when_quota_depleted(self):
-        from bot.handlers import manual_trigger_command
+        from bot.handlers.ingestion import manual_trigger_command
         from core.ai_parser import GeminiQuotaError
 
         update = MagicMock()
@@ -92,8 +93,8 @@ class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         err_text = "429 Your prepayment credits are depleted."
-        with patch("bot.handlers.parse_event_message", side_effect=GeminiQuotaError(err_text)), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("bot.handlers.extraction.parse_event_message", side_effect=GeminiQuotaError(err_text)), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
 
             await manual_trigger_command(update, context)
 
@@ -106,7 +107,7 @@ class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_not_called()
 
     async def test_recap_approval_sends_admin_alert_on_quota_depleted(self):
-        from bot.callbacks import handle_approval
+        from bot.callbacks.router import handle_callback_query
         from core.ai_parser import GeminiQuotaError
 
         update = MagicMock()
@@ -145,14 +146,14 @@ class TestGeminiQuotaDepletionAlert(unittest.IsolatedAsyncioTestCase):
         }]
 
         err_text = "429 Your prepayment credits are depleted."
-        with patch("bot.callbacks.PUBLIC_CHANNEL_ID", "-100111111"), \
-             patch("bot.callbacks.get_pending_events_for_recap", return_value=test_events), \
-             patch("core.ai_parser.generate_wordpress_article", side_effect=GeminiQuotaError(err_text)), \
-             patch("core.wordpress.upload_media", return_value=None), \
-             patch("utils.image_utils.create_collage", return_value=None), \
-             patch("utils.image_utils.create_recap_story_image", return_value=None):
+        with patch("core.config.PUBLIC_CHANNEL_ID", "-100111111"), \
+             patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
+             patch("bot.callbacks.recap.generate_wordpress_article", side_effect=GeminiQuotaError(err_text)), \
+             patch("bot.callbacks.recap.upload_media", return_value=None), \
+             patch("bot.callbacks.recap.create_collage", return_value=None), \
+             patch("bot.callbacks.recap.create_recap_story_image", return_value=None):
 
-            await handle_approval(update, context)
+            await handle_callback_query(update, context)
 
         # Check that alert was sent to the chat
         found_alert = False

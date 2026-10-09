@@ -5,19 +5,20 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 
 
 class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     def _create_dummy_image_bytes(self, width, height, color):
         import io
@@ -82,7 +83,8 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
     async def test_media_group_event_buffering_and_collage_creation(self):
         import io
         from PIL import Image
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
 
@@ -149,10 +151,19 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
                 media_groups[media_group_id]["last_received"] = 0
             return
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.ADMIN_CHAT_ID", admin_chat_id), \
-             patch("bot.handlers.DATA_DIR", self.temp_dir.name), \
-             patch("bot.handlers.asyncio.sleep", side_effect=fast_sleep):
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("core.config.ADMIN_CHAT_ID", admin_chat_id), \
+             patch("core.config.DATA_DIR", self.temp_dir.name), \
+             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep), \
+             patch("bot.handlers.extraction.parse_event_message", return_value={
+                 "is_event": True,
+                 "title": "Sessione Speciale D&D",
+                 "date": "Sabato 05-09-2026 21:00",
+                 "normalized_date": "05-09-2026",
+                 "seats": "4/4",
+                 "max_seats": 4,
+                 "booked_seats": 0,
+             }):
 
             await process_message(update1, context)
             await process_message(update2, context)
@@ -188,7 +199,8 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved_img.width, 200 + 300 + 400) # 900
 
     async def test_media_group_without_caption_ignored(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         b1 = self._create_dummy_image_bytes(100, 100, (255, 0, 0))
@@ -216,9 +228,9 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
                 media_groups[media_group_id]["last_received"] = 0
             return
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.asyncio.sleep", side_effect=fast_sleep), \
-             patch("bot.handlers.handle_event_extraction") as mock_extract:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("bot.handlers.albums.asyncio.sleep", side_effect=fast_sleep), \
+             patch("bot.handlers.albums.handle_event_extraction") as mock_extract:
 
             await process_message(update1, context)
             if media_group_id in media_groups and media_groups[media_group_id]["task"]:
@@ -229,7 +241,8 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
             mock_extract.assert_not_called()
 
     async def test_single_photo_message_processed_immediately(self):
-        from bot.handlers import process_message, media_groups
+        from bot.handlers.ingestion import process_message
+        from bot.handlers.albums import media_groups
 
         media_groups.clear()
         b1 = self._create_dummy_image_bytes(100, 100, (255, 0, 0))
@@ -257,8 +270,8 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
                 await del_cb()
             return True
 
-        with patch("bot.handlers.PUBLIC_CHANNEL_ID", public_channel_id), \
-             patch("bot.handlers.handle_event_extraction", side_effect=fake_handle_extraction) as mock_extract:
+        with patch("core.config.PUBLIC_CHANNEL_ID", public_channel_id), \
+             patch("bot.handlers.ingestion.handle_event_extraction", side_effect=fake_handle_extraction) as mock_extract:
 
             await process_message(update1, context)
 
@@ -278,15 +291,15 @@ class TestMultiImageCollageAndMediaGroup(unittest.IsolatedAsyncioTestCase):
 
 class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        from bot.handlers import admin_media_groups
+        from bot.handlers.albums import admin_media_groups
         admin_media_groups.clear()
 
     def tearDown(self):
-        from bot.handlers import admin_media_groups
+        from bot.handlers.albums import admin_media_groups
         admin_media_groups.clear()
 
     async def test_cache_admin_media_group_and_cleanup(self):
-        from bot.handlers import cache_admin_media_group, admin_media_groups, cleanup_admin_media_cache
+        from bot.handlers.albums import cache_admin_media_group, admin_media_groups, cleanup_admin_media_cache
 
         # Prepare 2 messages belonging to the same media group
         update1 = MagicMock()
@@ -328,7 +341,8 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("mg_album_1", admin_media_groups)
 
     async def test_manual_trigger_with_cached_media_group_creates_collage(self):
-        from bot.handlers import manual_trigger_command, admin_media_groups
+        from bot.handlers.ingestion import manual_trigger_command
+        from bot.handlers.albums import admin_media_groups
 
         # Seed cached media group with 2 photos
         admin_media_groups["album_test"] = {
@@ -362,9 +376,9 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
 
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"stitched_collage_bytes") as mock_collage, \
-             patch("bot.handlers.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"stitched_collage_bytes") as mock_collage, \
+             patch("bot.handlers.ingestion.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
 
             mock_extract.return_value = True
 
@@ -382,7 +396,8 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
             update.message.reply_text.assert_called_once_with("Processato il messaggio risposto.")
 
     async def test_manual_trigger_custom_text_overrides_album_caption(self):
-        from bot.handlers import manual_trigger_command, admin_media_groups
+        from bot.handlers.ingestion import manual_trigger_command
+        from bot.handlers.albums import admin_media_groups
 
         admin_media_groups["album_test2"] = {
             "images": {
@@ -414,9 +429,9 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
 
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"collage_custom"), \
-             patch("bot.handlers.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"collage_custom"), \
+             patch("bot.handlers.ingestion.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
 
             mock_extract.return_value = True
 
@@ -432,7 +447,7 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_manual_trigger_fallback_when_not_in_cache(self):
-        from bot.handlers import manual_trigger_command
+        from bot.handlers.ingestion import manual_trigger_command
 
         # Target message has media_group_id, but it is NOT in cache
         update = MagicMock()
@@ -458,8 +473,8 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
 
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.ingestion.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
 
             mock_extract.return_value = True
 
@@ -476,7 +491,7 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
             update.message.reply_text.assert_called_once_with("Processato il messaggio risposto.")
 
     async def test_manual_trigger_no_text_informs_user(self):
-        from bot.handlers import manual_trigger_command
+        from bot.handlers.ingestion import manual_trigger_command
 
         update = MagicMock()
         update.effective_chat.id = 999
@@ -497,8 +512,8 @@ class TestAdminMediaGroupManualProcessing(unittest.IsolatedAsyncioTestCase):
 
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.ingestion.handle_event_extraction", new_callable=AsyncMock) as mock_extract:
 
             await manual_trigger_command(update, context)
 

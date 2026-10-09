@@ -6,14 +6,15 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
+from core import config
 
 
 class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
         self.initial_event = {
@@ -33,7 +34,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
 
     async def test_delete_event_cleans_event_and_reservations(self):
         from core.db import delete_event, get_event, get_reservations_for_event, book_seat
@@ -48,7 +49,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(get_reservations_for_event(self.event_id)), 0)
 
     async def test_discard_event_callback_deletes_event_and_file(self):
-        from bot.callbacks import handle_approval
+        from bot.callbacks.router import handle_callback_query
         from core.db import get_event
 
         img_file = os.path.join(self.temp_dir.name, "dummy_event.png")
@@ -66,7 +67,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         update.callback_query = query
         context = MagicMock()
 
-        await handle_approval(update, context)
+        await handle_callback_query(update, context)
 
         self.assertFalse(os.path.exists(img_file))
         self.assertIsNone(get_event(self.event_id))
@@ -74,7 +75,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertIn("❌ SCARTATO", query.edit_message_caption.call_args.kwargs.get("caption", ""))
 
     async def test_event_edit_image_single_photo_reply(self):
-        from bot.handlers import event_edit_command
+        from bot.handlers.edit import event_edit_command
         from core.db import get_event
 
         old_img = os.path.join(self.temp_dir.name, "old_image.png")
@@ -107,7 +108,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         with open(new_saved_path, "wb") as f:
             f.write(b"new_image_data")
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.save_image_locally", return_value=new_saved_path),              patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.edit.save_image_locally", return_value=new_saved_path),              patch("bot.handlers.edit.update_event_messages", AsyncMock()):
 
             await event_edit_command(update, context)
 
@@ -119,7 +120,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Campo 'image_path' aggiornato con successo", update.message.reply_text.call_args[0][0])
 
     async def test_event_edit_image_with_event_id_argument(self):
-        from bot.handlers import event_edit_command
+        from bot.handlers.edit import event_edit_command
         from core.db import get_event
 
         update = MagicMock()
@@ -143,7 +144,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         with open(new_path, "wb") as f:
             f.write(b"photo_from_reply")
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.save_image_locally", return_value=new_path),              patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.edit.save_image_locally", return_value=new_path),              patch("bot.handlers.edit.update_event_messages", AsyncMock()):
 
             await event_edit_command(update, context)
 
@@ -153,7 +154,8 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertIn("aggiornato con successo", update.message.reply_text.call_args[0][0])
 
     async def test_event_edit_image_media_group_album(self):
-        from bot.handlers import event_edit_command, admin_media_groups
+        from bot.handlers.edit import event_edit_command
+        from bot.handlers.albums import admin_media_groups
         from core.db import get_event
 
         admin_media_groups["album_edit_test"] = {
@@ -188,7 +190,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         with open(new_path, "wb") as f:
             f.write(b"collage")
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.create_collage_from_bytes", return_value=b"stitched_bytes") as mock_collage,              patch("bot.handlers.save_image_locally", return_value=new_path),              patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"),              patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"stitched_bytes") as mock_collage,              patch("bot.handlers.edit.save_image_locally", return_value=new_path),              patch("bot.handlers.edit.update_event_messages", AsyncMock()):
 
             await event_edit_command(update, context)
 
@@ -204,7 +206,8 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         The handler must wait for the album photos, stitch all 3 into a collage,
         and update the event's image.
         """
-        from bot.handlers import cache_admin_media_group, event_edit_command, admin_media_groups
+        from bot.handlers.albums import cache_admin_media_group, admin_media_groups
+        from bot.handlers.edit import event_edit_command
         from core.db import get_event
 
         admin_media_groups.clear()
@@ -281,10 +284,10 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.15)
             await cache_admin_media_group(update3, context)
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"stitched_3_images") as mock_collage, \
-             patch("bot.handlers.save_image_locally", return_value=new_path), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"stitched_3_images") as mock_collage, \
+             patch("bot.handlers.edit.save_image_locally", return_value=new_path), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()):
 
             task_arrive = asyncio.create_task(arrive_subsequent_updates())
             task_cmd = asyncio.create_task(event_edit_command(update1, context))
@@ -297,10 +300,11 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
     async def test_event_edit_image_waits_for_media_group_entry_if_called_early(self):
         """
         If event_edit_command starts before cache_admin_media_group registers the
-        entry in admin_media_groups, _get_media_group_data_from_cache should wait
+        entry in admin_media_groups, get_media_group_data_from_cache should wait
         until the entry is created rather than immediately returning None.
         """
-        from bot.handlers import cache_admin_media_group, event_edit_command, admin_media_groups
+        from bot.handlers.albums import cache_admin_media_group, admin_media_groups
+        from bot.handlers.edit import event_edit_command
         from core.db import get_event
 
         admin_media_groups.clear()
@@ -354,10 +358,10 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.15)
             await cache_admin_media_group(update2, context)
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"), \
-             patch("bot.handlers.create_collage_from_bytes", return_value=b"early_stitched") as mock_collage, \
-             patch("bot.handlers.save_image_locally", return_value=new_path), \
-             patch("bot.handlers.update_event_messages", AsyncMock()):
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"early_stitched") as mock_collage, \
+             patch("bot.handlers.edit.save_image_locally", return_value=new_path), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()):
 
             task_arrive = asyncio.create_task(delayed_both_updates())
             task_cmd = asyncio.create_task(event_edit_command(update1, context))
@@ -368,7 +372,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ev["image_path"], new_path)
 
     async def test_event_edit_image_missing_photo_shows_error(self):
-        from bot.handlers import event_edit_command
+        from bot.handlers.edit import event_edit_command
 
         update = MagicMock()
         update.effective_chat.id = 999
@@ -387,14 +391,14 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         update.message.reply_to_message = target_msg
 
         context = MagicMock()
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await event_edit_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("Devi allegare un'immagine", update.message.reply_text.call_args[0][0])
 
     async def test_event_edit_on_discarded_event_reports_not_found(self):
-        from bot.handlers import event_edit_command
+        from bot.handlers.edit import event_edit_command
         from core.db import delete_event
 
         delete_event(self.event_id)
@@ -413,13 +417,13 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         update.message.reply_to_message = target_msg
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
             await event_edit_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("non trovato nel database", update.message.reply_text.call_args[0][0])
     def test_extract_event_id_from_reply_various_formats(self):
-        from bot.handlers import extract_event_id_from_reply
+        from bot.common.parsing import extract_event_id_from_reply
 
         # 1. Button callback formats
         prefixes = ["publish_event_42", "cancel_event_42", "book_42", "unbook_42", "manage_subs_42", "sub_inc_42_1"]
@@ -457,7 +461,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(extract_event_id_from_reply(msg_admin), self.event_id)
 
     async def test_extract_image_bytes_from_document_mime(self):
-        from bot.handlers import _extract_image_bytes_from_update
+        from bot.handlers.albums import extract_image_bytes_from_update
 
         update = MagicMock()
         update.message.media_group_id = None
@@ -468,7 +472,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         update.message.document = doc
         update.message.reply_to_message = None
 
-        res = await _extract_image_bytes_from_update(update)
+        res = await extract_image_bytes_from_update(update)
         self.assertEqual(res, bytearray(b"doc_img"))
 
     def test_caption_command_matching_and_handler_registration(self):
@@ -493,7 +497,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ch.check_update(u))
 
     async def test_handle_event_extraction_uses_final_form_with_emojis(self):
-        from bot.handlers import handle_event_extraction
+        from bot.handlers.extraction import handle_event_extraction
         context = MagicMock()
         context.bot.send_message = AsyncMock()
         sent_mock = MagicMock()
@@ -514,8 +518,8 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
             "is_roleplay": True,
         }
 
-        with patch("bot.handlers.parse_event_message", return_value=parsed_data), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("bot.handlers.extraction.parse_event_message", return_value=parsed_data), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             success = await handle_event_extraction(
                 text="Evento Starfinder",
                 image_bytes=None,
@@ -539,7 +543,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ev.get("admin_message_id"), 777)
 
     async def test_handle_event_extraction_warns_on_caption_over_1024_chars(self):
-        from bot.handlers import handle_event_extraction
+        from bot.handlers.extraction import handle_event_extraction
         context = MagicMock()
         sent_mock = MagicMock()
         sent_mock.message_id = 888
@@ -559,8 +563,8 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
             "description": long_desc,
         }
 
-        with patch("bot.handlers.parse_event_message", return_value=parsed_data), \
-             patch("bot.handlers.ADMIN_CHAT_ID", "999"):
+        with patch("bot.handlers.extraction.parse_event_message", return_value=parsed_data), \
+             patch("core.config.ADMIN_CHAT_ID", "999"):
             success = await handle_event_extraction(
                 text="Evento con testo lunghissimo",
                 image_bytes=b"dummy_image_data",
@@ -579,7 +583,9 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
 
     def test_main_admin_handlers_configured_block_false(self):
         from main import main
-        from bot.handlers import event_edit_command, manual_trigger_command, cache_admin_media_group
+        from bot.handlers.edit import event_edit_command
+        from bot.handlers.ingestion import manual_trigger_command
+        from bot.handlers.albums import cache_admin_media_group
 
         added_handlers = []
         mock_app = MagicMock()
@@ -619,7 +625,7 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         mock_app = MagicMock()
         mock_app.bot = mock_bot
 
-        with patch("core.scheduler.start_scheduler"), \
+        with patch("main.start_scheduler"), \
              patch("main.ADMIN_CHAT_ID", "-100123456"):
             await post_init(mock_app)
 
@@ -654,41 +660,41 @@ class TestEventNextCommand(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_db_path = os.path.join(self.temp_dir.name, "test_events.db")
-        self.orig_db_path = db.DB_PATH
-        db.DB_PATH = self.test_db_path
+        self.orig_db_path = config.DB_PATH
+        config.DB_PATH = self.test_db_path
         db.init_db()
 
     def tearDown(self):
-        db.DB_PATH = self.orig_db_path
+        config.DB_PATH = self.orig_db_path
         self.temp_dir.cleanup()
 
     async def test_event_next_command_non_admin_ignored(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         update = MagicMock()
         update.effective_chat.id = 12345
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_not_called()
 
     async def test_event_next_command_no_events(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         update = MagicMock()
         update.effective_chat.id = -100999999
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("Nessun evento in programma", update.message.reply_text.call_args[0][0])
 
     async def test_event_next_command_lists_today_and_future_events(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         today_str = datetime.now().strftime("%d-%m-%Y")
 
         # 1. Past event (should NOT be included)
@@ -722,8 +728,8 @@ class TestEventNextCommand(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100888888"):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100888888"):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_called_once()
@@ -740,47 +746,47 @@ class TestEventNextCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn(f'start=subs_{ev_today_id}', reply_text)
 
     async def test_event_next_command_public_private_chat_allowed(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         update = MagicMock()
         update.effective_chat.id = 55555
         update.effective_chat.type = "private"
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100888888"):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100888888"):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("Nessun evento in programma", update.message.reply_text.call_args[0][0])
 
     async def test_event_next_command_discussion_group_allowed(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         update = MagicMock()
         update.effective_chat.id = -100888888
         update.effective_chat.type = "supergroup"
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100888888"), \
-             patch("bot.handlers.ALLOW_GROUP_EVENT_NEXT", True):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100888888"), \
+             patch("core.config.ALLOW_GROUP_EVENT_NEXT", True):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("Nessun evento in programma", update.message.reply_text.call_args[0][0])
 
     async def test_event_next_command_discussion_group_disabled(self):
-        from bot.handlers import event_next_command
+        from bot.handlers.public import event_next_command
         update = MagicMock()
         update.effective_chat.id = -100888888
         update.effective_chat.type = "supergroup"
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
-        with patch("bot.handlers.ADMIN_CHAT_ID", "-100999999"), \
-             patch("bot.handlers.DISCUSSION_GROUP_ID", "-100888888"), \
-             patch("bot.handlers.ALLOW_GROUP_EVENT_NEXT", False):
+        with patch("core.config.ADMIN_CHAT_ID", "-100999999"), \
+             patch("core.config.DISCUSSION_GROUP_ID", "-100888888"), \
+             patch("core.config.ALLOW_GROUP_EVENT_NEXT", False):
             await event_next_command(update, context)
 
         update.message.reply_text.assert_not_called()

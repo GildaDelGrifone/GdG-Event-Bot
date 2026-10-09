@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
-from bot.handlers import contains_event_keywords, handle_event_extraction
+from bot.common.parsing import contains_event_keywords
+from bot.handlers.extraction import handle_event_extraction
 
 
 class TestKeywordPreFilter(unittest.IsolatedAsyncioTestCase):
@@ -86,7 +87,7 @@ class TestKeywordPreFilter(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         text = "Avviso importante: domani la sede rimarrà chiusa per festività."
-        with patch("bot.handlers.parse_event_message") as mock_parse:
+        with patch("bot.handlers.extraction.parse_event_message") as mock_parse:
             result = await handle_event_extraction(
                 text=text,
                 image_bytes=None,
@@ -101,9 +102,8 @@ class TestKeywordPreFilter(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         text = "Titolo: Torneo di Catan\nQuando: Sabato 15:00\nPosti liberi: 8"
-        with patch("bot.handlers.parse_event_message") as mock_parse, \
-             patch("bot.handlers.insert_event", return_value=1), \
-             patch("bot.handlers.get_event", return_value={"id": 1, "title": "Torneo di Catan"}):
+        with patch("bot.handlers.extraction.parse_event_message") as mock_parse, \
+             patch("bot.handlers.extraction.insert_event", return_value=1):
             mock_parse.return_value = {
                 "is_event": True,
                 "title": "Torneo di Catan",
@@ -126,9 +126,8 @@ class TestKeywordPreFilter(unittest.IsolatedAsyncioTestCase):
         context.bot.send_message = AsyncMock()
 
         text = "Testo strano senza keyword esplicite ma che l'admin vuole forzare come evento"
-        with patch("bot.handlers.parse_event_message") as mock_parse, \
-             patch("bot.handlers.insert_event", return_value=1), \
-             patch("bot.handlers.get_event", return_value={"id": 1, "title": "Forced Event"}):
+        with patch("bot.handlers.extraction.parse_event_message") as mock_parse, \
+             patch("bot.handlers.extraction.insert_event", return_value=1):
             mock_parse.return_value = {
                 "is_event": True,
                 "title": "Forced Event",
