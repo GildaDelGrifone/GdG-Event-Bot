@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import core.db as db
 from core import config
-from bot.handlers.repost import event_repost_command, event_repost_invoke_command
-from bot.handlers.repost_schedule import event_repost_schedule_command, event_repost_update_command, event_repost_list_command
+from bot.handlers.repost import event_repost_command, event_schedule_invoke_command
+from bot.handlers.repost_schedule import event_schedule_command, event_schedule_update_command, event_schedule_list_command
 from bot.handlers.edit import event_edit_command
 from utils.templates import format_schedule_repost_message
 from bot.keyboards import get_schedule_repost_keyboard
@@ -122,7 +122,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         ev = db.get_scheduled_event(sched_id)
         self.assertEqual(ev["specific_date"], "15-10-2026 20:30")
 
-        # Update content (/event_repost_update)
+        # Update content (/event_schedule_update)
         ok = db.update_scheduled_event_content(sched_id, "Nuovo testo", title="Nuovo Titolo")
         self.assertTrue(ok)
         ev = db.get_scheduled_event(sched_id)
@@ -190,8 +190,8 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(newest["max_seats"], 5)
         self.assertEqual(newest["seats"], "5/5")
 
-    # 5. /event_repost_schedule
-    async def test_event_repost_schedule_creates_scheduled_event_with_keyboard(self):
+    # 5. /event_schedule
+    async def test_event_schedule_creates_scheduled_event_with_keyboard(self):
         update = MagicMock()
         update.effective_chat.id = 999
 
@@ -204,7 +204,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         reply_msg.message_id = 777
 
         update.message.reply_to_message = reply_msg
-        update.message.text = "/event_repost_schedule"
+        update.message.text = "/event_schedule"
         update.message.caption = None
         update.message.photo = None
         update.message.document = None
@@ -213,7 +213,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"):
-            await event_repost_schedule_command(update, context)
+            await event_schedule_command(update, context)
 
         update.message.reply_text.assert_called_once()
         sent_text = update.message.reply_text.call_args[0][0]
@@ -283,12 +283,12 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
 
         bot.send_message.assert_called_once()
         msg_text = bot.send_message.call_args[1]["text"]
-        self.assertIn(f"/event_repost_invoke {sched_id}", msg_text)
-        self.assertIn("/event_repost_update", msg_text)
+        self.assertIn(f"/event_schedule_invoke {sched_id}", msg_text)
+        self.assertIn("/event_schedule_update", msg_text)
         self.assertIn("Evento Ricorrente Oggi", msg_text)
 
-    # 8. /event_repost_invoke
-    async def test_event_repost_invoke_command(self):
+    # 8. /event_schedule_invoke
+    async def test_event_schedule_invoke_command(self):
         sched_id = db.insert_scheduled_event(
             title="Cyberpunk Red",
             text="Titolo: Cyberpunk Red\nData: 01-01-2026\nPosti: 3/3\nDescrizione: Missione a Night City",
@@ -298,7 +298,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
 
         update = MagicMock()
         update.effective_chat.id = 999
-        update.message.text = f"/event_repost_invoke {sched_id}"
+        update.message.text = f"/event_schedule_invoke {sched_id}"
         update.message.caption = None
         update.message.reply_text = AsyncMock()
 
@@ -318,7 +318,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
                  "booked_seats": 0,
                  "description": "Missione a Night City"
              }):
-            await event_repost_invoke_command(update, context)
+            await event_schedule_invoke_command(update, context)
 
         update.message.reply_text.assert_called()
         self.assertIn("invocato e pronto per la revisione", update.message.reply_text.call_args[0][0])
@@ -328,8 +328,8 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         created_event = [e for e in upcoming if e["title"] == "Cyberpunk Red"][0]
         self.assertEqual(created_event["normalized_date"], today_norm)
 
-    # 9. /event_repost_update
-    async def test_event_repost_update_command(self):
+    # 9. /event_schedule_update
+    async def test_event_schedule_update_command(self):
         sched_id = db.insert_scheduled_event(
             title="Vecchio Titolo",
             text="Vecchio Testo",
@@ -347,7 +347,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         reply_msg.reply_markup = None
 
         update.message.reply_to_message = reply_msg
-        update.message.text = f"/event_repost_update {sched_id}"
+        update.message.text = f"/event_schedule_update {sched_id}"
         update.message.caption = None
         update.message.photo = None
         update.message.document = None
@@ -356,7 +356,7 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"):
-            await event_repost_update_command(update, context)
+            await event_schedule_update_command(update, context)
 
         update.message.reply_text.assert_called()
         self.assertIn("aggiornato con successo", update.message.reply_text.call_args[0][0])
@@ -365,8 +365,8 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ev["title"], "Nuovo Titolo Superfigo")
         self.assertEqual(ev["text"], "Nuovo Titolo Superfigo\nDescrizione aggiornata")
 
-    # 10. /event_repost_list empty
-    async def test_event_repost_list_empty(self):
+    # 10. /event_schedule_list empty
+    async def test_event_schedule_list_empty(self):
         update = MagicMock()
         update.effective_chat.id = 999
         update.effective_user.id = 123
@@ -376,13 +376,13 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"):
-            await event_repost_list_command(update, context)
+            await event_schedule_list_command(update, context)
 
         update.message.reply_text.assert_called_once()
         self.assertIn("Nessun evento programmato", update.message.reply_text.call_args[0][0])
 
-    # 11. /event_repost_list with events
-    async def test_event_repost_list_with_events(self):
+    # 11. /event_schedule_list with events
+    async def test_event_schedule_list_with_events(self):
         sched_id1 = db.insert_scheduled_event(
             title="D&D Notturno",
             text="Testo D&D",
@@ -403,15 +403,15 @@ class TestRepostAndSchedule(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
 
         with patch("core.config.ADMIN_CHAT_ID", "999"):
-            await event_repost_list_command(update, context)
+            await event_schedule_list_command(update, context)
 
         update.message.reply_text.assert_called_once()
         text = update.message.reply_text.call_args[0][0]
         self.assertIn("D&amp;D Notturno", text)
-        self.assertIn(f"/event_repost_invoke {sched_id1}", text)
+        self.assertIn(f"/event_schedule_invoke {sched_id1}", text)
         self.assertIn("Call of Cthulhu One-Shot", text)
-        self.assertIn(f"/event_repost_invoke {sched_id2}", text)
-        self.assertIn("/event_repost_update", text)
+        self.assertIn(f"/event_schedule_invoke {sched_id2}", text)
+        self.assertIn("/event_schedule_update", text)
 
 
 if __name__ == "__main__":

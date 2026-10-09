@@ -1,8 +1,6 @@
 # Environments and Secrets
-.environments
 .env
-.environments.*
-!.environments.example
+.env.*
 !.env.example
 
 # Data folder (contains SQLite database and temporary downloaded images)
@@ -17,6 +15,7 @@ __pycache__/
 *.log
 venv/
 env/
+.venv
 .venv/
 
 # IDEs

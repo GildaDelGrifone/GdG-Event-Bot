@@ -2,9 +2,9 @@ import os
 
 from dotenv import load_dotenv
 
-# Support both .environments and .env
-if os.path.exists(".environments"):
-    load_dotenv(dotenv_path=".environments")
+# Load .env
+if os.path.exists(".env"):
+    load_dotenv(dotenv_path=".env")
 else:
     load_dotenv()
 
@@ -23,6 +23,8 @@ ALLOW_GROUP_EVENT_NEXT = _env_bool("ALLOW_GROUP_EVENT_NEXT", True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+
+BGG_API_TOKEN = os.getenv("BGG_API_TOKEN")
 
 WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")

@@ -10,7 +10,7 @@ This application monitors a Telegram channel, extracts event information using *
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
-- [Configuration (`.environments`)](#configuration-environments)
+- [Configuration (`.env`)](#configuration-env)
 - [Running the Application](#running-the-application)
 - [Telegram Commands & Workflow](#telegram-commands--workflow)
   - [1. New Event Flow](#1-new-event-flow)
@@ -67,15 +67,15 @@ This application monitors a Telegram channel, extracts event information using *
 
 4. **Set up configuration:**
    ```bash
-   cp .environments.example .environments
-   # Edit .environments with your tokens and credentials
+   cp .env.example .env
+   # Edit .env with your tokens and credentials
    ```
 
 ---
 
-## Configuration (`.environments`)
+## Configuration (`.env`)
 
-Create or edit the `.environments` file in the root directory:
+Create or edit the `.env` file in the root directory:
 
 ```env
 # Telegram Configuration
@@ -185,10 +185,10 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
-- `/event_repost_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
-- `/event_repost_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
-- `/event_repost_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
-- `/event_repost_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_repost_invoke` commands.
+- `/event_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
+- `/event_schedule_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
+- `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
+- `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused.

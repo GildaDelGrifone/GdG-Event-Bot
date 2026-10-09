@@ -16,7 +16,7 @@ def format_reposts_digest(events, weekday_it, today_str):
         sched_id = ev['id']
         lines.append(
             f"• <b>{html.escape(ev.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
-            f"  👉 Invia per preparare il post: <code>/event_repost_invoke {sched_id}</code>\n"
+            f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
         )
     lines.append(REPOST_UPDATE_REMINDER)
     return "\n".join(lines)

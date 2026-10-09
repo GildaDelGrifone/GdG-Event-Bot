@@ -62,12 +62,12 @@ class TestAsyncHelpers(unittest.IsolatedAsyncioTestCase):
 
 class TestAdminOnlyAndSeatEditing(unittest.IsolatedAsyncioTestCase):
     async def test_admin_only_notify_replies_to_outsiders(self):
-        from bot.handlers.repost_schedule import event_repost_list_command
+        from bot.handlers.repost_schedule import event_schedule_list_command
         update = MagicMock()
         update.effective_chat.id = 999
         update.message.reply_text = AsyncMock()
         with patch("core.config.ADMIN_CHAT_ID", "111"), patch("bot.handlers.repost_schedule.get_all_scheduled_events") as get_all:
-            await event_repost_list_command(update, MagicMock())
+            await event_schedule_list_command(update, MagicMock())
         update.message.reply_text.assert_called_once_with("Non sei autorizzato.")
         get_all.assert_not_called()
 

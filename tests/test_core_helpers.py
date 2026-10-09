@@ -127,7 +127,7 @@ class TestRepostDigest(unittest.TestCase):
         from core.scheduler.reposts import format_reposts_digest
         text = format_reposts_digest([{"id": 3, "title": "D&D <Oneshot>"}], "Lunedì", "05-10-2026")
         self.assertIn("D&amp;D &lt;Oneshot&gt;", text)
-        self.assertIn("/event_repost_invoke 3", text)
+        self.assertIn("/event_schedule_invoke 3", text)
 
 
 class TestWordPressClient(unittest.TestCase):

@@ -26,7 +26,7 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
         config.DB_PATH = self.orig_db_path
 
     def test_fetch_bgg_game_image_exact_match(self):
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             # 1. Search response
             search_resp = MagicMock()
             search_resp.status_code = 200
@@ -55,12 +55,15 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
             result = fetch_bgg_game_image("Catan")
             self.assertEqual(result, b"CATAN_IMAGE_BYTES")
             self.assertEqual(mock_get.call_count, 3)
+            # Verify BGG token was passed in search request headers
+            search_headers = mock_get.call_args_list[0][1]["headers"]
+            self.assertEqual(search_headers.get("Authorization"), "Bearer test_token")
             # Check detail URL used objectid 13 (exact match)
             self.assertIn("objectid=13", mock_get.call_args_list[1][0][0])
             self.assertEqual(mock_get.call_args_list[2][0][0], "https://example.com/catan_orig.jpg")
 
     def test_fetch_bgg_game_image_filters_accessory(self):
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             search_resp = MagicMock()
             search_resp.status_code = 200
             search_resp.json.return_value = {
@@ -89,9 +92,73 @@ class TestEventGenerator(unittest.IsolatedAsyncioTestCase):
 
     def test_fetch_bgg_game_image_empty_or_error(self):
         self.assertIsNone(fetch_bgg_game_image(""))
-        with patch("requests.get") as mock_get:
+        with patch.object(config, "BGG_API_TOKEN", "test_token"), patch("requests.get") as mock_get:
             mock_get.return_value.status_code = 404
             self.assertIsNone(fetch_bgg_game_image("NonexistentGame"))
+
+    def test_fetch_game_image_fallback_wikipedia(self):
+        with patch.object(config, "BGG_API_TOKEN", None), patch("requests.get") as mock_get:
+            # 1. Wikipedia search
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": [{"title": "Catan"}]}}
+            # 2. Wikipedia summary
+            wiki_summary = MagicMock()
+            wiki_summary.status_code = 200
+            wiki_summary.json.return_value = {"thumbnail": {"source": "https://upload.wikimedia.org/catan.jpg"}}
+            # 3. Image download
+            wiki_img = MagicMock()
+            wiki_img.status_code = 200
+            wiki_img.content = b"X" * 600
+
+            mock_get.side_effect = [wiki_search, wiki_summary, wiki_img]
+
+            result = fetch_bgg_game_image("Catan")
+            self.assertEqual(result, b"X" * 600)
+            self.assertEqual(mock_get.call_count, 3)
+
+    def test_fetch_game_image_fallback_bing_when_wikipedia_empty(self):
+        with patch.object(config, "BGG_API_TOKEN", None), patch("requests.get") as mock_get:
+            # 1. Wikipedia search returns no results
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": []}}
+            # 2. Bing search HTML
+            bing_resp = MagicMock()
+            bing_resp.status_code = 200
+            bing_resp.text = '<a class="thumb" murl="https://example.com/midgard.jpg"></a>'
+            # 3. Bing image download
+            bing_img = MagicMock()
+            bing_img.status_code = 200
+            bing_img.content = b"Y" * 1200
+
+            mock_get.side_effect = [wiki_search, bing_resp, bing_img]
+
+            result = fetch_bgg_game_image("Champions of Midgard")
+            self.assertEqual(result, b"Y" * 1200)
+
+    def test_fetch_game_image_bgg_error_falls_back_to_web(self):
+        with patch.object(config, "BGG_API_TOKEN", "bad_token"), patch("requests.get") as mock_get:
+            # 1. BGG search returns 401
+            bgg_resp = MagicMock()
+            bgg_resp.status_code = 401
+            # 2. Wikipedia search
+            wiki_search = MagicMock()
+            wiki_search.status_code = 200
+            wiki_search.json.return_value = {"query": {"search": [{"title": "Monopoly"}]}}
+            # 3. Wikipedia summary
+            wiki_summary = MagicMock()
+            wiki_summary.status_code = 200
+            wiki_summary.json.return_value = {"thumbnail": {"source": "https://upload.wikimedia.org/mono.jpg"}}
+            # 4. Wikipedia image download
+            wiki_img = MagicMock()
+            wiki_img.status_code = 200
+            wiki_img.content = b"M" * 600
+
+            mock_get.side_effect = [bgg_resp, wiki_search, wiki_summary, wiki_img]
+
+            result = fetch_bgg_game_image("Monopoly")
+            self.assertEqual(result, b"M" * 600)
 
     def test_generate_event_data_with_ai_success(self):
         fake_ai_json = {

@@ -55,7 +55,7 @@ async def _reply_schedule_card(message, sched_ev, prefix=""):
 
 
 @admin_only(notify=True)
-async def event_repost_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
         return
@@ -63,7 +63,7 @@ async def event_repost_schedule_command(update: Update, context: ContextTypes.DE
     args_str = command_argument(message)
     tokens = args_str.split()
 
-    # "/event_repost_schedule <ID> [DATE]" manages an existing schedule
+    # "/event_schedule <ID> [DATE]" manages an existing schedule
     if tokens and tokens[0].isdigit():
         sched_id = int(tokens[0])
         sched_ev = get_scheduled_event(sched_id)
@@ -83,10 +83,10 @@ async def event_repost_schedule_command(update: Update, context: ContextTypes.DE
     if not message.reply_to_message:
         await message.reply_text(
             "❌ Rispondi al messaggio dell'evento che vuoi programmare per il repost.\n"
-            "Uso: <code>/event_repost_schedule [DATA HH:MM]</code>\n"
+            "Uso: <code>/event_schedule [DATA HH:MM]</code>\n"
             "Esempi:\n"
-            "• <code>/event_repost_schedule</code> (mostra i giorni di apertura)\n"
-            "• <code>/event_repost_schedule 09-10-2026 21:00</code>",
+            "• <code>/event_schedule</code> (mostra i giorni di apertura)\n"
+            "• <code>/event_schedule 09-10-2026 21:00</code>",
             parse_mode="HTML"
         )
         return
@@ -131,7 +131,7 @@ async def event_repost_schedule_command(update: Update, context: ContextTypes.DE
 
 
 @admin_only(notify=True)
-async def event_repost_update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def event_schedule_update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
         return
@@ -139,14 +139,14 @@ async def event_repost_update_command(update: Update, context: ContextTypes.DEFA
     if not message.reply_to_message:
         await message.reply_text(
             "❌ Rispondi al messaggio dell'evento con cui vuoi aggiornare la programmazione.\n"
-            "Uso: <code>/event_repost_update SCHEDULED_ID</code> (es. <code>/event_repost_update 1</code>)",
+            "Uso: <code>/event_schedule_update SCHEDULED_ID</code> (es. <code>/event_schedule_update 1</code>)",
             parse_mode="HTML"
         )
         return
 
     tokens = command_tokens(message)
     if not tokens or not tokens[0].isdigit():
-        await message.reply_text("❌ Specifica l'ID dell'evento programmato da aggiornare (es. /event_repost_update 1).")
+        await message.reply_text("❌ Specifica l'ID dell'evento programmato da aggiornare (es. /event_schedule_update 1).")
         return
 
     sched_id = int(tokens[0])
@@ -175,12 +175,12 @@ async def event_repost_update_command(update: Update, context: ContextTypes.DEFA
 
 
 @admin_only(notify=True)
-async def event_repost_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def event_schedule_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
         return
 
-    logger.info(f"{describe_user(update.effective_user)} requested scheduled reposts list (/event_repost_list).")
+    logger.info(f"{describe_user(update.effective_user)} requested scheduled reposts list (/event_schedule_list).")
 
     all_events = get_all_scheduled_events()
     if not all_events:
@@ -194,8 +194,8 @@ async def event_repost_list_command(update: Update, context: ContextTypes.DEFAUL
         lines.append(
             f"• <b>{html.escape(ev.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
             f"  🗓️ Giorni: {', '.join(days) if days else 'Nessuno'} | Data: {ev.get('specific_date') or 'Nessuna'}\n"
-            f"  👉 Invia per preparare il post: <code>/event_repost_invoke {sched_id}</code>\n"
-            f"  ⚙️ Gestisci programmazione: <code>/event_repost_schedule {sched_id}</code>\n"
+            f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
+            f"  ⚙️ Gestisci programmazione: <code>/event_schedule {sched_id}</code>\n"
         )
     lines.append(REPOST_UPDATE_REMINDER)
 

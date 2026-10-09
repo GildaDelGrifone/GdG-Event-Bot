@@ -240,11 +240,11 @@ def format_schedule_repost_message(scheduled_event):
         f"📌 <b>Data specifica impostata:</b> {spec_date}\n\n"
         f"Tocca i pulsanti in basso per attivare/disattivare i giorni in cui ripubblicare l'evento.\n\n"
         f"👉 Per programmare una data specifica (stessa sintassi di /event_edit_date):\n"
-        f"<code>/event_repost_schedule {sched_id} DD-MM-YYYY [HH:MM]</code>\n"
-        f"(es. <code>/event_repost_schedule {sched_id} 09-10-2026 21:00</code>)"
+        f"<code>/event_schedule {sched_id} DD-MM-YYYY [HH:MM]</code>\n"
+        f"(es. <code>/event_schedule {sched_id} 09-10-2026 21:00</code>)"
     )
 
 REPOST_UPDATE_REMINDER = (
     "💡 <i>Promemoria:</i> Puoi aggiornare il contenuto di un evento programmato rispondendo a un messaggio con il nuovo testo/locandina e usando:\n"
-    "<code>/event_repost_update ID</code>"
+    "<code>/event_schedule_update ID</code>"
 )

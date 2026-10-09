@@ -91,17 +91,23 @@ async def _sync_discussion_reply(bot, event_id, event, keyboard, current_query):
     disc_msg_id = event.get('discussion_message_id')
     disc_chat_id = event.get('discussion_chat_id') or config.DISCUSSION_GROUP_ID
 
-    # A click inside the discussion group tells us (and lets us store) where the booking reply lives
-    if current_query and current_query.message and str(current_query.message.chat_id) != str(config.PUBLIC_CHANNEL_ID):
-        disc_msg_id = current_query.message.message_id
-        disc_chat_id = current_query.message.chat_id
-        update_discussion_message_info(event_id, disc_msg_id, disc_chat_id)
-        try:
-            await _execute_with_retry(lambda: current_query.edit_message_reply_markup(reply_markup=keyboard))
-            return
-        except Exception as e:
-            if not is_not_modified_error(e):
-                logger.debug(f"Could not edit reply markup on current query message: {e}")
+    # A click inside the discussion group tells us (and lets us store) where the booking reply lives.
+    # We explicitly ignore clicks from the admin chat and public channel so we don't accidentally
+    # overwrite the discussion ID and strip the admin card's buttons.
+    if current_query and current_query.message:
+        chat_id_str = str(current_query.message.chat_id)
+        admin_chat = str(config.ADMIN_CHAT_ID) if config.ADMIN_CHAT_ID is not None else None
+        public_chat = str(config.PUBLIC_CHANNEL_ID) if config.PUBLIC_CHANNEL_ID is not None else None
+        if chat_id_str not in (public_chat, admin_chat):
+            disc_msg_id = current_query.message.message_id
+            disc_chat_id = current_query.message.chat_id
+            update_discussion_message_info(event_id, disc_msg_id, disc_chat_id)
+            try:
+                await _execute_with_retry(lambda: current_query.edit_message_reply_markup(reply_markup=keyboard))
+                return
+            except Exception as e:
+                if not is_not_modified_error(e):
+                    logger.debug(f"Could not edit reply markup on current query message: {e}")
 
     if not (disc_msg_id and disc_chat_id):
         return

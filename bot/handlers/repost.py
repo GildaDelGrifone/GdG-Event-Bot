@@ -115,14 +115,14 @@ def _invoke_overrides(sched_ev, extra_tokens):
 
 
 @admin_only(notify=True)
-async def event_repost_invoke_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def event_schedule_invoke_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
         return
 
     tokens = command_tokens(message)
     if not tokens or not tokens[0].isdigit():
-        await message.reply_text("❌ Specifica l'ID dell'evento programmato (es. /event_repost_invoke 123).")
+        await message.reply_text("❌ Specifica l'ID dell'evento programmato (es. /event_schedule_invoke 123).")
         return
 
     sched_id = int(tokens[0])
