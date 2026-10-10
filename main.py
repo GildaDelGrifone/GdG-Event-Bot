@@ -61,7 +61,7 @@ async def post_init(application: Application):
         BotCommand("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
         BotCommand("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
         BotCommand("bot_pause", "Mette in pausa l'intercettazione automatica"),
-        BotCommand("resume", "Riattiva l'intercettazione automatica"),
+        BotCommand("bot_resume", "Riattiva l'intercettazione automatica"),
         BotCommand("bot_status", "Mostra lo stato operativo del bot"),
         BotCommand("event_edit_title", "<Titolo> Modifica il titolo dell'evento"),
         BotCommand("event_edit_date", "<DD-MM-YYYY HH:MM> Modifica data e ora"),
@@ -134,7 +134,7 @@ def main():
     application.add_handler(CommandHandler("recap_generate", manual_recap_command))
     application.add_handler(CommandHandler("rg", manual_recap_command))
     application.add_handler(CommandHandler("bot_pause", bot_pause_command))
-    application.add_handler(CommandHandler("resume", bot_resume_command))
+    application.add_handler(CommandHandler("bot_resume", bot_resume_command))
     application.add_handler(CommandHandler("bot_status", bot_status_command))
     
     edit_cmds = [
