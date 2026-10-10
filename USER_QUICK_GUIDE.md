@@ -38,6 +38,7 @@ Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere 
 - `/event_edit_extra <Note extra, avvertenze o tag>`
 - `/event_edit_description <Nuova descrizione dell'evento>`
 - `/event_edit_image` *(allega una nuova foto o album in risposta alla scheda evento, o rispondi a una foto con `/event_edit_image <event_id>`)*
+- `/event_regenerate_story` (o `/ers`) *(rigenera l'immagine della storia Instagram rispondendo alla scheda evento o specificando l'ID)*
 
 ### 3. Pubblicare o Annullare
 Sotto l'anteprima dell'evento troverai i pulsanti:
@@ -76,5 +77,5 @@ La prenotazione e la consultazione dei tavoli per i giocatori è semplicissima:
 - **Per Vedere gli Iscritti:** 
   - Clicca sul pulsante **[👥 Lista]** sotto il messaggio dell'evento nel canale o nel gruppo discussione (il bot ti aprirà una chat privata mostrando l'elenco completo dei partecipanti senza intasare la chat di gruppo).
   - In alternativa, invia manualmente il comando `/event_subs <id>` (oppure `/subs <id>`, es. `/event_subs 42` o `/event_subs_42`).
-  - Inoltre, ogni evento elencato nel riepilogo `/event_next` include sia il deep link diretto sia il comando cliccabile `/event_subs_<id>` per visualizzare immediatamente i partecipanti.
+  - Inoltre, l'elenco `/event_next` mostra i posti disponibili/totali per ciascun evento e include il deep link diretto `[👥 Iscritti]` per visualizzare immediatamente i partecipanti.
 - **Per Disdire:** Clicca sul pulsante **[➖ Annulla]** per liberare il tuo posto e rimetterlo a disposizione di altri.

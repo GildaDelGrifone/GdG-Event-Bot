@@ -21,6 +21,7 @@ from bot.handlers.repost_schedule import (
     event_schedule_command, event_schedule_update_command, event_schedule_list_command,
 )
 from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
+from bot.handlers.story import event_regenerate_story_command
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
 from core.scheduler.runner import start_scheduler, stop_scheduler
@@ -73,6 +74,8 @@ async def post_init(application: Application):
         BotCommand("event_edit_extra", "<Note> Modifica dettagli/note extra"),
         BotCommand("event_edit_description", "<Testo> Modifica la descrizione"),
         BotCommand("event_edit_image", "[ID] Allega nuova foto per la locandina"),
+        BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram (/ers)"),
+        BotCommand("ers", "[ID] Rigenera immagine Storia Instagram"),
         BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
         BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
         BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
@@ -145,6 +148,7 @@ def main():
     ]
     for cmd in edit_cmds:
         application.add_handler(CommandHandler(cmd, event_edit_command, block=False))
+    application.add_handler(CommandHandler(["event_regenerate_story", "ers"], event_regenerate_story_command, block=False))
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
     application.add_handler(CommandHandler(["event_repost", "er"], event_repost_command, block=False))
@@ -157,6 +161,7 @@ def main():
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_edit_"), event_edit_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_process|ep)(\s|$|@)"), manual_trigger_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_generate|eg)(\s|$|@)"), event_generate_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_regenerate_story|ers)(\s|$|@)"), event_regenerate_story_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(recap_generate|rg)(\s|$|@)"), manual_recap_command))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_repost|er)(\s|$|@)"), event_repost_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule(\s|$|@)"), event_schedule_command, block=False))

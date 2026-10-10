@@ -182,22 +182,36 @@ async def _resolve_edit_target(update, cmd, value):
 
 async def _refresh_admin_message(target_msg, event, image_changed):
     has_photo = bool(getattr(target_msg, "photo", None))
+    image_path = event.get('image_path')
+    will_have_photo = has_photo or bool(image_changed and image_path and os.path.exists(image_path))
     final_text = format_public_event_message(event)
     warning_block = build_admin_warning_block(
-        event, final_text, has_image=has_photo, check_date_anomalies=event.get('status') == 'pending'
+        event, final_text, has_image=will_have_photo, check_date_anomalies=event.get('status') == 'pending'
     )
     new_text = warning_block + final_text + STATUS_SUFFIXES.get(event['status'], "")
-    if has_photo:
+    if will_have_photo:
         new_text = truncate_caption(new_text)
     keyboard = target_msg.reply_markup
 
     try:
-        image_path = event.get('image_path')
-        if image_changed and has_photo and image_path and os.path.exists(image_path):
-            with open(image_path, 'rb') as f:
-                await with_html_fallback(lambda **kw: target_msg.edit_media(
-                    media=InputMediaPhoto(media=f, caption=new_text, **kw), reply_markup=keyboard
-                ))
+        if image_changed and image_path and os.path.exists(image_path):
+            if has_photo:
+                with open(image_path, 'rb') as f:
+                    await with_html_fallback(lambda **kw: target_msg.edit_media(
+                        media=InputMediaPhoto(media=f, caption=new_text, **kw), reply_markup=keyboard
+                    ))
+            else:
+                new_msg = None
+                with open(image_path, 'rb') as f:
+                    new_msg = await with_html_fallback(lambda **kw: target_msg.reply_photo(
+                        photo=f, caption=new_text, reply_markup=keyboard, **kw
+                    ))
+                if new_msg and getattr(new_msg, "message_id", None):
+                    update_event_field(event['id'], "admin_message_id", new_msg.message_id)
+                try:
+                    await target_msg.delete()
+                except Exception as del_err:
+                    logger.debug(f"Could not delete old admin text message #{getattr(target_msg, 'message_id', None)}: {del_err}")
         elif has_photo:
             await with_html_fallback(lambda **kw: target_msg.edit_caption(caption=new_text, reply_markup=keyboard, **kw))
         else:
