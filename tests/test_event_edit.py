@@ -119,6 +119,68 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
         update.message.reply_text.assert_called_once()
         self.assertIn("Campo 'image_path' aggiornato con successo", update.message.reply_text.call_args[0][0])
 
+    async def test_event_edit_image_on_text_only_event_replaces_message(self):
+        """
+        When /event_edit_image is called on an event that previously had NO image,
+        target_msg.photo is False. The bot should send a new photo message via reply_photo,
+        update admin_message_id in the DB, and delete the old text target_msg.
+        """
+        from bot.handlers.edit import event_edit_command
+        from core.db import get_event, update_event_field
+
+        # Clear existing image on this event
+        update_event_field(self.event_id, "image_path", None)
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = None
+        update.message.caption = "/event_edit_image"
+        update.message.media_group_id = None
+        update.message.reply_text = AsyncMock()
+
+        p = MagicMock()
+        p.get_file = AsyncMock(return_value=MagicMock(download_as_bytearray=AsyncMock(return_value=bytearray(b"new_image_data"))))
+        update.message.photo = [p]
+
+        target_msg = MagicMock()
+        target_msg.message_id = 555
+        target_msg.photo = False  # Text-only event card
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        new_sent_photo_msg = MagicMock()
+        new_sent_photo_msg.message_id = 777
+        target_msg.reply_photo = AsyncMock(return_value=new_sent_photo_msg)
+        target_msg.delete = AsyncMock()
+        target_msg.edit_media = AsyncMock()
+        target_msg.edit_text = AsyncMock()
+
+        update.message.reply_to_message = target_msg
+
+        context = MagicMock()
+        new_saved_path = os.path.join(self.temp_dir.name, "new_saved_for_text_event.png")
+        with open(new_saved_path, "wb") as f:
+            f.write(b"new_image_data")
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"), \
+             patch("bot.handlers.edit.save_image_locally", return_value=new_saved_path), \
+             patch("bot.handlers.edit.update_event_messages", AsyncMock()):
+
+            await event_edit_command(update, context)
+
+        ev = get_event(self.event_id)
+        self.assertEqual(ev["image_path"], new_saved_path)
+        self.assertEqual(ev["admin_message_id"], 777)
+
+        target_msg.reply_photo.assert_called_once()
+        target_msg.delete.assert_called_once()
+        target_msg.edit_media.assert_not_called()
+        target_msg.edit_text.assert_not_called()
+
+        update.message.reply_text.assert_called_once()
+        self.assertIn("Campo 'image_path' aggiornato con successo", update.message.reply_text.call_args[0][0])
+
     async def test_event_edit_image_with_event_id_argument(self):
         from bot.handlers.edit import event_edit_command
         from core.db import get_event
@@ -742,7 +804,9 @@ class TestEventNextCommand(unittest.IsolatedAsyncioTestCase):
         self.assertIn('https://t.me/c/999999/301', reply_text)
         self.assertIn('https://t.me/c/999999/302', reply_text)
         self.assertIn('https://t.me/c/888888/401', reply_text)
-        self.assertIn(f'/event_subs {ev_today_id}', reply_text)
+        self.assertIn('/event_subs &lt;id&gt;', reply_text)
+        self.assertNotIn(f'(/event_subs {ev_today_id})', reply_text)
+        self.assertIn('👥 Iscritti</a> (Nessun limite)', reply_text)
         self.assertIn(f'start=subs_{ev_today_id}', reply_text)
 
     async def test_event_next_command_public_private_chat_allowed(self):

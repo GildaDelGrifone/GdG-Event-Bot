@@ -10,33 +10,36 @@ def format_event_title_link(event):
         return f'<a href="{link}"><b>{escaped_title}</b></a>'
     return f'<b>{escaped_title}</b>'
 
-def format_public_event_message(event_data):
+def format_event_seats(event_data):
     booked = int(event_data.get('booked_seats', 0) or 0)
     max_s = event_data.get('max_seats')
     status = event_data.get('status', 'pending')
-    
-    raw_title = event_data.get('title', 'Evento')
-    escaped_title = html.escape(raw_title)
 
     if status == 'cancelled':
         if max_s is None:
-            posti = "0 (Nessun limite) [ANNULLATO]"
-        else:
-            posti = f"0/{max_s} [ANNULLATO]"
+            return "0 (Nessun limite) [ANNULLATO]"
+        return f"0/{max_s} [ANNULLATO]"
+
+    if max_s is None:
+        if booked > 0:
+            return f"Nessun limite (Prenotati: {booked})"
+        return "Nessun limite"
+
+    max_s = int(max_s)
+    avail = max_s - booked
+    if avail <= 0:
+        return f"0/{max_s} Completo"
+    return f"{avail}/{max_s}"
+
+def format_public_event_message(event_data):
+    status = event_data.get('status', 'pending')
+    raw_title = event_data.get('title', 'Evento')
+    escaped_title = html.escape(raw_title)
+
+    posti = format_event_seats(event_data)
+    if status == 'cancelled':
         title = f"❌ [ANNULLATO] {escaped_title}"
     else:
-        if max_s is None:
-            if booked > 0:
-                posti = f"Nessun limite (Prenotati: {booked})"
-            else:
-                posti = "Nessun limite"
-        else:
-            max_s = int(max_s)
-            avail = max_s - booked
-            if avail <= 0:
-                posti = f"0/{max_s} Completo"
-            else:
-                posti = f"{avail}/{max_s}"
         title = f"{escaped_title}"
         
     extra = (event_data.get('extra_info') or '').strip()

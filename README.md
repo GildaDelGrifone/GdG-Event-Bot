@@ -160,6 +160,7 @@ In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already 
 - `/event_edit_extra <Difficoltà, avvertenze, tag, oppure null per rimuovere>`
 - `/event_edit_description <Descrizione o sinossi>`
 - `/event_edit_image` (allega una nuova foto o album in risposta alla scheda evento, oppure rispondi a una foto con `/event_edit_image <event_id>`)
+- `/event_regenerate_story` (o `/ers`): rigenera e invia in chat l'immagine della storia Instagram per l'evento risposto o per ID specificato
 
 *Nota sui controlli di validità della data:*
 Durante l'acquisizione iniziale dell'evento da parte dell'AI, il bot esegue un controllo automatico di sanità della data: se la data rilevata è nel passato oppure c'è una discrepanza tra il giorno della settimana scritto e quello effettivo di calendario (es. "Sabato 04 Settembre 2026" quando il 4 settembre è venerdì), viene anteposto un avviso visibile (`🚨 ATTENZIONE ANOMALIE DATA`) nel messaggio di revisione admin. Correggendo la data con `/event_edit_date`, l'avviso viene automaticamente rimosso.
@@ -180,7 +181,7 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 
 
 ### 7. Event Overview & Bot Control Commands
-- `/event_next`: Public command displaying today's and upcoming events in chronological order, with quick links to message, discussion chat, and direct participant list deep links / `/event_subs <id>` commands. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
+- `/event_next`: Public command displaying today's and upcoming events in chronological order, with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
 
 In `ADMIN_CHAT_ID` only:

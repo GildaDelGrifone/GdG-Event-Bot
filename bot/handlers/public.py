@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from core import config
 from core.db import get_event, get_reservations_for_event, get_upcoming_events
-from utils.templates import format_event_participants_message
+from utils.templates import format_event_participants_message, format_event_seats
 from bot.common.auth import describe_user, is_admin_chat
 from bot.common.messages import private_chat_link, reply_in_chunks, resolve_message
 
@@ -37,14 +37,15 @@ def _format_event_next_entry(ev, bot_username):
     if ev.get('message_link'):
         links.append(f'<a href="{ev["message_link"]}">Canale Eventi</a>')
 
+    seats_str = format_event_seats(ev)
     if bot_username:
         clean_username = bot_username.lstrip('@')
-        links.append(f'<a href="https://t.me/{clean_username}?start=subs_{ev_id}">👥 Iscritti</a> (/event_subs {ev_id})')
+        links.append(f'<a href="https://t.me/{clean_username}?start=subs_{ev_id}">👥 Iscritti</a> ({seats_str})')
     else:
-        links.append(f'👥 Iscritti: /event_subs {ev_id}')
+        links.append(f'👥 Iscritti ({seats_str})')
 
     return (
-        f"• <b>{escaped_title}</b> (#{ev_id}){status_suffix}\n"
+        f"• <b>{escaped_title}</b> (ID {ev_id}){status_suffix}\n"
         f"  🗓️ Data: {escaped_date}\n"
         f"  🔗 {' | '.join(links)}\n"
     )
@@ -80,7 +81,7 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         message,
         [_format_event_next_entry(ev, bot_username) for ev in events],
         limit=3800,
-        prefix="📅 <b>Eventi di oggi e prossimi in programma:</b>\n\n",
+        prefix="📅 <b>Eventi di oggi e prossimi in programma:</b>\n<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>\n\n",
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -142,5 +143,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await message.reply_text(
         "👋 Ciao! Sono il bot per la gestione degli eventi della Gilda del Grifone.\n\n"
-        "Puoi visualizzare le proposte e gestire le prenotazioni direttamente dai pulsanti interattivi sul canale e nel gruppo di discussione!"
+        "Puoi visualizzare le proposte e gestire le prenotazioni direttamente dai pulsanti interattivi sul canale e nel gruppo di discussione!\n\n"
+        "Inoltre puoi visualizzare facilmente gli eventi in programma e i partecipanti con i seguenti comandi:\n"
+        "/event_next - Visualizza gli eventi in programma\n"
+        "/event_subs <id> - Visualizza i partecipanti a un evento specifico\n"
     )
