@@ -130,7 +130,7 @@ python3 main.py
 - **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`.
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).
-- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` (or shortcut `/eg`) with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches official box images from BoardGameGeek, stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
+- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches official box images from BoardGameGeek, stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
 
 ### 2. Live Seat Booking & Same-Day Conflict Warnings
 - Users click `[➕ Prenota]` on a channel post or discussion group reply to reserve a seat (or see `[🚫 Esauriti]` if full).
@@ -158,9 +158,10 @@ In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already 
 - `/event_edit_seats <X/Y, numero intero, oppure null>` (`X/Y` imposta posti liberi/totali; un intero imposta il totale mantenendo le prenotazioni; `null`, `nessuno`, `illimitati`, `unlimited`, `none` o `0` rendono i posti illimitati, mostrati come `no limit`)
 - `/event_edit_booked <numero intero>`
 - `/event_edit_extra <Difficoltà, avvertenze, tag, oppure null per rimuovere>`
+- `/event_edit_extra_add <Nuovo testo extra da aggiungere su nuova riga>`
 - `/event_edit_description <Descrizione o sinossi>`
 - `/event_edit_image` (allega una nuova foto o album in risposta alla scheda evento, oppure rispondi a una foto con `/event_edit_image <event_id>`)
-- `/event_regenerate_story` (o `/ers`): rigenera e invia in chat l'immagine della storia Instagram per l'evento risposto o per ID specificato
+- `/event_regenerate_story`: rigenera e invia in chat l'immagine della storia Instagram per l'evento risposto o per ID specificato
 
 *Nota sui controlli di validità della data:*
 Durante l'acquisizione iniziale dell'evento da parte dell'AI, il bot esegue un controllo automatico di sanità della data: se la data rilevata è nel passato oppure c'è una discrepanza tra il giorno della settimana scritto e quello effettivo di calendario (es. "Sabato 04 Settembre 2026" quando il 4 settembre è venerdì), viene anteposto un avviso visibile (`🚨 ATTENZIONE ANOMALIE DATA`) nel messaggio di revisione admin. Correggendo la data con `/event_edit_date`, l'avviso viene automaticamente rimosso.

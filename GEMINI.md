@@ -61,8 +61,8 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Photos/albums sent in `ADMIN_CHAT_ID` are silently cached in memory. When replying with `/ep` to any photo in an album, the bot aggregates all sibling photos of that `media_group_id`, stitches them into a horizontal collage using `utils/image_utils.create_collage_from_bytes`, and resolves text from the command, replied message, or album captions.
    - **Note:** Manual triggers bypass the keyword pre-filter, enabling admins to process events with non-standard formatting.
    - Operates through the identical parsing and review pipeline.
-3. **AI Event Generation (`/event_generate` or `/eg`):**
-   - Admins can send `/event_generate <istruzioni>` or `/eg <istruzioni>` (or reply to a message with the command) in `ADMIN_CHAT_ID`.
+3. **AI Event Generation (`/event_generate`):**
+   - Admins can send `/event_generate <istruzioni>` (or reply to a message with the command) in `ADMIN_CHAT_ID`.
    - Handled in the `bot/event_generator/` package (`command.py` → `pipeline.py`, using `ai.py` and `bgg.py`):
      - Gemini AI interprets natural language instructions (games, date, host, seats, extra info, RPG vs board game) and writes an engaging synopsis/pitch in Italian constrained to <= 400 characters.
      - For each identified game, queries the BoardGameGeek JSON API (`https://api.geekdo.com/api/geekitems`) to find the best match and download the official box cover image.
@@ -278,7 +278,7 @@ GdG-Event-Bot/
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
 │   │   └── mentions.py   # User/subscriber mention formatting
-│   └── event_generator/  # /event_generate (/eg)
+│   └── event_generator/  # /event_generate
 │       ├── command.py    # Telegram command handler
 │       ├── pipeline.py   # Generation pipeline, caption limit, admin preview
 │       ├── ai.py         # Gemini prompt + response normalization
@@ -344,7 +344,7 @@ GdG-Event-Bot/
 - **`bot/handlers/`:**
   - `albums.py` owns `media_groups` / `admin_media_groups`, module-level dicts (changed in place, never reassigned) that buffer album photos for channel ingestion and for admin `/ep` / `/event_edit_image`.
   - `extraction.handle_event_extraction` is the single ingestion pipeline. Channel posts, albums, `/ep`, `/event_repost` and `/event_schedule_invoke` all go through it.
-  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field. `FIELD_EDITORS` maps fields that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
+  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field (including `/event_edit_extra_add`). `FIELD_EDITORS` maps fields/commands that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `/event_edit_extra_add`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
   - Shared flows: `subscribers._add_subscriber_and_notify` (used by the ForceReply prompt and `/event_sub_add`), `subscribers._parse_subscriber_command` (shared by `/event_sub_add` and `/event_sub_remove`), `public._reply_with_participants` (used by `/event_subs` and the `start=subs_<id>` deep link), and `repost.extract_repost_content` (shared by repost and repost scheduling).
 - **`bot/callbacks/`:** `router.handle_callback_query` is the only `CallbackQueryHandler` registered in `main.py`. It walks `CALLBACK_ROUTES`, an ordered `(prefix, handler)` table, and calls `handler(query, context, payload)` with the callback data that follows the prefix. To add a button, give it a new callback prefix (one that is not a prefix of an existing entry; a test enforces this), write the handler in the matching feature module, and add one row to `CALLBACK_ROUTES`.
 - **`bot/service/`:**

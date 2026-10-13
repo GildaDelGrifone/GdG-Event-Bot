@@ -484,6 +484,154 @@ class TestEventEditImageAndDiscard(unittest.IsolatedAsyncioTestCase):
 
         update.message.reply_text.assert_called_once()
         self.assertIn("non trovato nel database", update.message.reply_text.call_args[0][0])
+
+    async def test_event_edit_extra_add_when_empty(self):
+        from bot.handlers.edit import event_edit_command
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = "/event_edit_extra_add Prima nota extra"
+        update.message.caption = None
+        update.message.reply_text = AsyncMock()
+
+        target_msg = MagicMock()
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        target_msg.photo = None
+        target_msg.edit_text = AsyncMock()
+        update.message.reply_to_message = target_msg
+        context = MagicMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
+            await event_edit_command(update, context)
+
+        ev = db.get_event(self.event_id)
+        self.assertEqual(ev.get("extra_info"), "Prima nota extra")
+        update.message.reply_text.assert_called_once()
+        self.assertIn("aggiornato con successo", update.message.reply_text.call_args[0][0])
+
+    async def test_event_edit_extra_add_appends_on_new_line(self):
+        from bot.handlers.edit import event_edit_command
+
+        db.update_event_field(self.event_id, "extra_info", "Nota esistente")
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = "/event_edit_extra_add Nuova nota aggiunta"
+        update.message.caption = None
+        update.message.reply_text = AsyncMock()
+
+        target_msg = MagicMock()
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        target_msg.photo = None
+        target_msg.edit_text = AsyncMock()
+        update.message.reply_to_message = target_msg
+        context = MagicMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
+            await event_edit_command(update, context)
+
+        ev = db.get_event(self.event_id)
+        self.assertEqual(ev.get("extra_info"), "Nota esistente\nNuova nota aggiunta")
+        update.message.reply_text.assert_called_once()
+        self.assertIn("aggiornato con successo", update.message.reply_text.call_args[0][0])
+
+    async def test_event_edit_extra_add_preserves_multiline_text(self):
+        from bot.handlers.edit import event_edit_command
+
+        db.update_event_field(self.event_id, "extra_info", "Nota base")
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = "/event_edit_extra_add Riga 1\nRiga 2\nRiga 3"
+        update.message.caption = None
+        update.message.reply_text = AsyncMock()
+
+        target_msg = MagicMock()
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        target_msg.photo = None
+        target_msg.edit_text = AsyncMock()
+        update.message.reply_to_message = target_msg
+        context = MagicMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
+            await event_edit_command(update, context)
+
+        ev = db.get_event(self.event_id)
+        self.assertEqual(ev.get("extra_info"), "Nota base\nRiga 1\nRiga 2\nRiga 3")
+        update.message.reply_text.assert_called_once()
+        self.assertIn("aggiornato con successo", update.message.reply_text.call_args[0][0])
+
+    async def test_event_edit_extra_add_empty_value_shows_error(self):
+        from bot.handlers.edit import event_edit_command
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = "/event_edit_extra_add"
+        update.message.caption = None
+        update.message.reply_text = AsyncMock()
+
+        target_msg = MagicMock()
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        update.message.reply_to_message = target_msg
+        context = MagicMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
+            await event_edit_command(update, context)
+
+        ev = db.get_event(self.event_id)
+        self.assertFalse(ev.get("extra_info"))
+        update.message.reply_text.assert_called_once()
+        self.assertIn("specificare il testo", update.message.reply_text.call_args[0][0].lower())
+
+    async def test_event_edit_extra_add_warns_when_caption_size_busts(self):
+        from bot.handlers.edit import event_edit_command
+
+        # Event description is already substantial
+        db.update_event_field(self.event_id, "description", "D" * 800)
+
+        # Added extra text pushes the full formatted message well beyond 1024 chars
+        added_text = "E" * 300
+
+        update = MagicMock()
+        update.effective_chat.id = 999
+        update.message = MagicMock()
+        update.message.text = f"/event_edit_extra_add {added_text}"
+        update.message.caption = None
+        update.message.reply_text = AsyncMock()
+
+        target_msg = MagicMock()
+        target_msg.reply_markup.inline_keyboard = [
+            [MagicMock(callback_data=f"publish_event_{self.event_id}")]
+        ]
+        target_msg.photo = None
+        target_msg.edit_text = AsyncMock()
+        update.message.reply_to_message = target_msg
+        context = MagicMock()
+
+        with patch("core.config.ADMIN_CHAT_ID", "999"):
+            await event_edit_command(update, context)
+
+        ev = db.get_event(self.event_id)
+        self.assertEqual(ev.get("extra_info"), added_text)
+
+        # Admin must receive the warning
+        all_replies = [call[0][0] for call in update.message.reply_text.call_args_list]
+        self.assertTrue(
+            any("Attenzione" in r and "1024" in r for r in all_replies),
+            f"Expected warning in replies, got: {all_replies}"
+        )
     def test_extract_event_id_from_reply_various_formats(self):
         from bot.common.parsing import extract_event_id_from_reply
 
