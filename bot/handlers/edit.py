@@ -10,7 +10,7 @@ from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally, delete_local_image, move_image_locally
 from utils.templates import format_public_event_message
 from bot.common.auth import admin_only, describe_user
-from bot.common.messages import is_not_modified_error, truncate_caption, with_html_fallback
+from bot.common.messages import CAPTION_LIMIT, is_not_modified_error, truncate_caption, with_html_fallback
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, extract_event_id_from_reply, parse_seats_input
 from bot.common.previews import build_admin_warning_block
 from bot.handlers.albums import extract_image_bytes_from_update
@@ -32,6 +32,7 @@ EDIT_COMMAND_FIELDS = {
     "/event_edit_booked": "booked_seats",
     "/event_edit_host": "host",
     "/event_edit_extra": "extra_info",
+    "/event_edit_extra_add": "extra_info",
     "/event_edit_description": "description",
     "/event_edit_image": "image_path",
     "/event_edit_type": "is_roleplay",
@@ -125,6 +126,34 @@ async def _edit_extra_info(update, event_id, current_event, value):
     return update_event_field(event_id, "extra_info", value)
 
 
+async def _edit_extra_info_add(update, event_id, current_event, value):
+    if not value:
+        raise EditInputError(
+            "Devi specificare il testo da aggiungere. (es. <code>/event_edit_extra_add Note aggiuntive</code>)",
+            parse_mode="HTML",
+        )
+
+    current_extra = (current_event.get("extra_info") or "").strip()
+    if current_extra:
+        new_extra = f"{current_extra}\n{value}"
+    else:
+        new_extra = value
+
+    temp_event = dict(current_event)
+    temp_event["extra_info"] = new_extra
+    final_text = format_public_event_message(temp_event)
+
+    if len(final_text) > CAPTION_LIMIT:
+        warning_msg = (
+            f"⚠️ <b>Attenzione:</b> il testo dell'evento supera la dimensione massima per la didascalia "
+            f"({len(final_text)}/{CAPTION_LIMIT} caratteri)!\n"
+            f"Se l'evento ha un'immagine, la pubblicazione o l'aggiornamento della didascalia fallirà."
+        )
+        await with_html_fallback(lambda **kw: update.message.reply_text(warning_msg, **kw))
+
+    return update_event_field(event_id, "extra_info", new_extra)
+
+
 async def _edit_roleplay_type(update, event_id, current_event, value):
     clean = value.strip().lower()
     if clean in ROLEPLAY_TRUE_TOKENS:
@@ -145,6 +174,8 @@ async def _edit_roleplay_type(update, event_id, current_event, value):
 
 # Editors take (update, event_id, current_event, value) and return the DB success flag
 FIELD_EDITORS = {
+    "/event_edit_extra_add": _edit_extra_info_add,
+    "extra_info_add": _edit_extra_info_add,
     "image_path": _edit_image,
     "date": _edit_date,
     "seats": edit_seats,
@@ -242,7 +273,7 @@ async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Evento non trovato nel database (potrebbe essere stato eliminato o scartato).")
         return
 
-    editor = FIELD_EDITORS.get(field) or _plain_field_editor(field)
+    editor = FIELD_EDITORS.get(cmd) or FIELD_EDITORS.get(field) or _plain_field_editor(field)
     try:
         success = await editor(update, event_id, current_event, value)
     except EditInputError as e:

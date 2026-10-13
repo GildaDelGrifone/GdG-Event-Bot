@@ -20,8 +20,8 @@ Gli amministratori gestiscono il bot tramite il **Gruppo Admin**.
 
 ### 1. Creare un Evento
 - **Modalità Automatica:** Invia o inoltra semplicemente il messaggio di proposta (testo ed eventuale immagine) all'interno del Gruppo Admin. Il bot lo leggerà e genererà una scheda di anteprima (Draft).
-- **Generazione con AI e BoardGameGeek (`/event_generate` o `/eg`):** Invia nel Gruppo Admin un messaggio con istruzioni libere (es. giochi, data, host, posti):
-  `/event_generate Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti` (oppure `/eg <testo>`)
+- **Generazione con AI e BoardGameGeek (`/event_generate`):** Invia nel Gruppo Admin un messaggio con istruzioni libere (es. giochi, data, host, posti):
+  `/event_generate Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`
   Il bot interpreterà la richiesta tramite l'IA, scaricherà le locandine ufficiali dei giochi da BoardGameGeek (componendo automaticamente un collage se sono presenti più giochi), genererà una sinossi rispettando il limite di 1024 caratteri della didascalia Telegram e sottoporrà la bozza a revisione admin.
 - **Protezione del Canale Eventi Pubblico:** Se un utente o un amministratore invia *manualmente* una proposta di evento in modo diretto nel canale pubblico degli eventi, **il bot la cancellerà istantaneamente** per mantenere il canale pulito e standardizzato. Il messaggio originale verrà inoltrato automaticamente nel Gruppo Admin, dove potrà essere processato, revisionato dall'IA e infine pubblicato ufficialmente.
 - **Modalità Manuale:** Se il bot è disabilitato o non ha catturato un messaggio, puoi forzare la lettura rispondendo al messaggio originale con il comando:
@@ -36,9 +36,10 @@ Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere 
 - `/event_edit_type <rpg|boardgame>` *(imposta se l'evento è un gioco di ruolo [Master] o gioco da tavolo [Host])*
 - `/event_edit_seats <X/Y>` *(es. 0/5 per azzerare i posti occupati su 5 massimi)*
 - `/event_edit_extra <Note extra, avvertenze o tag>`
+- `/event_edit_extra_add <Nuovo testo extra da aggiungere su nuova riga>`
 - `/event_edit_description <Nuova descrizione dell'evento>`
 - `/event_edit_image` *(allega una nuova foto o album in risposta alla scheda evento, o rispondi a una foto con `/event_edit_image <event_id>`)*
-- `/event_regenerate_story` (o `/ers`) *(rigenera l'immagine della storia Instagram rispondendo alla scheda evento o specificando l'ID)*
+- `/event_regenerate_story` *(rigenera l'immagine della storia Instagram rispondendo alla scheda evento o specificando l'ID)*
 
 ### 3. Pubblicare o Annullare
 Sotto l'anteprima dell'evento troverai i pulsanti:

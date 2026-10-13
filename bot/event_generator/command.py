@@ -14,13 +14,12 @@ USAGE = (
     "Invia il comando seguito dai dettagli dell'evento, oppure rispondi a un messaggio.\n\n"
     "**Esempi:**\n"
     "`/event_generate Catan e Carcassonne, venerdì 10 ottobre ore 21, Host Destard, 4 posti`\n"
-    "`/eg Root, domani alle 20:45, Host Marco`"
 )
 
 
 @admin_only(notify=True)
 async def event_generate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/event_generate and /eg in ADMIN_CHAT_ID."""
+    """/event_generate in ADMIN_CHAT_ID."""
     msg = resolve_message(update)
     if not msg:
         return

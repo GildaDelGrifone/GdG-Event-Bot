@@ -58,7 +58,6 @@ async def post_init(application: Application):
         BotCommand("event_process", "<testo o foto> Analizza e crea bozza evento"),
         BotCommand("ep", "<testo o foto> Analizza e crea bozza evento"),
         BotCommand("event_generate", "<istruzioni> Genera evento e locandina con AI"),
-        BotCommand("eg", "<istruzioni> Genera evento e locandina con AI"),
         BotCommand("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
         BotCommand("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
         BotCommand("bot_pause", "Mette in pausa l'intercettazione automatica"),
@@ -72,10 +71,10 @@ async def post_init(application: Application):
         BotCommand("event_edit_seats", "<X/Y> Modifica posti disponibili/totali"),
         BotCommand("event_edit_booked", "<N> Modifica posti già prenotati"),
         BotCommand("event_edit_extra", "<Note> Modifica dettagli/note extra"),
+        BotCommand("event_edit_extra_add", "<Note> Aggiunge dettagli/note extra"),
         BotCommand("event_edit_description", "<Testo> Modifica la descrizione"),
         BotCommand("event_edit_image", "[ID] Allega nuova foto per la locandina"),
-        BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram (/ers)"),
-        BotCommand("ers", "[ID] Rigenera immagine Storia Instagram"),
+        BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram"),
         BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
         BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
         BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
@@ -130,7 +129,6 @@ def main():
     application.add_handler(CommandHandler("event_process", manual_trigger_command, block=False))
     application.add_handler(CommandHandler("ep", manual_trigger_command, block=False))
     application.add_handler(CommandHandler("event_generate", event_generate_command, block=False))
-    application.add_handler(CommandHandler("eg", event_generate_command, block=False))
     application.add_handler(CommandHandler("event_next", event_next_command))
     application.add_handler(CommandHandler(["event_subs", "subs"], event_subs_command))
     application.add_handler(MessageHandler(filters.Regex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)") | filters.CaptionRegex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)"), event_subs_command))
@@ -143,15 +141,15 @@ def main():
     edit_cmds = [
         "event_edit_title", "event_edit_date",
         "event_edit_system", "event_edit_seats", "event_edit_booked",
-        "event_edit_host", "event_edit_extra", "event_edit_description",
+        "event_edit_host", "event_edit_extra", "event_edit_extra_add", "event_edit_description",
         "event_edit_image", "event_edit_type"
     ]
     for cmd in edit_cmds:
         application.add_handler(CommandHandler(cmd, event_edit_command, block=False))
-    application.add_handler(CommandHandler(["event_regenerate_story", "ers"], event_regenerate_story_command, block=False))
+    application.add_handler(CommandHandler("event_regenerate_story", event_regenerate_story_command, block=False))
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
-    application.add_handler(CommandHandler(["event_repost", "er"], event_repost_command, block=False))
+    application.add_handler(CommandHandler("event_repost", event_repost_command, block=False))
     application.add_handler(CommandHandler("event_schedule", event_schedule_command, block=False))
     application.add_handler(CommandHandler("event_schedule_invoke", event_schedule_invoke_command, block=False))
     application.add_handler(CommandHandler("event_schedule_update", event_schedule_update_command, block=False))
