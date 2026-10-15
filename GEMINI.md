@@ -16,6 +16,7 @@
 - [3. Directory Structure](#3-directory-structure)
   - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
   - [3.2. `core/` Package Architecture](#32-core-package-architecture)
+  - [3.3. `tests/` Layout](#33-tests-layout)
 - [4. Database Schema (SQLite: `bot_database.db`)](#4-database-schema-sqlite-bot_databasedb)
 - [5. Environment Variables (`.env`)](#5-environment-variables-env)
 - [6. Templates & Character Limit Handling](#6-templates--character-limit-handling)
@@ -316,7 +317,7 @@ GdG-Event-Bot/
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
-├── tests/                # unittest/pytest suite (mocks Telegram, uses temporary SQLite DBs)
+├── tests/                # unittest/pytest suite mirroring the source tree; shared helpers in tests/support/ (see §3.3)
 ├── data/                 # Default local storage for SQLite DB, fonts, and images
 │   ├── Roboto-Bold.ttf
 │   ├── Roboto-Regular.ttf
@@ -369,6 +370,20 @@ GdG-Event-Bot/
 - **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
 - **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
+
+### 3.3. `tests/` Layout
+- **Mirrors the source tree.** There is one test file per module under test: `tests/bot/handlers/test_edit.py` tests `bot/handlers/edit.py`, `tests/core/scheduler/test_archive.py` tests `core/scheduler/archive.py`, and `tests/test_main.py` tests `main.py`. Add new tests next to the module they exercise, not in per-feature or per-ticket files. `tests/` and each subfolder are packages, so no `sys.path` setup or `conftest.py` is needed. Both `python3 -m pytest tests` and `python3 -m unittest discover -s tests -t .` work.
+- **`tests/support/` helpers:**
+  - `db.py`: `TempDBMixin` (a fresh SQLite file per test by patching `core.config.DB_PATH`, plus `self.temp_dir`, `init_db()` already run), `sample_event` / `create_event(status=..., **fields)`, and shared fixtures such as `create_subscribed_event()`.
+  - `telegram.py`: `make_update`, `admin_update`, `make_message` (media fields explicitly `None`), `channel_message`, `admin_card(event_id)`, `callback_update(data) -> (update, query)`, `make_context`, `make_bot`, `make_user`, `telegram_photo(bytes)`.
+  - `config.py`: `patched_config(**settings)`, `as_admin_chat()`, `wordpress_credentials()`.
+  - `images.py`: `make_image`, `image_bytes`, `image_file`.
+
+  Prefer these over hand-built `MagicMock`s.
+- **Patching convention:**
+  - Settings: patch `core.config.*` (`patched_config(...)`).
+  - Functions: patch them where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `core.wordpress.client.requests.post`.
+  - Isolation: tests must not read real tokens or touch the real `DB_PATH` / `DATA_DIR`. Point `DATA_DIR` at `self.temp_dir` for jobs that move or zip images.
 
 ---
 
