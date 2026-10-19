@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import core.db as db
 from bot.callbacks.router import handle_callback_query
-from tests.support.config import patched_config
+from tests.support.config import eventbrite_credentials, patched_config
 from tests.support.db import TempDBMixin, create_event, create_subscribed_event
 from tests.support.telegram import callback_update, make_context, make_user
 
@@ -93,6 +93,86 @@ class TestCancelReactivateCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCas
             self.assertEqual(db.get_event(event_id)["status"], "approved")
             query.edit_message_caption.assert_called_once()
             self.assertTrue(any("cancel_event_" in data for data in keyboard_callbacks()))
+
+
+class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.context = make_context()
+        self.publish = patch("bot.callbacks.events.publish_event_to_eventbrite", new_callable=AsyncMock).start()
+        self.cancel = patch("bot.callbacks.events.cancel_on_eventbrite", new_callable=AsyncMock).start()
+        self.reactivate = patch("bot.callbacks.events.reactivate_on_eventbrite", new_callable=AsyncMock).start()
+        self.recreate = patch("bot.callbacks.events.recreate_on_eventbrite", new_callable=AsyncMock).start()
+        self.update_messages = patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock).start()
+        patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
+        patch("bot.callbacks.events.send_reactivation_notice", new_callable=AsyncMock).start()
+        patch("bot.callbacks.events._send_story_preview", new_callable=AsyncMock).start()
+        self.addCleanup(patch.stopall)
+
+    async def test_publish_with_eventbrite_publishes_on_telegram_then_on_eventbrite(self):
+        event_id = create_event()
+        update, query = callback_update(f"publish_eb_event_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
+
+        with patched_config(PUBLIC_CHANNEL_ID=None):
+            await handle_callback_query(update, self.context)
+
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        query.edit_message_caption.assert_called_once()
+        self.assertIn("✅ APPROVATO", query.edit_message_caption.call_args.kwargs["caption"])
+        self.publish.assert_awaited_once_with(self.context, event_id, 999)
+
+    async def test_plain_publish_never_touches_eventbrite(self):
+        event_id = create_event()
+        update, _ = callback_update(f"publish_event_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
+        with patched_config(PUBLIC_CHANNEL_ID=None):
+            await handle_callback_query(update, self.context)
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.publish.assert_not_awaited()
+
+    async def test_eventbrite_publish_button(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"eb_publish_{event_id}", chat_id=999)
+        await handle_callback_query(update, self.context)
+        query.answer.assert_awaited()
+        self.publish.assert_awaited_once_with(self.context, event_id, 999)
+
+    async def test_recreate_button_is_removed_and_recreates(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"eb_recreate_{event_id}", chat_id=999)
+        await handle_callback_query(update, self.context)
+        query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
+        self.recreate.assert_awaited_once_with(self.context, event_id, 999)
+
+    async def test_cancel_and_reactivate_mirror_on_eventbrite_only_for_linked_events(self):
+        linked = create_event(status="approved")
+        db.set_eventbrite_info(linked, eventbrite_event_id="eb1", eventbrite_status="live")
+        unlinked = create_event(status="approved")
+
+        for event_id in (linked, unlinked):
+            update, _ = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
+            await handle_callback_query(update, self.context)
+        self.cancel.assert_awaited_once()
+        cancelled_event = self.cancel.call_args.args[1]
+        self.assertEqual((cancelled_event["id"], cancelled_event["status"]), (linked, "cancelled"))
+
+        for event_id in (linked, unlinked):
+            update, _ = callback_update(f"reactivate_event_{event_id}", text=None, caption="Card", photo=True)
+            await handle_callback_query(update, self.context)
+        self.reactivate.assert_awaited_once()
+        reactivated_event = self.reactivate.call_args.args[1]
+        self.assertEqual((reactivated_event["id"], reactivated_event["status"]), (linked, "approved"))
+
+    async def test_reactivated_card_shows_the_eventbrite_dashboard_button(self):
+        event_id = create_event(status="cancelled")
+        db.set_eventbrite_info(event_id, eventbrite_event_id="eb1", eventbrite_status="unpublished")
+        update, query = callback_update(f"reactivate_event_{event_id}", text=None, caption="Card", photo=True)
+
+        with eventbrite_credentials():
+            await handle_callback_query(update, self.context)
+
+        keyboard = query.edit_message_caption.call_args.kwargs["reply_markup"]
+        urls = [b.url for row in keyboard.inline_keyboard for b in row if b.url]
+        self.assertEqual(urls, ["https://www.eventbrite.com/myevent?eid=eb1"])
 
 
 if __name__ == "__main__":

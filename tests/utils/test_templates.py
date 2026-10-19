@@ -3,6 +3,7 @@ import unittest
 import core.db as db
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event
 from utils.templates import (
+    format_discussion_booking_message,
     format_event_participants_message,
     format_event_seats,
     format_instagram_story,
@@ -176,6 +177,41 @@ class TestSubscribersWithoutUsername(TempDBMixin, unittest.TestCase):
         self.assertIn("<b>@ChicoMalo96</b>", msg)
         self.assertNotIn("@Lorenzo", msg)
         self.assertIn('<b><a href="tg://user?id=8893283822">Lorenzo Duarte</a></b>', msg)
+
+
+class TestEventbriteTemplates(unittest.TestCase):
+    def test_eventbrite_subscribers_are_prefixed_in_both_modes(self):
+        res = {"source": "eventbrite", "username": None, "user_id": None, "full_name": "Mario <R.>"}
+        self.assertEqual(format_reservation_subscriber_display(res, as_html=True), "🎟️ Mario &lt;R.&gt;")
+        self.assertEqual(format_reservation_subscriber_display(res, as_html=False), "🎟️ Mario <R.>")
+        self.assertEqual(format_reservation_subscriber_display({"source": "eventbrite"}), "🎟️ Partecipante Eventbrite")
+
+    def test_telegram_subscribers_are_unchanged(self):
+        res = {"source": "telegram", "username": "mario", "user_id": 1, "full_name": None}
+        self.assertEqual(format_reservation_subscriber_display(res), "@mario")
+
+    def test_participants_message_lists_eventbrite_bookings(self):
+        event = {"id": 1, "title": "T", "booked_seats": 3, "max_seats": 4}
+        reservations = [
+            {"source": "eventbrite", "full_name": "Mario R.", "seats_booked": 2},
+            {"source": "telegram", "username": "luigi", "user_id": 2, "seats_booked": 1},
+        ]
+        message = format_event_participants_message(event, reservations)
+        self.assertIn("<b>🎟️ Mario R.</b> (2 posti)", message)
+        self.assertIn("<b>@luigi</b>", message)
+
+    def test_discussion_booking_message(self):
+        plain = "👇 Gestisci qui la tua prenotazione!"
+        self.assertEqual(format_discussion_booking_message({}), plain)
+        self.assertEqual(format_discussion_booking_message(None), plain)
+        live = {"eventbrite_url": "https://eb.example/e/1?a=1&b=2", "eventbrite_status": "live"}
+        self.assertEqual(
+            format_discussion_booking_message(live),
+            plain + '\n🎟️ Prenota anche su Eventbrite: <a href="https://eb.example/e/1?a=1&amp;b=2">link</a>')
+        for status in ("draft", "unpublished", "closed", "canceled", None):
+            with self.subTest(status=status):
+                self.assertEqual(format_discussion_booking_message({**live, "eventbrite_status": status}), plain)
+        self.assertEqual(format_discussion_booking_message({"eventbrite_status": "live"}), plain)
 
 
 if __name__ == "__main__":

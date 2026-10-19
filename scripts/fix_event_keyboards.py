@@ -196,7 +196,7 @@ async def fix_keyboards(
         if status == "pending":
             admin_keyboard = get_approval_keyboard(event_id)
         elif status == "approved":
-            admin_keyboard = get_approved_event_keyboard(event_id)
+            admin_keyboard = get_approved_event_keyboard(event_id, ev)
         elif status == "cancelled":
             admin_keyboard = get_cancelled_event_keyboard(event_id)
 

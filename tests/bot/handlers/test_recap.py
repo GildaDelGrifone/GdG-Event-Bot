@@ -1,11 +1,13 @@
 import unittest
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from bot.handlers.recap import manual_recap_command
+import core.db as db
+from bot.handlers.recap import handle_discussion_forward, manual_recap_command
 from tests.support.config import as_admin_chat
 from tests.support.db import TempDBMixin, create_event
-from tests.support.telegram import admin_update, make_context
+from bot.state import runtime_state
+from tests.support.telegram import admin_update, make_context, make_message, make_update
 
 
 class TestManualRecapCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -68,6 +70,52 @@ class TestManualRecapCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recap_call_kwargs["chat_id"], "999")
         self.assertIn("Partita di Oggi", recap_call_kwargs["text"])
         update.message.reply_text.assert_called_once_with("Recap generato per la data: Oggi")
+
+
+class TestDiscussionForward(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.event_id = create_event(status="approved", telegram_message_id=777)
+        self.context = make_context(bot_username="test_bot")
+        # Other tests publish a recap as message 777; make sure it is not remembered here
+        recap_patch = patch.object(runtime_state, "last_recap_message_id", None)
+        recap_patch.start()
+        self.addCleanup(recap_patch.stop)
+
+    def forward(self):
+        message = make_message(chat_id=-100222, message_id=888)
+        message.is_automatic_forward = True
+        message.forward_origin = MagicMock(type="channel", message_id=777)
+        return make_update(message=message)
+
+    async def test_first_forward_posts_the_booking_reply_without_a_link(self):
+        await handle_discussion_forward(self.forward(), self.context)
+
+        call = self.context.bot.send_message.call_args.kwargs
+        self.assertEqual(call["text"], "👇 Gestisci qui la tua prenotazione!")
+        self.assertEqual((call["parse_mode"], call["disable_web_page_preview"]), ("HTML", True))
+        self.assertEqual(call["reply_to_message_id"], 888)
+        self.assertIsNotNone(call["reply_markup"])
+
+    async def test_forward_of_an_eventbrite_event_includes_the_link(self):
+        db.set_eventbrite_info(self.event_id, eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="live")
+
+        await handle_discussion_forward(self.forward(), self.context)
+
+        text = self.context.bot.send_message.call_args.kwargs["text"]
+        self.assertIn("🎟️ Prenota anche su Eventbrite: <a href=\"https://eventbrite.example/e/1\">link</a>", text)
+
+    async def test_existing_reply_is_edited_as_text_with_the_link(self):
+        db.update_discussion_message_info(self.event_id, 4242, -100222)
+        db.set_eventbrite_info(self.event_id, eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="live")
+
+        await handle_discussion_forward(self.forward(), self.context)
+
+        self.context.bot.send_message.assert_not_called()
+        call = self.context.bot.edit_message_text.call_args.kwargs
+        self.assertEqual((call["chat_id"], call["message_id"]), (-100222, 4242))
+        self.assertIn("Eventbrite", call["text"])
+        self.assertEqual((call["parse_mode"], call["disable_web_page_preview"]), ("HTML", True))
 
 
 if __name__ == "__main__":
