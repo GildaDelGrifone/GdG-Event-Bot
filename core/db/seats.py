@@ -1,9 +1,10 @@
 """Seat bookings: every change to reservations keeps events.booked_seats and events.seats in sync."""
 from core.db.connection import db_safe, transaction
-from core.db.reservations import NAME_MATCH_SQL, clean_username, normalize_identity
+from core.db.reservations import NAME_MATCH_SQL, NOT_EVENTBRITE_SQL, clean_username, normalize_identity
 
 EVENT_NOT_FOUND = "Evento non trovato."
 EVENT_CANCELLED = "Evento annullato."
+EVENTBRITE_RESERVATION = "Prenotazione Eventbrite: gestiscila dalla dashboard Eventbrite."
 
 
 def _load_seat_state(cur, event_id, cancelled_message=EVENT_CANCELLED):
@@ -58,6 +59,7 @@ def book_seat(event_id, user_id, username=None, full_name=None):
         # Admin-added reservations have no user_id yet; claim them by username
         cur.execute(
             'SELECT id, username, full_name FROM reservations WHERE event_id = ? '
+            f'AND {NOT_EVENTBRITE_SQL} '
             'AND (user_id = ? OR (user_id IS NULL AND username IS NOT NULL AND LOWER(username) = LOWER(?)))',
             (event_id, user_id, uname),
         )
@@ -85,7 +87,7 @@ def unbook_seat(event_id, user_id, username=None):
 
         name = clean_username(username)
         cur.execute(
-            "SELECT id, seats_booked FROM reservations WHERE event_id = ? AND (user_id = ? "
+            f"SELECT id, seats_booked FROM reservations WHERE event_id = ? AND {NOT_EVENTBRITE_SQL} AND (user_id = ? "
             "OR (LOWER(username) = LOWER(?) AND ? != '') OR (full_name IS NOT NULL AND LOWER(full_name) = LOWER(?) AND ? != ''))",
             (event_id, user_id, name, name, name, name),
         )
@@ -108,10 +110,12 @@ def admin_add_seat(event_id, reservation_id):
         if capacity is not None and booked >= capacity:
             return False, "Capienza massima raggiunta!"
 
-        cur.execute('SELECT id, username FROM reservations WHERE id = ? AND event_id = ?', (reservation_id, event_id))
+        cur.execute('SELECT id, username, source FROM reservations WHERE id = ? AND event_id = ?', (reservation_id, event_id))
         res = cur.fetchone()
         if not res:
             return False, "Prenotazione non trovata."
+        if res['source'] == 'eventbrite':
+            return False, EVENTBRITE_RESERVATION
 
         cur.execute('UPDATE reservations SET seats_booked = seats_booked + 1 WHERE id = ?', (reservation_id,))
         _set_booked_seats(cur, event_id, ev, booked + 1)
@@ -125,10 +129,15 @@ def admin_remove_seat(event_id, reservation_id):
         if error:
             return False, error
 
-        cur.execute('SELECT id, seats_booked, username FROM reservations WHERE id = ? AND event_id = ?', (reservation_id, event_id))
+        cur.execute(
+            'SELECT id, seats_booked, username, source FROM reservations WHERE id = ? AND event_id = ?',
+            (reservation_id, event_id),
+        )
         res = cur.fetchone()
         if not res:
             return False, "Prenotazione non trovata."
+        if res['source'] == 'eventbrite':
+            return False, EVENTBRITE_RESERVATION
 
         _decrement_or_delete(cur, reservation_id, res['seats_booked'])
         _set_booked_seats(cur, event_id, ev, _booked(ev) - 1)
@@ -153,7 +162,8 @@ def admin_add_subscriber(event_id, username, seats=1, user_id=None, full_name=No
             return False, f"Capienza superata! Posti disponibili: {max(0, capacity - booked)}/{capacity}."
 
         cur.execute(
-            f'SELECT id, username, full_name FROM reservations WHERE event_id = ? AND (user_id = ? OR {NAME_MATCH_SQL})',
+            f'SELECT id, username, full_name FROM reservations WHERE event_id = ? AND {NOT_EVENTBRITE_SQL} '
+            f'AND (user_id = ? OR {NAME_MATCH_SQL})',
             (event_id, user_id, uname, fname or uname),
         )
         res = cur.fetchone()
@@ -185,7 +195,8 @@ def admin_remove_subscriber(event_id, username, seats=None):
             return False, error
 
         cur.execute(
-            f'SELECT id, seats_booked, username, full_name FROM reservations WHERE event_id = ? AND ({NAME_MATCH_SQL})',
+            f'SELECT id, seats_booked, username, full_name FROM reservations WHERE event_id = ? '
+            f'AND {NOT_EVENTBRITE_SQL} AND ({NAME_MATCH_SQL})',
             (event_id, name, name),
         )
         res = cur.fetchone()
@@ -199,3 +210,39 @@ def admin_remove_subscriber(event_id, username, seats=None):
 
     display_name = f"@{res['username']}" if res['username'] else res['full_name'] or f"@{name}"
     return True, f"Rimossi {seats_to_remove} posto/i per {display_name}."
+
+
+@db_safe(default=None)
+def apply_eventbrite_order(event_id, order_id, display_name, seats):
+    """Mirrors an Eventbrite order into reservations (seats == 0 removes it) without any capacity check: the
+    booking already happened on Eventbrite. Returns (old_seats, new_seats, overbooked), or None if the event is missing."""
+    order_id, seats = str(order_id), max(0, int(seats))
+    with transaction() as cur:
+        ev, error = _load_seat_state(cur, event_id, cancelled_message=None)
+        if error:
+            return None
+
+        cur.execute(
+            "SELECT id, seats_booked FROM reservations WHERE event_id = ? AND eventbrite_order_id = ?",
+            (event_id, order_id),
+        )
+        res = cur.fetchone()
+        old_seats = int(res['seats_booked']) if res else 0
+        if res and seats == 0:
+            cur.execute('DELETE FROM reservations WHERE id = ?', (res['id'],))
+        elif res:
+            cur.execute(
+                'UPDATE reservations SET seats_booked = ?, full_name = ? WHERE id = ?', (seats, display_name, res['id'])
+            )
+        elif seats:
+            cur.execute(
+                "INSERT INTO reservations (event_id, user_id, username, full_name, seats_booked, source, eventbrite_order_id) "
+                "VALUES (?, NULL, NULL, ?, ?, 'eventbrite', ?)",
+                (event_id, display_name, seats, order_id),
+            )
+
+        new_booked = _booked(ev) + seats - old_seats
+        _set_booked_seats(cur, event_id, ev, new_booked)
+        capacity = _capacity(ev)
+        overbooked = capacity is not None and max(0, new_booked) > capacity
+    return old_seats, seats, overbooked

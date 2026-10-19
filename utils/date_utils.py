@@ -222,3 +222,30 @@ def are_events_on_same_day(ev1, ev2):
     if date1 and date2 and date1.strip() and date2.strip():
         return date1.strip().lower() == date2.strip().lower()
     return False
+
+
+_TIME_RE = re.compile(r'(?<![\d.:])(\d{1,2})[:.](\d{2})(?![\d.:])')
+
+
+def _parse_hhmm(value):
+    m = _TIME_RE.fullmatch(value.strip()) if isinstance(value, str) else None
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2))
+    return (hour, minute) if hour < 24 and minute < 60 else None
+
+
+def extract_event_datetime(event, default_time="20:45") -> datetime | None:
+    """Naive local datetime of an event: the day from the event dates, the time from the first HH:MM / HH.MM in
+    event['date'] (else default_time). None when no day can be determined."""
+    day = event_date_tuple(event)
+    if not day:
+        return None
+    time_of_day = None
+    for match in _TIME_RE.finditer(event.get('date') or ''):
+        time_of_day = _parse_hhmm(match.group(0))
+        if time_of_day:
+            break
+    if not time_of_day:
+        time_of_day = _parse_hhmm(default_time) or (20, 45)
+    return datetime(*day, *time_of_day)

@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, datetime
 
-from utils.date_utils import format_standard_event_date, parse_user_date, validate_event_date_anomalies
+from utils.date_utils import extract_event_datetime, format_standard_event_date, parse_user_date, validate_event_date_anomalies
 
 
 class TestDateUtils(unittest.TestCase):
@@ -97,6 +97,28 @@ class TestUserDateKeywords(unittest.TestCase):
                 dt, has_time = parse_user_date(text, reference_date=reference)
                 self.assertEqual(dt if isinstance(expected, datetime) else dt.date(), expected)
                 self.assertEqual(has_time, expected_has_time)
+
+
+class TestExtractEventDatetime(unittest.TestCase):
+    def test_time_comes_from_the_date_string_or_the_default(self):
+        cases = [
+            ({"date": "Venerdì 04-09-2026 21:00", "normalized_date": "04-09-2026"}, datetime(2026, 9, 4, 21, 0)),
+            ({"date": "09 Settembre 21.30", "normalized_date": "09-09-2026"}, datetime(2026, 9, 9, 21, 30)),
+            ({"date": "Venerdì 04-09-2026", "normalized_date": "04-09-2026"}, datetime(2026, 9, 4, 20, 45)),
+            ({"date": "04.09.2026", "normalized_date": "04-09-2026"}, datetime(2026, 9, 4, 20, 45)),
+            ({"date": "04.09.2026 18.15", "normalized_date": ""}, datetime(2026, 9, 4, 18, 15)),
+            ({"date": "sabato 25:99", "normalized_date": "2026-09-05"}, datetime(2026, 9, 5, 20, 45)),
+            ({"date": None, "normalized_date": "2026-09-05"}, datetime(2026, 9, 5, 20, 45)),
+        ]
+        for event, expected in cases:
+            with self.subTest(event=event):
+                self.assertEqual(extract_event_datetime(event), expected)
+
+    def test_custom_default_time_and_missing_day(self):
+        event = {"date": "Venerdì 04-09-2026", "normalized_date": "04-09-2026"}
+        self.assertEqual(extract_event_datetime(event, default_time="19:00"), datetime(2026, 9, 4, 19, 0))
+        self.assertEqual(extract_event_datetime(event, default_time="bogus"), datetime(2026, 9, 4, 20, 45))
+        self.assertIsNone(extract_event_datetime({"date": "da definire", "normalized_date": ""}))
 
 
 if __name__ == "__main__":

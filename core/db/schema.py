@@ -25,7 +25,14 @@ TABLES = (
         wp_post_id INTEGER,
         wp_post_url TEXT,
         is_roleplay INTEGER DEFAULT 0,
-        admin_message_id INTEGER
+        admin_message_id INTEGER,
+        eventbrite_event_id TEXT,
+        eventbrite_url TEXT,
+        eventbrite_ticket_class_id TEXT,
+        eventbrite_status TEXT,
+        eventbrite_quantity_total INTEGER,
+        eventbrite_content_version INTEGER DEFAULT 0,
+        eventbrite_synced_at TEXT
     )
     ''',
     '''
@@ -35,7 +42,9 @@ TABLES = (
         user_id INTEGER,
         username TEXT,
         seats_booked INTEGER DEFAULT 0,
-        full_name TEXT
+        full_name TEXT,
+        source TEXT DEFAULT 'telegram',
+        eventbrite_order_id TEXT
     )
     ''',
     '''
@@ -59,11 +68,26 @@ COLUMN_MIGRATIONS = {
         "discussion_chat_id": "TEXT",
         "is_roleplay": "INTEGER DEFAULT 0",
         "admin_message_id": "INTEGER",
+        "eventbrite_event_id": "TEXT",
+        "eventbrite_url": "TEXT",
+        "eventbrite_ticket_class_id": "TEXT",
+        "eventbrite_status": "TEXT",
+        "eventbrite_quantity_total": "INTEGER",
+        "eventbrite_content_version": "INTEGER DEFAULT 0",
+        "eventbrite_synced_at": "TEXT",
     },
     "reservations": {
         "full_name": "TEXT",
+        "source": "TEXT DEFAULT 'telegram'",
+        "eventbrite_order_id": "TEXT",
     },
 }
+
+# Applied after the migrations, so they can reference migrated columns
+INDEXES = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_res_eb_order ON reservations(event_id, eventbrite_order_id) "
+    "WHERE eventbrite_order_id IS NOT NULL",
+)
 
 
 @db_safe()
@@ -77,3 +101,5 @@ def init_db():
             for column, declaration in columns.items():
                 if column not in existing:
                     cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+        for ddl in INDEXES:
+            cur.execute(ddl)

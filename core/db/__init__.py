@@ -17,12 +17,17 @@ from core.db.events import (
     update_discussion_message_info,
     get_approved_events_for_date,
     get_upcoming_events,
+    set_eventbrite_info,
+    clear_eventbrite_info,
+    get_eventbrite_tracked_events,
 )
 from core.db.reservations import (
     get_reservations_for_event,
     get_reservation,
     get_reservation_by_user,
     get_user_conflicting_events,
+    get_eventbrite_reservations,
+    eventbrite_seat_count,
 )
 from core.db.seats import (
     book_seat,
@@ -31,6 +36,7 @@ from core.db.seats import (
     admin_remove_seat,
     admin_add_subscriber,
     admin_remove_subscriber,
+    apply_eventbrite_order,
 )
 from core.db.scheduled import (
     insert_scheduled_event,
@@ -59,16 +65,22 @@ __all__ = [
     "update_discussion_message_info",
     "get_approved_events_for_date",
     "get_upcoming_events",
+    "set_eventbrite_info",
+    "clear_eventbrite_info",
+    "get_eventbrite_tracked_events",
     "get_reservations_for_event",
     "get_reservation",
     "get_reservation_by_user",
     "get_user_conflicting_events",
+    "get_eventbrite_reservations",
+    "eventbrite_seat_count",
     "book_seat",
     "unbook_seat",
     "admin_add_seat",
     "admin_remove_seat",
     "admin_add_subscriber",
     "admin_remove_subscriber",
+    "apply_eventbrite_order",
     "insert_scheduled_event",
     "get_scheduled_event",
     "get_all_scheduled_events",
