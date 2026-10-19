@@ -2,9 +2,10 @@ import os
 import shutil
 import uuid
 import io
-from PIL import Image, ImageOps, ImageDraw, ImageFont
+from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
 from pilmoji import Pilmoji
 import logging
+import tempfile
 import textwrap
 from datetime import datetime
 from core.config import FONTS_DIR, MAX_EVENTS_PER_ROW
@@ -333,6 +334,32 @@ def create_collage_from_bytes(images_bytes_list):
     except Exception as e:
         logger.error(f"Error creating collage from bytes: {e}")
         return None
+
+def pad_to_aspect(path, ratio=2.0, min_size=(2160, 1080)):
+    """Writes a temporary JPEG of the image centred on a blurred, enlarged copy of itself so the result has exactly
+    the given width:height ratio (and is at least min_size). Returns the temp file path; the caller deletes it."""
+    with Image.open(path) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+
+    width, height = image.size
+    if width / height >= ratio:
+        canvas_w, canvas_h = width, width / ratio
+    else:
+        canvas_w, canvas_h = height * ratio, height
+    scale = max(1.0, min_size[0] / canvas_w, min_size[1] / canvas_h)
+    canvas_h = int(round(canvas_h * scale))
+    canvas_w = int(round(canvas_h * ratio))  # derived from the height so the ratio stays exact
+
+    canvas = ImageOps.fit(image, (canvas_w, canvas_h), Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=30))
+    fit = min(canvas_w / width, canvas_h / height)
+    foreground = image.resize((max(1, int(round(width * fit))), max(1, int(round(height * fit)))), Image.LANCZOS)
+    canvas.paste(foreground, ((canvas_w - foreground.width) // 2, (canvas_h - foreground.height) // 2))
+
+    handle = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    handle.close()
+    canvas.save(handle.name, "JPEG", quality=90)
+    return handle.name
+
 
 def create_story_image(event_data, original_image_path, output_dir):
     try:

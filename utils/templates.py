@@ -1,5 +1,7 @@
 import html
 
+ASSOCIATION_ADDRESS = "Gilda del Grifone, Via Ada Negri 8/A, Torino"
+
 def format_event_title_link(event):
     if not event:
         return "<b>Evento</b>"

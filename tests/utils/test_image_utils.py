@@ -16,6 +16,7 @@ from utils.image_utils import (
     create_collage,
     create_collage_from_bytes,
     move_image_locally,
+    pad_to_aspect,
     save_compressed_image,
 )
 
@@ -150,6 +151,44 @@ class TestMoveImageLocally(TempDirMixin, unittest.TestCase):
         # Move non-existent file -> None
         self.assertIsNone(move_image_locally("/non/existent/file.jpg", self.temp_dir, "09-09-2026"))
         self.assertIsNone(move_image_locally(None, self.temp_dir, "09-09-2026"))
+
+
+class TestPadToAspect(TempDirMixin, unittest.TestCase):
+    def padded_size(self, width, height, **kwargs):
+        source = image_file(self.temp_dir, f"src_{width}x{height}.jpg", width, height)
+        result = pad_to_aspect(source, **kwargs)
+        self.addCleanup(lambda: os.path.exists(result) and os.remove(result))
+        self.assertTrue(result.endswith(".jpg"))
+        self.assertNotEqual(result, source)
+        with Image.open(result) as image:
+            return image.size
+
+    def test_result_is_exactly_two_to_one_and_at_least_min_size(self):
+        for width, height in [(300, 600), (600, 300), (800, 800), (4000, 1000), (3001, 777), (100, 100)]:
+            with self.subTest(size=(width, height)):
+                w, h = self.padded_size(width, height)
+                self.assertEqual(w, 2 * h)
+                self.assertGreaterEqual(w, 2160)
+                self.assertGreaterEqual(h, 1080)
+
+    def test_large_images_keep_their_resolution(self):
+        w, h = self.padded_size(5000, 4000)
+        self.assertEqual((w, h), (8000, 4000))
+
+    def test_custom_ratio(self):
+        w, h = self.padded_size(500, 500, ratio=1.5, min_size=(300, 200))
+        self.assertEqual((w, h), (750, 500))
+
+    def test_source_is_untouched_and_foreground_is_centred(self):
+        source = image_file(self.temp_dir, "tall.jpg", 300, 600, color=(255, 0, 0))
+        result = pad_to_aspect(source)
+        self.addCleanup(os.remove, result)
+        with Image.open(result) as image:
+            centre = image.getpixel((image.width // 2, image.height // 2))
+        self.assertGreater(centre[0], 200)
+        self.assertLess(centre[2], 60)
+        with Image.open(source) as original:
+            self.assertEqual(original.size, (300, 600))
 
 
 if __name__ == "__main__":
