@@ -17,6 +17,13 @@ def start_scheduler(bot):
     _scheduler.start()
 
 
+def add_interval_job(func, minutes, args=None):
+    """Registers a repeating job on the running scheduler (start_scheduler must have run); never overlaps itself."""
+    if _scheduler is None:
+        raise RuntimeError("Scheduler not started")
+    _scheduler.add_job(func, 'interval', minutes=minutes, args=args or [], max_instances=1, coalesce=True)
+
+
 def stop_scheduler():
     if _scheduler:
         _scheduler.shutdown()

@@ -7,7 +7,7 @@ from core import config
 from core.db import get_event_by_telegram_message_id, update_discussion_message_info
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
-from utils.templates import recap_links_text
+from utils.templates import format_discussion_booking_message, recap_links_text
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
@@ -101,10 +101,13 @@ async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAUL
     if event.get('discussion_message_id'):
         logger.info(f"Event {event['id']} already has discussion_message_id={event['discussion_message_id']}")
         try:
-            await context.bot.edit_message_reply_markup(
+            await context.bot.edit_message_text(
                 chat_id=message.chat_id,
                 message_id=event['discussion_message_id'],
-                reply_markup=pub_keyboard
+                text=format_discussion_booking_message(event),
+                reply_markup=pub_keyboard,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception as e:
             if not is_not_modified_error(e):
@@ -114,9 +117,11 @@ async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAUL
     try:
         reply_msg = await context.bot.send_message(
             chat_id=message.chat_id,
-            text="👇 Gestisci qui la tua prenotazione!",
+            text=format_discussion_booking_message(event),
             reply_to_message_id=message.message_id,
-            reply_markup=pub_keyboard
+            reply_markup=pub_keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
         )
         update_discussion_message_info(event['id'], reply_msg.message_id, message.chat_id)
         logger.info(f"Successfully posted booking buttons reply in discussion group for event {event['id']}")

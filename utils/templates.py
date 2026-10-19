@@ -1,6 +1,8 @@
 import html
 
 ASSOCIATION_ADDRESS = "Gilda del Grifone, Via Ada Negri 8/A, Torino"
+EVENTBRITE_ROW_PREFIX = "🎟️ "
+DISCUSSION_BOOKING_TEXT = "👇 Gestisci qui la tua prenotazione!"
 
 def format_event_title_link(event):
     if not event:
@@ -11,6 +13,12 @@ def format_event_title_link(event):
     if link:
         return f'<a href="{link}"><b>{escaped_title}</b></a>'
     return f'<b>{escaped_title}</b>'
+
+def format_discussion_booking_message(event):
+    """Text of the booking reply under the channel post in the discussion group (adds the Eventbrite link when live)."""
+    if event and event.get('eventbrite_url') and event.get('eventbrite_status') == 'live':
+        return f'{DISCUSSION_BOOKING_TEXT}\n🎟️ Prenota anche su Eventbrite: <a href="{html.escape(event["eventbrite_url"], quote=True)}">link</a>'
+    return DISCUSSION_BOOKING_TEXT
 
 def format_event_seats(event_data):
     booked = int(event_data.get('booked_seats', 0) or 0)
@@ -167,11 +175,16 @@ def recap_links_text(events):
 def format_reservation_subscriber_display(reservation, as_html=True):
     """
     Returns the display string for a subscriber in a reservation.
+    - Eventbrite bookings are always '🎟️ {name}' (they have no Telegram identity).
     - If a valid Telegram username exists, returns '@username'.
     - If user has no username:
       - If as_html=True and user_id exists: returns '<a href="tg://user?id={user_id}">{name}</a>'
       - If as_html=False or no user_id: returns '{name}' (or 'ID:{user_id}')
     """
+    if reservation.get('source') == 'eventbrite':
+        name = (reservation.get('full_name') or '').strip() or "Partecipante Eventbrite"
+        return f"{EVENTBRITE_ROW_PREFIX}{html.escape(name) if as_html else name}"
+
     uname = (reservation.get('username') or '').strip()
     fname = (reservation.get('full_name') or '').strip()
     uid = reservation.get('user_id')

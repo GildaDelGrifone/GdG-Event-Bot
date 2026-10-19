@@ -5,14 +5,17 @@ from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, CallbackQueryHandler
+from core import config
 from core.config import (
     TELEGRAM_BOT_TOKEN, PUBLIC_CHANNEL_ID, DISCUSSION_GROUP_ID, ADMIN_CHAT_ID,
     LOGS_DIR
 )
 from core.db import init_db
+from core.eventbrite import eventbrite_enabled
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.control import bot_pause_command, bot_resume_command, bot_status_command
 from bot.handlers.edit import event_edit_command
+from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
 from bot.handlers.public import event_next_command, event_subs_command, start_command
 from bot.handlers.recap import manual_recap_command, handle_discussion_forward
@@ -24,7 +27,8 @@ from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_com
 from bot.handlers.story import event_regenerate_story_command
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
-from core.scheduler.runner import start_scheduler, stop_scheduler
+from bot.service.eventbrite_poll import poll_eventbrite_bookings
+from core.scheduler.runner import add_interval_job, start_scheduler, stop_scheduler
 from core.log_utils import DailyMonthlyLogHandler
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
@@ -45,6 +49,8 @@ logger = logging.getLogger(__name__)
 
 async def post_init(application: Application):
     start_scheduler(application.bot)
+    if eventbrite_enabled():
+        add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
 
     # Default commands for users in private chats / groups
     default_commands = [
@@ -75,6 +81,7 @@ async def post_init(application: Application):
         BotCommand("event_edit_description", "<Testo> Modifica la descrizione"),
         BotCommand("event_edit_image", "[ID] Allega nuova foto per la locandina"),
         BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram"),
+        BotCommand("event_publish_eventbrite", "[ID] Pubblica l'evento su Eventbrite"),
         BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
         BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
         BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
@@ -147,6 +154,7 @@ def main():
     for cmd in edit_cmds:
         application.add_handler(CommandHandler(cmd, event_edit_command, block=False))
     application.add_handler(CommandHandler("event_regenerate_story", event_regenerate_story_command, block=False))
+    application.add_handler(CommandHandler("event_publish_eventbrite", event_publish_eventbrite_command, block=False))
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
     application.add_handler(CommandHandler("event_repost", event_repost_command, block=False))
@@ -160,6 +168,7 @@ def main():
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_process|ep)(\s|$|@)"), manual_trigger_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_generate|eg)(\s|$|@)"), event_generate_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_regenerate_story|ers)(\s|$|@)"), event_regenerate_story_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_publish_eventbrite(\s|$|@)"), event_publish_eventbrite_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(recap_generate|rg)(\s|$|@)"), manual_recap_command))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_repost|er)(\s|$|@)"), event_repost_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule(\s|$|@)"), event_schedule_command, block=False))

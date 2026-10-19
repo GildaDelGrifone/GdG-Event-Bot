@@ -6,6 +6,9 @@ from bot.callbacks import booking, events, recap, schedule, subscribers
 # Ordered (prefix, handler) pairs; each handler receives (query, context, payload-after-prefix).
 CALLBACK_ROUTES = (
     ("publish_event_", events.handle_publish_event),
+    ("publish_eb_event_", events.handle_publish_event_with_eventbrite),
+    ("eb_publish_", events.handle_eventbrite_publish),
+    ("eb_recreate_", events.handle_eventbrite_recreate),
     ("discard_event_", events.handle_discard_event),
     ("cancel_event_", events.handle_cancel_event),
     ("reactivate_event_", events.handle_reactivate_event),

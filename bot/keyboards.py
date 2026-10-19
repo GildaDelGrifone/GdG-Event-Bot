@@ -2,7 +2,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from core import config
 from core.db import get_event
-from utils.templates import format_reservation_subscriber_display
+from core.eventbrite import attendees_dashboard_url, dashboard_url, eventbrite_enabled
+from utils.templates import EVENTBRITE_ROW_PREFIX, format_reservation_subscriber_display
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
 SCHEDULE_DAYS = (
@@ -20,20 +21,29 @@ def _manage_subs_button(event_id):
 
 
 def get_approval_keyboard(event_id):
-    return InlineKeyboardMarkup([
+    rows = [
         [
             InlineKeyboardButton("Publish", callback_data=f"publish_event_{event_id}"),
             InlineKeyboardButton("Discard", callback_data=f"discard_event_{event_id}"),
         ],
-        [_manage_subs_button(event_id)],
-    ])
+    ]
+    if eventbrite_enabled():
+        rows.append([InlineKeyboardButton("🚀 Publish + Eventbrite", callback_data=f"publish_eb_event_{event_id}")])
+    rows.append([_manage_subs_button(event_id)])
+    return InlineKeyboardMarkup(rows)
 
 
-def get_approved_event_keyboard(event_id):
-    return InlineKeyboardMarkup([[
+def get_approved_event_keyboard(event_id, event=None):
+    rows = [[
         InlineKeyboardButton("❌ Annulla Evento", callback_data=f"cancel_event_{event_id}"),
         _manage_subs_button(event_id),
-    ]])
+    ]]
+    if eventbrite_enabled():
+        if event and event.get('eventbrite_event_id'):
+            rows.append([InlineKeyboardButton("🎟️ Eventbrite", url=dashboard_url(event['eventbrite_event_id']))])
+        else:
+            rows.append([InlineKeyboardButton("🎟️ Pubblica su Eventbrite", callback_data=f"eb_publish_{event_id}")])
+    return InlineKeyboardMarkup(rows)
 
 
 def get_cancelled_event_keyboard(event_id):
@@ -43,9 +53,19 @@ def get_cancelled_event_keyboard(event_id):
     ]])
 
 
-def get_subscribers_management_keyboard(event_id, reservations):
+def get_subscribers_management_keyboard(event_id, reservations, event=None):
     keyboard = []
     for res in reservations:
+        if res.get('source') == 'eventbrite':
+            # Managed on Eventbrite: a single button that opens the attendee dashboard instead of ± seats
+            name = (res.get('full_name') or '').strip() or "Partecipante"
+            name = name if len(name) <= 12 else name[:11] + "…"
+            eb_event_id = (event or {}).get('eventbrite_event_id')
+            if eb_event_id:
+                keyboard.append([InlineKeyboardButton(
+                    f"{EVENTBRITE_ROW_PREFIX}{name} ({res.get('seats_booked', 1)})", url=attendees_dashboard_url(eb_event_id)
+                )])
+            continue
         label = format_reservation_subscriber_display(res, as_html=False)
         label = label if len(label) <= 12 else label[:11] + "…"
         seats = res.get('seats_booked', 1)

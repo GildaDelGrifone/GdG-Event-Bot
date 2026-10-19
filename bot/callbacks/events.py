@@ -8,6 +8,9 @@ from bot.callbacks.notices import send_cancellation_notice, send_reactivation_no
 from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback
 from bot.keyboards import get_event_booking_keyboard, get_approved_event_keyboard, get_cancelled_event_keyboard
+from bot.service.eventbrite import (
+    cancel_on_eventbrite, publish_event_to_eventbrite, reactivate_on_eventbrite, recreate_on_eventbrite,
+)
 from bot.service.posts import update_event_messages
 
 logger = logging.getLogger(__name__)
@@ -82,17 +85,48 @@ async def _send_story_preview(context, chat_id, event):
     )
 
 
+async def _publish(query, context, event_id):
+    update_event_status(event_id, "approved")
+    event = get_event(event_id)
+    await _mark_admin_card(
+        query, APPROVED_SUFFIX, "publish", keyboard=get_approved_event_keyboard(event_id, event), use_html=True
+    )
+    if event:
+        await _publish_to_channel(context, query, event_id, event)
+        await _send_story_preview(context, query.message.chat_id, event)
+
+
 async def handle_publish_event(query, context, payload):
     await query.answer()
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id}.")
-    update_event_status(event_id, "approved")
-    await _mark_admin_card(query, APPROVED_SUFFIX, "publish", keyboard=get_approved_event_keyboard(event_id), use_html=True)
+    await _publish(query, context, event_id)
 
-    event = get_event(event_id)
-    if event:
-        await _publish_to_channel(context, query, event_id, event)
-        await _send_story_preview(context, query.message.chat_id, event)
+
+async def handle_publish_event_with_eventbrite(query, context, payload):
+    await query.answer()
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id} (+ Eventbrite).")
+    await _publish(query, context, event_id)
+    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+
+
+async def handle_eventbrite_publish(query, context, payload):
+    await query.answer()
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} requested Eventbrite publication of event #{event_id}.")
+    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+
+
+async def handle_eventbrite_recreate(query, context, payload):
+    await query.answer()
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} requested re-creating event #{event_id} on Eventbrite.")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)  # one click only
+    except Exception as e:
+        logger.debug(f"Could not remove the recreate button: {e}")
+    await recreate_on_eventbrite(context, event_id, query.message.chat_id)
 
 
 async def handle_discard_event(query, context, payload):
@@ -123,6 +157,9 @@ async def handle_cancel_event(query, context, payload):
         query, context, event_id, "cancelled", CANCELLED_SUFFIX, get_cancelled_event_keyboard(event_id), "cancel",
         send_cancellation_notice,
     )
+    event = get_event(event_id)
+    if event and event.get('eventbrite_event_id'):
+        await cancel_on_eventbrite(context, event)
 
 
 async def handle_reactivate_event(query, context, payload):
@@ -130,6 +167,9 @@ async def handle_reactivate_event(query, context, payload):
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} reactivated event #{event_id}.")
     await _change_published_state(
-        query, context, event_id, "approved", APPROVED_SUFFIX, get_approved_event_keyboard(event_id), "reactivate",
-        send_reactivation_notice,
+        query, context, event_id, "approved", APPROVED_SUFFIX, get_approved_event_keyboard(event_id, get_event(event_id)),
+        "reactivate", send_reactivation_notice,
     )
+    event = get_event(event_id)
+    if event and event.get('eventbrite_event_id'):
+        await reactivate_on_eventbrite(context, event)

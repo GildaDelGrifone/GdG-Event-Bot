@@ -5,7 +5,7 @@ from telegram import InputMediaPhoto, Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event, update_event_field
+from core.db import eventbrite_seat_count, get_event, update_event_field
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally, delete_local_image, move_image_locally
 from utils.templates import format_public_event_message
@@ -38,6 +38,9 @@ EDIT_COMMAND_FIELDS = {
     "/event_edit_type": "is_roleplay",
 }
 
+# Fields shown on the Eventbrite listing: editing one of them re-pushes the event page
+EVENTBRITE_CONTENT_FIELDS = frozenset({"title", "date", "system", "host", "extra_info", "description", "is_roleplay"})
+
 ROLEPLAY_TRUE_TOKENS = {"rpg", "gdr", "ruolo", "master", "true", "1", "si", "sì", "yes"}
 ROLEPLAY_FALSE_TOKENS = {"boardgame", "gdt", "tavolo", "host", "false", "0", "no", "non rpg", "non gdr"}
 CLEAR_EXTRA_TOKENS = {"null", "nessuno", "0", "none", "elimina", "cancella"}
@@ -49,6 +52,15 @@ class EditInputError(Exception):
         super().__init__(reply)
         self.reply = reply
         self.parse_mode = parse_mode
+
+
+def _ensure_booked_not_below_eventbrite(event_id, new_booked):
+    eb_seats = eventbrite_seat_count(event_id)
+    if new_booked < eb_seats:
+        raise EditInputError(
+            f"❌ Impossibile: {eb_seats} posti risultano prenotati su Eventbrite e non possono essere rimossi da qui. "
+            "Gestiscili dalla dashboard Eventbrite."
+        )
 
 
 async def _edit_image(update, event_id, current_event, value):
@@ -102,6 +114,7 @@ async def edit_seats(update, event_id, current_event, value):
         current_booked = current_event.get('booked_seats', 0) or 0
         free = max(0, total - current_booked)
     else:
+        _ensure_booked_not_below_eventbrite(event_id, max(0, total - free))
         update_event_field(event_id, "booked_seats", max(0, total - free))
     update_event_field(event_id, "max_seats", total)
     update_event_field(event_id, "seats", f"{free}/{total}")
@@ -113,6 +126,7 @@ async def _edit_booked_seats(update, event_id, current_event, value):
         booked = int(value)
     except ValueError:
         raise EditInputError("Il valore per i posti prenotati deve essere un numero intero.")
+    _ensure_booked_not_below_eventbrite(event_id, booked)
     success = update_event_field(event_id, "booked_seats", booked)
     max_seats = current_event.get('max_seats')
     if max_seats is not None:
@@ -297,6 +311,9 @@ async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _refresh_admin_message(target_msg, event, image_changed=(field == "image_path"))
 
     if event['status'] in ['approved', 'cancelled']:
-        await update_event_messages(context, event_id, event=event, update_image=(field == "image_path"))
+        await update_event_messages(
+            context, event_id, event=event, update_image=(field == "image_path"),
+            eventbrite_content=field in EVENTBRITE_CONTENT_FIELDS,
+        )
 
     await update.message.reply_text(f"✅ Campo '{field}' aggiornato con successo!")

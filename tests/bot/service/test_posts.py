@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import BadRequest, RetryAfter
 
 from bot.service.posts import _execute_with_retry, update_event_messages
-from tests.support.config import patched_config
+from tests.support.config import eventbrite_credentials, patched_config
 from tests.support.telegram import callback_update, make_context
 
 NOT_MODIFIED = ("Message is not modified: specified new message content and reply markup are exactly the same "
@@ -135,12 +135,12 @@ class TestUpdateDiscussionReply(unittest.IsolatedAsyncioTestCase):
         self.bot = self.context.bot
 
     async def test_update_event_messages_discussion_retries_on_flood_control(self):
-        self.bot.edit_message_reply_markup.side_effect = [RetryAfter(0.01), MagicMock()]
+        self.bot.edit_message_text.side_effect = [RetryAfter(0.01), MagicMock()]
 
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await update_event_messages(self.context, event_id=1, event=discussion_event())
 
-        self.assertEqual(self.bot.edit_message_reply_markup.call_count, 2)
+        self.assertEqual(self.bot.edit_message_text.call_count, 2)
         mock_sleep.assert_called_once_with(0.01)
 
     async def _update_from(self, query, event):
@@ -154,23 +154,25 @@ class TestUpdateDiscussionReply(unittest.IsolatedAsyncioTestCase):
         mock_update_db = await self._update_from(admin_query, discussion_event(status="cancelled"))
 
         # Admin query message's markup must NOT be modified
-        admin_query.edit_message_reply_markup.assert_not_called()
+        admin_query.edit_message_text.assert_not_called()
         mock_update_db.assert_not_called()
 
         # The actual discussion message must be updated with None (cancelled)
-        self.bot.edit_message_reply_markup.assert_called_once_with(chat_id=-100456, message_id=999, reply_markup=None)
+        self.bot.edit_message_text.assert_called_once_with(
+            chat_id=-100456, message_id=999, text="👇 Gestisci qui la tua prenotazione!", reply_markup=None,
+            parse_mode="HTML", disable_web_page_preview=True)
 
     async def test_update_event_messages_reactivate_restores_discussion_buttons(self):
         admin_query = query_in(-100999, 777)
         mock_update_db = await self._update_from(admin_query, discussion_event())
 
         # Admin query message's markup must NOT be modified
-        admin_query.edit_message_reply_markup.assert_not_called()
+        admin_query.edit_message_text.assert_not_called()
         mock_update_db.assert_not_called()
 
         # The actual discussion message must have booking buttons restored
-        self.bot.edit_message_reply_markup.assert_called_once()
-        call_kwargs = self.bot.edit_message_reply_markup.call_args[1]
+        self.bot.edit_message_text.assert_called_once()
+        call_kwargs = self.bot.edit_message_text.call_args[1]
         self.assertEqual(call_kwargs["chat_id"], -100456)
         self.assertEqual(call_kwargs["message_id"], 999)
         self.assertIsNotNone(call_kwargs["reply_markup"])
@@ -180,10 +182,43 @@ class TestUpdateDiscussionReply(unittest.IsolatedAsyncioTestCase):
         mock_update_db = await self._update_from(disc_query, discussion_event())
 
         # Discussion query message's markup IS updated in place
-        disc_query.edit_message_reply_markup.assert_called_once()
+        disc_query.edit_message_text.assert_called_once()
+        self.assertEqual(disc_query.edit_message_text.call_args.kwargs["parse_mode"], "HTML")
         mock_update_db.assert_called_once_with(1, 888, -100456)
-        # bot.edit_message_reply_markup is not called because it returned early
-        self.bot.edit_message_reply_markup.assert_not_called()
+        # bot.edit_message_text is not called because it returned early
+        self.bot.edit_message_text.assert_not_called()
+
+    async def test_discussion_text_includes_the_eventbrite_link_when_live(self):
+        event = discussion_event(eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="live")
+        await update_event_messages(self.context, event_id=1, event=event)
+        text = self.bot.edit_message_text.call_args.kwargs["text"]
+        self.assertIn("👇 Gestisci qui la tua prenotazione!", text)
+        self.assertIn('<a href="https://eventbrite.example/e/1">link</a>', text)
+
+    async def test_discussion_text_has_no_link_for_unpublished_eventbrite_events(self):
+        event = discussion_event(eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="unpublished")
+        await update_event_messages(self.context, event_id=1, event=event)
+        self.assertNotIn("Eventbrite", self.bot.edit_message_text.call_args.kwargs["text"])
+
+
+class TestEventbriteHook(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.context = make_context(bot_username="test_bot")
+
+    async def test_sync_eventbrite_is_called_with_the_content_and_image_flags(self):
+        event = channel_event()
+        with patch("bot.service.posts.sync_eventbrite", new_callable=AsyncMock) as mock_sync:
+            await update_event_messages(self.context, event_id=1, event=event)
+            await update_event_messages(self.context, event_id=1, event=event, update_image=True, eventbrite_content=True)
+        self.assertEqual(mock_sync.call_args_list[0].args, (self.context, event))
+        self.assertEqual(mock_sync.call_args_list[0].kwargs, {"content_changed": False, "image_changed": False})
+        self.assertEqual(mock_sync.call_args_list[1].kwargs, {"content_changed": True, "image_changed": True})
+
+    async def test_events_without_an_eventbrite_id_make_no_http_calls(self):
+        with eventbrite_credentials(), patch("core.eventbrite.client.requests") as mock_requests:
+            await update_event_messages(self.context, event_id=1, event=channel_event(), eventbrite_content=True)
+        mock_requests.get.assert_not_called()
+        mock_requests.post.assert_not_called()
 
 
 if __name__ == "__main__":

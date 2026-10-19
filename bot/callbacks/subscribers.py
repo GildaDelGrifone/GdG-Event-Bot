@@ -34,6 +34,9 @@ def format_subscribers_management_view(event, reservations):
             posti_str = "posto" if seats == 1 else "posti"
             text += f"{i}. <b>{format_reservation_subscriber_display(res, as_html=True)}</b> — {seats} {posti_str}\n"
 
+    if any(res.get('source') == 'eventbrite' for res in reservations):
+        text += "\n🎟️ = prenotazione Eventbrite (gestisci dalla dashboard)\n"
+
     text += (
         f"\n<i>Modifica con i tasti sotto oppure invia:</i>\n"
         f"<code>/event_sub_add {event['id']} @username [posti]</code>\n"
@@ -44,7 +47,7 @@ def format_subscribers_management_view(event, reservations):
 
 def _render_panel(event_id, event):
     reservations = get_reservations_for_event(event_id)
-    return format_subscribers_management_view(event, reservations), get_subscribers_management_keyboard(event_id, reservations)
+    return format_subscribers_management_view(event, reservations), get_subscribers_management_keyboard(event_id, reservations, event=event)
 
 
 async def handle_manage_subs(query, context, payload):
