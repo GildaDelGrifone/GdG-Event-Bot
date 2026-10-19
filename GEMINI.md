@@ -13,6 +13,7 @@
   - [2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `unzip_images.py`)](#28-nightly-image-archiving-coreschedulerarchivepy--unzip_imagespy)
   - [2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#29-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
   - [2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#210-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
+  - [2.11. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)](#211-eventbrite-integration-coreeventbrite--botserviceeventbritepy)
 - [3. Directory Structure](#3-directory-structure)
   - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
   - [3.2. `core/` Package Architecture](#32-core-package-architecture)
@@ -239,6 +240,41 @@ When `[Publish Recap]` is clicked:
 - **Scheduled Events List (`/event_schedule_list`):**
   - Displays all scheduled repost entries stored in SQLite with their IDs, active recurring days, specific dates, and direct clickable `/event_schedule_invoke <ID>` commands for instant posting.
 
+### 2.11. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)
+Optional. An approved event can also be published on **Eventbrite** so people outside Telegram can book. Both platforms draw from **one seat pool**. The integration is enabled only when `EVENTBRITE_TOKEN`, `EVENTBRITE_ORGANIZATION_ID` and `EVENTBRITE_VENUE_ID` are all set (`core.eventbrite.eventbrite_enabled()`); every button and hook checks it, so with Eventbrite unconfigured the bot behaves exactly as before and no new buttons appear. There are no webhooks and no web server: Eventbrite is polled.
+
+**Seat model.** `eb_seats` is the sum of `seats_booked` over the event's reservation rows with `source='eventbrite'`; `telegram_booked = booked_seats - eb_seats`; `capacity` is `max_seats` (or `EVENTBRITE_UNLIMITED_CAPACITY` when `max_seats` is NULL). The single free ticket class gets `quantity_total = max(eb_seats, capacity - telegram_booked)`, so Eventbrite's *quantity minus sold* always equals the seats still free on Telegram. A cancelled event gets `quantity_total = eb_seats`, which closes sales. The last pushed value is cached in `events.eventbrite_quantity_total` to skip no-op calls (`core.eventbrite.payload.ticket_quantity`).
+
+**Publishing** (`bot.service.eventbrite.publish_event_to_eventbrite`, shared by `[🚀 Publish + Eventbrite]` (`publish_eb_event_<id>`), `[🎟️ Pubblica su Eventbrite]` (`eb_publish_<id>`) and `/event_publish_eventbrite [ID]`):
+1. Refuses (messaging `admin_chat_id`) when the integration is off, the event is missing or not `approved`, the date is missing/past, or a *limited* event has nothing left to sell (`0/0 Completo`, or fully booked on Telegram). `max_seats` NULL (unlimited) is never "full". Nothing is created on Eventbrite in these cases.
+2. Idempotent: an already `live` event just replies with its link; a `draft` resumes from the failed step. Steps run in `asyncio.to_thread` and store ids after each one: create event → create ticket class → upload logo (a failure is only a warning; the image is padded to 2:1 by `utils.image_utils.pad_to_aspect`) → write the description page (structured content, version = stored version + 1) → publish. `eventbrite_status` goes `draft` → `live`.
+3. Sends `✅ Evento pubblicato su Eventbrite: <url>`, swaps the admin card buttons through `events.admin_message_id` (so the button and the command behave the same) and calls `update_event_messages`, so the discussion reply gains the link.
+- The link appears **only** in the discussion-group booking message (`utils.templates.format_discussion_booking_message`); the channel post is unchanged.
+
+**Sync.** `bot.service.posts.update_event_messages` runs after every booking, unbooking, admin seat change and edit, and ends with `sync_eventbrite(context, event, content_changed, image_changed)`. It returns at once when Eventbrite is disabled, the event has no `eventbrite_event_id`, or `eventbrite_status` is `canceled`/`draft`. It pushes capacity (approved events only, when the quantity differs from the cached one), content (`update_event` + description page) when `eventbrite_content` is set, and the logo when `update_image` is set. `/event_edit_*` passes `eventbrite_content=True` for `title, date, system, host, extra_info, description, is_roleplay` (`EVENTBRITE_CONTENT_FIELDS`). Errors are logged and sent to the admins as `⚠️ Sync Eventbrite fallita per #id: …`; they never raise into the Telegram flow. A date edit that moves the event into the past skips the date fields and warns the admins. `/event_edit_booked` and `/event_edit_seats X/Y` refuse to go below `eventbrite_seat_count`.
+
+**Booking poller** (`bot.service.eventbrite_poll.poll_eventbrite_bookings`, registered by `main.post_init` through `core.scheduler.runner.add_interval_job` every `EVENTBRITE_POLL_MINUTES`). For each `get_eventbrite_tracked_events()` row (linked, `approved`/`cancelled`, dated today or later, or yesterday) it fetches the Eventbrite event and its active orders (attendees neither cancelled nor refunded) and:
+- records an Eventbrite-side cancellation (`✅ … annullato su Eventbrite` for a Telegram-cancelled event, `⚠️ … annullato su Eventbrite ma attivo su Telegram` otherwise);
+- diffs the orders against `reservations(source='eventbrite')` and applies every change with `core.db.seats.apply_eventbrite_order` (no capacity check: the booking already happened; it returns `overbooked` when `booked > max_seats`);
+- when something changed, calls `update_event_messages` (which also pushes the corrected capacity), announces each change in the discussion group (`🎟️ Mario R. ha prenotato 2 posti tramite Eventbrite per: …` / `❌ Mario R. ha liberato … (Eventbrite) per: …`, only while the event is `approved` and `EVENTBRITE_BOOKING_NOTIFICATIONS` is on) and alerts the admins on overbooking;
+- on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
+- **Rate budget:** two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour, under Eventbrite's 2000-per-hour limit per token.
+
+**Cancel / reactivate matrix** (Telegram `[❌ Annulla Evento]` / `[♻️ Riattiva Evento]`; `eventbrite_status` is our view: `draft|live|unpublished|closed|canceled`):
+
+| Telegram action | Eventbrite state | What happens | New `eventbrite_status` |
+|---|---|---|---|
+| Cancel | no orders | `unpublish` (reversible); if refused, falls through to the row below | `unpublished` |
+| Cancel | has orders | quantity set to the number sold, event renamed `[ANNULLATO] …`, cancel API tried | `canceled` if accepted |
+| Cancel | has orders, cancel refused | admins get the dashboard link + `[🎟️ Apri dashboard Eventbrite]`; Eventbrite emails the attendees when they cancel there; the poller confirms it | `closed` → `canceled` once confirmed |
+| Reactivate | `unpublished` | publish again, push content and capacity | `live` |
+| Reactivate | `closed` | restore the name and force a capacity push | `live` |
+| Reactivate | `canceled` | cannot be revived: admins get `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`), which clears the Eventbrite info and publishes a new event | — |
+
+**Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to the Eventbrite attendee dashboard (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored.
+
+**Eventbrite API notes.** Eventbrite has no sandbox (test with `EVENTBRITE_LISTED=false`) and is eventually consistent, so POST response bodies are trusted instead of reading back. The description uses structured content (the legacy `description` field is deprecated); its HTML is limited to `p, b, em, ul, li, a`, so multi-line text becomes one `<p>` per line.
+
 ---
 
 ## 3. Directory Structure
@@ -265,10 +301,12 @@ GdG-Event-Bot/
 │   │   ├── subscribers.py # /event_sub_add, /event_sub_remove, ForceReply add-subscriber prompt
 │   │   ├── recap.py      # /recap_generate and discussion-group forward handling
 │   │   ├── repost.py     # /event_repost, /event_schedule_invoke
-│   │   └── repost_schedule.py # /event_schedule, /event_schedule_update, /event_schedule_list
+│   │   ├── repost_schedule.py # /event_schedule, /event_schedule_update, /event_schedule_list
+│   │   ├── story.py      # /event_regenerate_story
+│   │   └── eventbrite.py # /event_publish_eventbrite
 │   ├── callbacks/        # Inline button (CallbackQuery) handlers
 │   │   ├── router.py     # handle_callback_query + CALLBACK_ROUTES prefix table
-│   │   ├── events.py     # Publish / discard / cancel / reactivate event cards
+│   │   ├── events.py     # Publish / discard / cancel / reactivate event cards, Eventbrite publish/recreate buttons
 │   │   ├── notices.py    # Cancellation / reactivation notices to the discussion group
 │   │   ├── recap.py      # Publish / discard recap, WordPress draft & publish
 │   │   ├── booking.py    # ➕ Prenota / 🚫 Esauriti / ➖ Annulla
@@ -278,7 +316,9 @@ GdG-Event-Bot/
 │   │   ├── posts.py      # update_event_messages: sync channel post + discussion reply (with RetryAfter retry)
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
-│   │   └── mentions.py   # User/subscriber mention formatting
+│   │   ├── mentions.py   # User/subscriber mention formatting
+│   │   ├── eventbrite.py # Eventbrite publish, sync (capacity/content/logo), cancel, reactivate, recreate
+│   │   └── eventbrite_poll.py # Scheduler job: poll Eventbrite orders into the shared seat pool
 │   └── event_generator/  # /event_generate
 │       ├── command.py    # Telegram command handler
 │       ├── pipeline.py   # Generation pipeline, caption limit, admin preview
@@ -302,6 +342,13 @@ GdG-Event-Bot/
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
 │   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
 │   │   └── reposts.py    # 10:00 digest of scheduled reposts due today
+│   ├── eventbrite/       # Eventbrite REST API (public API: `from core.eventbrite import ...`)
+│   │   ├── client.py     # eventbrite_enabled, eb_get / eb_post, EventbriteError, paginate
+│   │   ├── payload.py    # Pure builders: start/end, event payload, description modules, ticket_quantity, names, dashboard URLs
+│   │   ├── events.py     # create/update/get event, publish/unpublish/cancel, structured-content description
+│   │   ├── tickets.py    # Free ticket class create / quantity update
+│   │   ├── media.py      # Three-step logo upload (2:1 padding)
+│   │   └── orders.py     # fetch_active_orders (names and seat counts only)
 │   └── wordpress/        # WordPress REST API (public API: `from core.wordpress import ...`)
 │       ├── client.py     # Credentials, auth headers, wp_get / wp_post (with timeouts)
 │       ├── categories.py # WP_POST_CATEGORY / slug / name -> category IDs
@@ -316,6 +363,7 @@ GdG-Event-Bot/
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
+│   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create the venue
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
 ├── tests/                # unittest/pytest suite mirroring the source tree; shared helpers in tests/support/ (see §3.3)
 ├── data/                 # Default local storage for SQLite DB, fonts, and images
@@ -353,11 +401,13 @@ GdG-Event-Bot/
   - `booking.py` handles seat booking/unbooking and same-day conflict warnings.
   - `notices.py` provides `send_admin_action_notice` and `send_discussion_notice`.
   - `mentions.format_subscriber_tag` is the single tag formatter for stored reservations (`@username`, `tg://user` link, or name).
+  - `eventbrite.py` holds the Eventbrite flows (see §2.11). `posts.update_event_messages` is the single hook point: after the Telegram sync it calls `sync_eventbrite`, and it edits the discussion reply as *text* (`format_discussion_booking_message`) so the Eventbrite link can appear. `eventbrite.py` imports `update_event_messages` inside its functions, because `posts.py` imports `sync_eventbrite` at module level (patch `bot.service.posts.update_event_messages` in tests). `eventbrite_poll.py` builds `SimpleNamespace(bot=bot)` as the context, since services only use `context.bot`.
 
 
 ### 3.2. `core/` Package Architecture
 - **Configuration is read at call time** (`config.ADMIN_CHAT_ID`, `config.DB_PATH`, `config.WP_URL`, `config.IG_ACCESS_TOKEN`, …), never copied at import. Tests and scripts redirect the database by setting/patching `core.config.DB_PATH`.
 - **`core.db` and `core.wordpress` are facades.** Their `__init__.py` re-exports the public API (`__all__`), so callers write `from core.db import get_event`. The submodules call each other directly, so patch a DB/WordPress function in the module that *uses* it. HTTP for WordPress goes through `core.wordpress.client` (patch `core.wordpress.client.requests.*`). `core.scheduler` is a set of job modules with an empty `__init__.py`, the same as the `bot/` packages: import `core.scheduler.runner.start_scheduler`, `core.scheduler.recap.generate_daily_recap`, etc.
+- **`core.eventbrite` is a facade too** (same rules as `core.wordpress`): `__init__.py` re-exports the public API, HTTP goes through `core.eventbrite.client` (patch `core.eventbrite.client.requests.*`), calls are synchronous with a 30 s timeout and async callers wrap them in `asyncio.to_thread`. Branch on `EventbriteError.error` (the API's error constant), never on its description. `payload.py` is pure and heavily unit-tested.
 - **DB plumbing (`core/db/connection.py`):**
   - `transaction()` yields a cursor with dict-like rows, commits or rolls back, and always closes the connection.
   - `fetch_one` / `fetch_all` / `execute` / `execute_many` wrap single statements.
@@ -365,9 +415,11 @@ GdG-Event-Bot/
   - `get_connection()` returns a raw connection for scripts.
   - SQL string literals use single quotes (`status IN ('approved', 'cancelled')`); double quotes are reserved for identifiers.
 - **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start.
+- **Eventbrite columns** are written only through `set_eventbrite_info` / `clear_eventbrite_info` (a whitelist); they are deliberately not in `EDITABLE_EVENT_FIELDS`, so `/event_edit_*` cannot set them. `init_db()` also applies an `INDEXES` tuple (a unique index on `reservations(event_id, eventbrite_order_id)`).
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
 - **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
+- **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (used for the Eventbrite poller); `core/` never imports `bot/` for it.
 - **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
 
@@ -376,7 +428,7 @@ GdG-Event-Bot/
 - **`tests/support/` helpers:**
   - `db.py`: `TempDBMixin` (a fresh SQLite file per test by patching `core.config.DB_PATH`, plus `self.temp_dir`, `init_db()` already run), `sample_event` / `create_event(status=..., **fields)`, and shared fixtures such as `create_subscribed_event()`.
   - `telegram.py`: `make_update`, `admin_update`, `make_message` (media fields explicitly `None`), `channel_message`, `admin_card(event_id)`, `callback_update(data) -> (update, query)`, `make_context`, `make_bot`, `make_user`, `telegram_photo(bytes)`.
-  - `config.py`: `patched_config(**settings)`, `as_admin_chat()`, `wordpress_credentials()`.
+  - `config.py`: `patched_config(**settings)`, `as_admin_chat()`, `wordpress_credentials()`, `eventbrite_credentials(**overrides)` (Eventbrite fully configured).
   - `images.py`: `make_image`, `image_bytes`, `image_file`.
 
   Prefer these over hand-built `MagicMock`s.
@@ -412,6 +464,16 @@ GdG-Event-Bot/
 | `wp_post_id` | INTEGER | | Associated WordPress post ID |
 | `wp_post_url` | TEXT | | Associated WordPress post edit/view URL |
 | `is_roleplay` | INTEGER | DEFAULT 0 | 1 if roleplaying event (Master), 0 if non-RPG (Host) |
+| `discussion_message_id` | INTEGER | | Message ID of the booking reply in the discussion group |
+| `discussion_chat_id` | TEXT | | Chat holding that reply |
+| `admin_message_id` | INTEGER | | Message ID of the event card in the admin chat |
+| `eventbrite_event_id` | TEXT | | Eventbrite event ID (NULL = not on Eventbrite) |
+| `eventbrite_url` | TEXT | | Public Eventbrite event URL |
+| `eventbrite_ticket_class_id` | TEXT | | ID of the single free ticket class |
+| `eventbrite_status` | TEXT | | Our view of the Eventbrite state: `draft`, `live`, `unpublished`, `closed` (cancelled in Telegram, has orders, Eventbrite not cancelled yet) or `canceled` |
+| `eventbrite_quantity_total` | INTEGER | | Last ticket quantity pushed (skips no-op calls) |
+| `eventbrite_content_version` | INTEGER | DEFAULT 0 | Structured-content page version (each write sends last + 1) |
+| `eventbrite_synced_at` | TEXT | | Timestamp of the last successful poll |
 
 ### Table: `reservations`
 | Column | Type | Constraints / Default | Description |
@@ -422,6 +484,8 @@ GdG-Event-Bot/
 | `username` | TEXT | | Telegram username (without @) or null if user has no handle |
 | `full_name` | TEXT | | Display / full name for users without a username |
 | `seats_booked` | INTEGER | DEFAULT 0 | Number of seats booked by this user |
+| `source` | TEXT | DEFAULT 'telegram' | `telegram` or `eventbrite` |
+| `eventbrite_order_id` | TEXT | | Eventbrite order ID (Eventbrite rows only; `user_id`/`username` are NULL, `full_name` is `Mario R.`). Unique per `(event_id, eventbrite_order_id)` |
 
 ### Table: `scheduled_events`
 | Column | Type | Constraints / Default | Description |
@@ -454,6 +518,18 @@ GdG-Event-Bot/
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages | `4` |
 | `ALLOW_GROUP_EVENT_NEXT` | (Optional) Enable/disable `/event_next` in discussion group (`true`/`false`) | `true` |
+| `EVENTBRITE_TOKEN` | (Optional) Eventbrite private OAuth token | `ABC...` |
+| `EVENTBRITE_ORGANIZATION_ID` | (Optional) Eventbrite organization ID (`scripts/eventbrite_setup.py --orgs`) | `1234567890` |
+| `EVENTBRITE_VENUE_ID` | (Optional) Venue ID, created once with `scripts/eventbrite_setup.py --create-venue`. The integration is enabled only when token, organization and venue are all set | `1234567` |
+| `EVENTBRITE_ORGANIZER_ID` | (Optional) Sent as `organizer_id` when set | `1234567` |
+| `EVENTBRITE_TIMEZONE` | (Optional) Time zone of event dates | `Europe/Rome` |
+| `EVENTBRITE_CURRENCY` | (Optional) Currency of the (free) tickets | `EUR` |
+| `EVENTBRITE_LISTED` | (Optional) `false` = unlisted events (useful for testing) | `true` |
+| `EVENTBRITE_DEFAULT_START_TIME` | (Optional) Start time when the event date has no time | `20:45` |
+| `EVENTBRITE_EVENT_DURATION_HOURS` | (Optional) Event length used for the end time | `4` |
+| `EVENTBRITE_UNLIMITED_CAPACITY` | (Optional) Eventbrite capacity for events with unlimited seats (Telegram stays unlimited) | `50` |
+| `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
+| `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group (`true`/`false`); seats sync either way | `true` |
 
 ---
 
@@ -465,6 +541,7 @@ Defined in `utils/templates.py`:
 - **Full Recap Template (`recap_generate_text`):** Header + Event list with bold titles + Footer.
 - **Recap Discussion Comment (`recap_links_text`):** Header + list of active events with bold hyperlinked titles to channel posts.
 - **Slim Recap Template:** Automatically activated if the full recap exceeds Telegram's 1024-character caption limit. Has minimal fixed headers/footers.
+- **Discussion Booking Message (`format_discussion_booking_message`):** `👇 Gestisci qui la tua prenotazione!`, plus `🎟️ Prenota anche su Eventbrite: <link>` when the event is live on Eventbrite. Also `ASSOCIATION_ADDRESS` (reused by the Eventbrite description) and `EVENTBRITE_ROW_PREFIX` (`🎟️ `, prepended to Eventbrite subscribers by `format_reservation_subscriber_display`).
 - **Repost Schedule Card (`format_schedule_repost_message`):** Management card for a `scheduled_events` row (active weekdays, specific date, `/event_schedule` usage). Shared by `/event_schedule` and the weekday toggle callbacks.
 
 ---

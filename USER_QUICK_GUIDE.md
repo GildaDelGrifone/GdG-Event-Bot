@@ -10,6 +10,7 @@ Questa guida illustra le funzionalità principali del Bot e spiega come utilizza
 - **Generazione Automatica Eventi:** Creazione rapida di eventi da istruzioni libere con `/event_generate`, con recupero automatico delle scatole dei giochi da BoardGameGeek e composizione di collage per più giochi.
 - **Prenotazioni Live (Inline):** Gli utenti possono prenotare o disdire il proprio posto direttamente dai pulsanti interattivi sotto i messaggi del canale Telegram.
 - **Prevenzione Conflitti:** Il bot avvisa automaticamente gli utenti se si prenotano a più di un evento nello stesso giorno.
+- **Prenotazioni anche su Eventbrite (opzionale):** Un evento può essere pubblicato anche su Eventbrite, così chi non usa Telegram può prenotare da lì. I posti sono unici: una prenotazione su una delle due piattaforme aggiorna subito la disponibilità dell'altra.
 - **Recap Giornalieri:** Generazione automatica di collage di immagini e riepiloghi testuali per Telegram, con integrazione diretta verso le storie di Instagram e bozze per gli articoli di WordPress.
 
 ---
@@ -49,20 +50,33 @@ Sotto l'anteprima dell'evento troverai i pulsanti:
 Se un evento già pubblicato viene cancellato dal Master:
 - Usa il pulsante **[❌ Annulla Evento]**. L'evento verrà segnato come `[ANNULLATO]` nel canale pubblico, i posti scenderanno a zero e verrà ignorato nei recap.
 
-### 4. Gestione Manuale degli Iscritti
+### 4. Pubblicare un Evento anche su Eventbrite
+*(Disponibile solo se l'integrazione Eventbrite è configurata sul bot; altrimenti i pulsanti qui sotto non compaiono.)*
+- **Subito, in fase di approvazione:** sull'anteprima usa **[🚀 Publish + Eventbrite]** al posto di *Publish*. L'evento viene pubblicato su Telegram e poi su Eventbrite; il bot risponde con il link Eventbrite.
+- **Più tardi, su un evento già pubblicato:** usa il pulsante **[🎟️ Pubblica su Eventbrite]** sotto la scheda, oppure il comando `/event_publish_eventbrite` *(rispondendo alla scheda dell'evento, oppure `/event_publish_eventbrite <id>`)*. Fanno esattamente la stessa cosa. Una volta pubblicato, il pulsante diventa **[🎟️ Eventbrite]** e apre la dashboard dell'evento.
+- **Cosa serve:** l'evento deve essere approvato, avere una data futura e almeno un posto libero (un evento `0/0 Completo` o già pieno viene rifiutato: aggiorna i posti con `/event_edit_seats` e riprova). Gli eventi senza limite di posti usano la capienza impostata sul bot (`EVENTBRITE_UNLIMITED_CAPACITY`). Se qualcosa si interrompe a metà, rilancia lo stesso pulsante: riprende dal punto in cui si era fermato.
+- **Link:** il link Eventbrite compare solo nel messaggio di prenotazione del gruppo discussione (`🎟️ Prenota anche su Eventbrite`); il post del canale non cambia.
+- **Prenotazioni Eventbrite:** il bot controlla Eventbrite ogni pochi minuti. Le prenotazioni (e le disdette) arrivate da lì aggiornano i posti e vengono annunciate nel gruppo discussione (es. `🎟️ Mario R. ha prenotato 2 posti tramite Eventbrite`); compaiono col nome abbreviato, mai con l'email. Se il bot ha l'opzione `EVENTBRITE_BOOKING_NOTIFICATIONS=false`, i posti si aggiornano comunque ma l'annuncio non viene pubblicato.
+- **Modifiche:** titolo, data, sistema, host, note, descrizione, tipo, posti e immagine modificati con i comandi `/event_edit_*` vengono riportati anche su Eventbrite. Non si può ridurre `/event_edit_booked` o `/event_edit_seats` sotto il numero di posti già prenotati su Eventbrite.
+- **Annullare un evento:** con **[❌ Annulla Evento]** il bot annulla anche su Eventbrite.
+  - *Nessuna prenotazione su Eventbrite:* l'evento viene messo offline; **[♻️ Riattiva Evento]** lo ripubblica.
+  - *Con prenotazioni:* le vendite vengono chiuse e l'evento rinominato `[ANNULLATO] …`; il bot prova ad annullarlo. Se Eventbrite non lo permette, ti invia il link alla dashboard con il pulsante **[🎟️ Apri dashboard Eventbrite]**: premi *Annulla evento* lì (Eventbrite avviserà i partecipanti via email). Quando l'annullamento è fatto, il bot lo conferma da solo.
+  - Un evento annullato su Eventbrite non può essere riattivato: dopo **[♻️ Riattiva Evento]** il bot propone **[🎟️ Ricrea su Eventbrite]**.
+
+### 5. Gestione Manuale degli Iscritti
 Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se non hanno Telegram o hanno problemi tecnici):
-1. Clicca su **[👥 Gestisci Iscritti]** sotto l'evento per vedere la lista completa dei giocatori e usare i pulsanti `➕` e `➖`.
+1. Clicca su **[👥 Gestisci Iscritti]** sotto l'evento per vedere la lista completa dei giocatori e usare i pulsanti `➕` e `➖`. Le prenotazioni Eventbrite sono segnate con `🎟️` e non hanno `➕`/`➖`: sono un unico pulsante che apre la dashboard degli iscritti su Eventbrite, dove vanno gestite.
 2. Oppure usa i comandi (rispondendo al messaggio dell'evento o specificando l'ID):
    - `/event_sub_add @username [numero_posti]` *(es. `/event_sub_add @mario 2`)*
    - `/event_sub_remove @username [numero_posti]`
 
-### 5. Generazione Recap
+### 6. Generazione Recap
 - **Automatica:** Il bot genera automaticamente un riepilogo giornaliero alle **16:00** nei giorni di apertura (Lunedì, Mercoledì, Venerdì, Sabato, Domenica).
 - **Manuale:** Puoi forzare un recap in qualsiasi momento inviando il comando `/recap_generate` (o `/rg`). Per fare il recap di un giorno specifico usa `/rg DD-MM-YYYY`.
   *(Nota: se non ci sono eventi in programma per la data richiesta, il bot avvisa direttamente nel gruppo admin)*.
 - Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo WordPress.
 
-### 6. Controlli Generali del Bot
+### 7. Controlli Generali del Bot
 - `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale).
 - `/bot_resume`: Riattiva il bot.
 - `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa).
