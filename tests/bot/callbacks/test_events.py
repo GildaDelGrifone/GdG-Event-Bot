@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import core.db as db
 from bot.callbacks.router import handle_callback_query
+from bot.state import runtime_state
 from tests.support.config import eventbrite_credentials, patched_config
 from tests.support.db import TempDBMixin, create_event, create_subscribed_event
 from tests.support.telegram import callback_update, make_context, make_user
@@ -120,6 +121,32 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         query.edit_message_caption.assert_called_once()
         self.assertIn("✅ APPROVATO", query.edit_message_caption.call_args.kwargs["caption"])
         self.publish.assert_awaited_once_with(self.context, event_id, 999)
+
+    async def test_solo_eventbrite_button_approves_without_a_channel_post_and_publishes_on_eventbrite(self):
+        event_id = create_event()
+        update, query = callback_update(f"publish_eb_only_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
+        with patched_config(PUBLIC_CHANNEL_ID="-100500"):
+            await handle_callback_query(update, self.context)
+
+        event = db.get_event(event_id)
+        self.assertEqual(event["status"], "approved")
+        self.assertIsNone(event["telegram_message_id"])
+        channels = [c for c in self.context.bot.send_message.call_args_list if c.kwargs["chat_id"] == "-100500"]
+        self.assertEqual(channels, [])
+        self.context.bot.send_photo.assert_not_called()
+        self.assertIn("senza pubblicazione su Telegram", self.context.bot.send_message.call_args.kwargs["text"])
+        self.publish.assert_awaited_once_with(self.context, event_id, 999)
+
+    async def test_silent_mode_stops_the_channel_post_of_the_normal_buttons(self):
+        event_id = create_event()
+        update, _ = callback_update(f"publish_eb_event_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
+        with patched_config(PUBLIC_CHANNEL_ID="-100500"), patch.object(runtime_state, "telegram_silent", True):
+            await handle_callback_query(update, self.context)
+
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.assertIsNone(db.get_event(event_id)["telegram_message_id"])
+        self.context.bot.send_photo.assert_not_called()
+        self.publish.assert_awaited_once()
 
     async def test_plain_publish_never_touches_eventbrite(self):
         event_id = create_event()

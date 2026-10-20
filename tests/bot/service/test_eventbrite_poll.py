@@ -42,7 +42,7 @@ class PollCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     def make_event(self, status="approved", date="06-11-2099", eb_id="eb1", **overrides):
         fields = dict(title="Avventura <D&D>", date=f"Venerdì {date} 21:00", normalized_date=date, max_seats=4,
                       seats="4/4", booked_seats=0)
-        event_id = create_event(status=status, **{**fields, **overrides})
+        event_id = create_event(status=status, telegram_message_id=900, **{**fields, **overrides})
         db.update_event_field(event_id, "discussion_message_id", 321)
         if eb_id:
             db.set_eventbrite_info(event_id, eventbrite_event_id=eb_id, eventbrite_status="live")

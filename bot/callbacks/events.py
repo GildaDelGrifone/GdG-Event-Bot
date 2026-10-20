@@ -18,6 +18,7 @@ from bot.service.eventbrite import (
     recreate_on_eventbrite, retry_logo_on_eventbrite,
 )
 from bot.service.posts import update_event_messages
+from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +92,22 @@ async def _send_story_preview(context, chat_id, event):
     )
 
 
-async def _publish(query, context, event_id):
+async def _publish(query, context, event_id, telegram=True):
+    """Approves the event; the channel post is skipped for Eventbrite-only publishing (button or silent mode)."""
     update_event_status(event_id, "approved")
     event = get_event(event_id)
     await _mark_admin_card(
         query, APPROVED_SUFFIX, "publish", keyboard=get_approved_event_keyboard(event_id, event), use_html=True
     )
     if event:
-        await _publish_to_channel(context, query, event_id, event)
+        if telegram and not runtime_state.telegram_silent:
+            await _publish_to_channel(context, query, event_id, event)
+        else:
+            logger.info(f"Event #{event_id} approved without a Telegram post.")
+            await context.bot.send_message(
+                chat_id=query.message.chat_id, reply_to_message_id=query.message.message_id,
+                text=f"🔇 Evento #{event_id} approvato senza pubblicazione su Telegram.",
+            )
         await _send_story_preview(context, query.message.chat_id, event)
 
 
@@ -114,6 +123,14 @@ async def handle_publish_event_with_eventbrite(query, context, payload):
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id} (+ Eventbrite).")
     await _publish(query, context, event_id)
+    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+
+
+async def handle_publish_eventbrite_only(query, context, payload):
+    await query.answer()
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} approved event #{event_id} on Eventbrite only.")
+    await _publish(query, context, event_id, telegram=False)
     await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
 
 

@@ -31,7 +31,7 @@ This application monitors a Telegram channel, extracts event information using *
 - **Event Cancellation:** Admins can cancel any event at any time using a persistent `[Cancel]` button. Cancelled events update live in the channel and are flagged as `[ANNULLATO]` with zero seats in recaps and graphics.
 - **Daily Recaps & Multi-Image Collages:** Automatically runs at 16:00 on gaming days (Mon, Wed, Fri, Sat, Sun) or on-demand via `/recap_generate`. Stitches event artwork into clean collages (wrapped into multiple rows via `MAX_EVENTS_PER_ROW`) without cropping borders.
 - **Instagram Story Generator:** Programmatically builds 1080x1920 Instagram Story cards for individual events and daily recaps using Pillow (handling top banner artwork, dynamic text wrapping, seat counters, and association location footers).
-- **Eventbrite Integration (Optional):** Admins can also publish an event on Eventbrite (`[🚀 Publish + Eventbrite]`, `[🎟️ Pubblica su Eventbrite]` or `/event_publish_eventbrite`). Telegram and Eventbrite share one seat pool: bookings on either side update the other, Eventbrite bookings are polled every few minutes and announced in the discussion group, and edits/cancellations made in Telegram are mirrored on Eventbrite. The bot behaves exactly as before when Eventbrite is not configured.
+- **Eventbrite Integration (Optional):** Admins can also publish an event on Eventbrite (`[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`, `[🎟️ Pubblica su Eventbrite]` or `/event_publish_eventbrite`). Telegram and Eventbrite share one seat pool: bookings on either side update the other, Eventbrite bookings are polled every few minutes and announced in the discussion group, and edits/cancellations made in Telegram are mirrored on Eventbrite. The bot behaves exactly as before when Eventbrite is not configured.
 - **WordPress REST API Integration:** AI writes an Italian recap article embedding event details, Telegram message links, and individual event pictures (max 400x400). The recap collage is set as the featured image. Posts can be published publicly directly from Telegram.
 
 ---
@@ -148,7 +148,7 @@ python3 main.py
 - **Deferred Auto-Interception:** The bot parses the content via Gemini AI first. If confirmed as an event, it deletes the raw post from the public channel and routes it to admin review; if it is not an event, it is preserved in the channel.
 - **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`.
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
-- **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Publish + Eventbrite]` (publishes on Telegram, then on Eventbrite) and an approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates and events with no free seats (e.g. `0/0 Completo`) are refused; unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
+- **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Telegram + EB]` (publishes on Telegram, then on Eventbrite) and `[🎟️ Solo Eventbrite]` (approves the event without any channel post and publishes it on Eventbrite only), and an approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates and events with no free seats (e.g. `0/0 Completo`) are refused; unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).
 - **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches official box images from BoardGameGeek, stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
 
@@ -221,7 +221,8 @@ In `ADMIN_CHAT_ID` only:
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
-- `/bot_status`: Checks whether the bot is currently active or paused.
+- `/bot_status`: Checks whether the bot is currently active or paused, and whether Telegram publishing is silent.
+- `/bot_silent_telegram_toggle`: Turns "silent Telegram" on/off. While on, newly approved events are not posted to the channel (use it to publish only to Eventbrite); events already published keep working. In memory: a restart turns it off.
 
 ---
 

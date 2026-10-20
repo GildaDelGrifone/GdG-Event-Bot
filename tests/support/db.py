@@ -68,7 +68,7 @@ SUBSCRIBED_EVENT = {
 
 def create_subscribed_event(**overrides):
     """An approved "Avventura D&D" (5 seats) with @mario (user 1001) booked on it; returns its id."""
-    event_id = db.insert_event({**SUBSCRIBED_EVENT, **overrides}, None, "test original text")
+    event_id = db.insert_event({**SUBSCRIBED_EVENT, **overrides}, None, "test original text", telegram_message_id=5001)
     db.update_event_status(event_id, "approved")
     db.book_seat(event_id, 1001, "mario")
     return event_id
@@ -102,7 +102,7 @@ def create_no_username_event():
         "booked_seats": 0,
         "image_path": "dummy.jpg",
         "message_link": "https://t.me/c/123/789",
-    }, "dummy.jpg", "raw")
+    }, "dummy.jpg", "raw", telegram_message_id=789)
     db.update_event_status(event_id, "approved")
     return event_id
 

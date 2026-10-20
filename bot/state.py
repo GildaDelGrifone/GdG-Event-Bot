@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class BotRuntimeState:
     is_paused: bool = False
+    telegram_silent: bool = False  # newly approved events are not posted to the channel (Eventbrite only)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
 

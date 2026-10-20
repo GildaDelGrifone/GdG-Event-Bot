@@ -28,7 +28,10 @@ def get_approval_keyboard(event_id):
         ],
     ]
     if eventbrite_enabled():
-        rows.append([InlineKeyboardButton("🚀 Publish + Eventbrite", callback_data=f"publish_eb_event_{event_id}")])
+        rows.append([
+            InlineKeyboardButton("🚀 Telegram + EB", callback_data=f"publish_eb_event_{event_id}"),
+            InlineKeyboardButton("🎟️ Solo Eventbrite", callback_data=f"publish_eb_only_{event_id}"),
+        ])
     rows.append([_manage_subs_button(event_id)])
     return InlineKeyboardMarkup(rows)
 

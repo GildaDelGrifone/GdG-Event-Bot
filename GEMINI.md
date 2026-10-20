@@ -73,7 +73,8 @@ The system automates the ingestion, standardization, social sharing, and booking
      - Inserts the generated event as `pending` into SQLite and sends the preview card to `ADMIN_CHAT_ID` with standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
 4. **Monitoring Pause / Resume (`/bot_pause`, `/bot_resume`, `/bot_status`):**
    - Admins can send `/bot_pause` in `ADMIN_CHAT_ID` to make the bot temporarily "blind" to `PUBLIC_CHANNEL_ID` (it will not intercept, parse, or delete messages from the channel).
-   - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state.
+   - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state (including the silent flag below).
+   - `/bot_silent_telegram_toggle` flips `runtime_state.telegram_silent` (in memory, reset on restart). While on, `_publish` approves events **without** the channel post (also what `[🎟️ Solo Eventbrite]` does for a single event), so they can be published on Eventbrite only. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, booking announcements, admin-action notices). Events already published keep working; an Eventbrite-only event cannot be booked on Telegram and turning silent mode off does not publish it retroactively.
 
 ### 2.2. AI Parsing (`core/ai_parser.py`)
 - Model configured via `GEMINI_MODEL` (default: `gemini-3.1-flash-lite`).
@@ -245,7 +246,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Seat model.** `eb_seats` is the sum of `seats_booked` over the event's reservation rows with `source='eventbrite'`; `telegram_booked = booked_seats - eb_seats`; `capacity` is `max_seats` (or `EVENTBRITE_UNLIMITED_CAPACITY` when `max_seats` is NULL). The single free ticket class gets `quantity_total = max(eb_seats, capacity - telegram_booked)`, so Eventbrite's *quantity minus sold* always equals the seats still free on Telegram. A cancelled event gets `quantity_total = eb_seats`, which closes sales. The last pushed value is cached in `events.eventbrite_quantity_total` to skip no-op calls (`core.eventbrite.payload.ticket_quantity`).
 
-**Publishing** (`bot.service.eventbrite.publish_event_to_eventbrite`, shared by `[🚀 Publish + Eventbrite]` (`publish_eb_event_<id>`), `[🎟️ Pubblica su Eventbrite]` (`eb_publish_<id>`) and `/event_publish_eventbrite [ID]`):
+**Publishing** (`bot.service.eventbrite.publish_event_to_eventbrite`, shared by `[🚀 Telegram + EB]` (`publish_eb_event_<id>`), `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`, approves with no channel post), `[🎟️ Pubblica su Eventbrite]` (`eb_publish_<id>`) and `/event_publish_eventbrite [ID]`):
 1. Refuses (messaging `admin_chat_id`) when the integration is off, the event is missing or not `approved`, the date is missing/past, or a *limited* event has nothing left to sell (`0/0 Completo`, or fully booked on Telegram). `max_seats` NULL (unlimited) is never "full". Nothing is created on Eventbrite in these cases.
 2. Idempotent: an already `live` event just replies with its link; a `draft` resumes from the failed step. Steps run in `asyncio.to_thread` and store ids after each one: create event → create ticket class → upload logo (a failure is only a warning with a `[🖼️ Riprova caricamento logo]` button (`eb_logo_<id>`, `retry_logo_on_eventbrite`), the event still goes live; the image is padded to 2:1 by `utils.image_utils.pad_to_aspect`; the upload to the pre-signed URL goes out with a browser User-Agent and the whole upload cycle is retried up to 3 times with a fresh upload target on 429/502/503/504 and network errors, honouring `Retry-After` up to 15 s, because Eventbrite's WAF sometimes answers it with an HTML "Whoops!" page; errors are reduced to a one-line reason) → write the description page (structured content, version = stored version + 1) → publish. `eventbrite_status` goes `draft` → `live`.
 3. Sends `✅ Evento pubblicato su Eventbrite: <url>`, swaps the admin card buttons through `events.admin_message_id` (so the button and the command behave the same) and calls `update_event_messages`, so the discussion reply gains the link.
@@ -314,7 +315,7 @@ GdG-Event-Bot/
 │   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
-│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status
+│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_silent_telegram_toggle
 │   │   ├── public.py     # /start, /event_next, /event_subs
 │   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
 │   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads

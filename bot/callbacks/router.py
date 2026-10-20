@@ -7,6 +7,7 @@ from bot.callbacks import booking, events, recap, schedule, subscribers
 CALLBACK_ROUTES = (
     ("publish_event_", events.handle_publish_event),
     ("publish_eb_event_", events.handle_publish_event_with_eventbrite),
+    ("publish_eb_only_", events.handle_publish_eventbrite_only),
     ("eb_publish_", events.handle_eventbrite_publish),
     ("eb_recreate_", events.handle_eventbrite_recreate),
     ("eb_cancel_retry_", events.handle_eventbrite_cancel_retry),

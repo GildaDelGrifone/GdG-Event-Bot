@@ -24,6 +24,8 @@ async def send_discussion_notice(context, event, text, label):
     chat_id = discussion_chat_id()
     if chat_id is None:
         return
+    if not event.get('telegram_message_id'):
+        return  # never posted on Telegram (Eventbrite-only event): the group has nothing to reply to
     await send_with_reply_fallback(
         context.bot, chat_id, text, event.get('discussion_message_id'), log=logger, label=label
     )

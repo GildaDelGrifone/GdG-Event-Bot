@@ -124,10 +124,11 @@ class TestEventbriteKeyboards(unittest.TestCase):
             self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 1)
             self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 1)
 
-    def test_pending_card_offers_publish_plus_eventbrite(self):
+    def test_pending_card_offers_both_eventbrite_publications(self):
         with eventbrite_credentials():
             rows = self.rows(get_approval_keyboard(5))
-        self.assertEqual(rows[1], [("🚀 Publish + Eventbrite", "publish_eb_event_5", None)])
+        self.assertEqual(rows[1], [("🚀 Telegram + EB", "publish_eb_event_5", None),
+                                   ("🎟️ Solo Eventbrite", "publish_eb_only_5", None)])
         self.assertEqual(rows[2][0][1], "manage_subs_5")
 
     def test_approved_card_offers_to_publish_until_the_event_is_linked(self):
