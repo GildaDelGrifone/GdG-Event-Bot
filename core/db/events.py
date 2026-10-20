@@ -200,11 +200,12 @@ def get_eventbrite_cleanup_candidates(day):
 @db_safe(default=list)
 def get_eventbrite_tracked_events():
     """Approved/cancelled events linked to Eventbrite and dated today or later (or yesterday, to catch late cancellations).
-    Events already `canceled` on Eventbrite are left out: nothing can change on them any more."""
+    Events already `canceled` on Eventbrite, and `draft` ones (a publish that failed midway, no orders possible), are left
+    out: nothing can change on them."""
     yesterday = datetime.now() - timedelta(days=1)
     cutoff = (yesterday.year, yesterday.month, yesterday.day)
     rows = fetch_all(
         "SELECT * FROM events WHERE eventbrite_event_id IS NOT NULL AND status IN ('approved', 'cancelled') "
-        "AND COALESCE(eventbrite_status, '') != 'canceled'"
+        "AND COALESCE(eventbrite_status, '') NOT IN ('canceled', 'draft')"
     )
     return [row for row in rows if (event_date_tuple(row) or (0, 0, 0)) >= cutoff]

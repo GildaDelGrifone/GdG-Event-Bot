@@ -170,6 +170,31 @@ class TestCancellationDetection(PollCase):
         self.assertEqual(self.admin_texts(),
                          [f"✅ Evento #{event_id} annullato su Eventbrite (iscritti avvisati da Eventbrite)"])
 
+    async def test_an_event_deleted_by_hand_is_unlinked_once_and_no_longer_polled(self):
+        event_id = self.make_event()
+        db.update_event_field(event_id, "admin_message_id", 777)
+        self.get_event_mock.side_effect = EventbriteError(404, "NOT_FOUND", "The event does not exist")
+
+        with self.assertNoLogs("bot.service.eventbrite_poll", level="ERROR"):
+            await poll_eventbrite_bookings(self.bot)
+
+        self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
+        admin_calls = [c for c in self.bot.send_message.call_args_list if c.kwargs["chat_id"] == ADMIN_CHAT_ID]
+        self.assertEqual(len(admin_calls), 1)
+        self.assertIn("eliminato su Eventbrite", admin_calls[0].kwargs["text"])
+        self.assertEqual(admin_calls[0].kwargs.get("reply_to_message_id"), 777)
+
+        self.get_event_mock.reset_mock()
+        await poll_eventbrite_bookings(self.bot)  # unlinked: not tracked any more
+        self.get_event_mock.assert_not_called()
+
+    async def test_other_fetch_errors_keep_the_link(self):
+        event_id = self.make_event()
+        self.get_event_mock.side_effect = EventbriteError(500, "SERVER_ERROR", "boom")
+        await poll_eventbrite_bookings(self.bot)
+        self.assertEqual(db.get_event(event_id)["eventbrite_event_id"], "eb1")
+        self.assertEqual(self.admin_texts(), [])
+
     async def test_events_already_cancelled_on_eventbrite_are_not_polled(self):
         event_id = self.make_event()
         db.set_eventbrite_info(event_id, eventbrite_status="canceled")

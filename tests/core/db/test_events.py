@@ -77,6 +77,9 @@ class TestEventbriteInfo(TempDBMixin, unittest.TestCase):
         keep = {make(0), make(3), make(-1), make(0, status="cancelled")}
         make(-2)
         db.set_eventbrite_info(make(2), eventbrite_status="canceled")  # nothing can change on it any more
+        db.set_eventbrite_info(make(2), eventbrite_status="draft")  # a failed publish: no orders possible
+        keep.add(make(2))
+        db.set_eventbrite_info(max(keep), eventbrite_status="live")
         make(1, linked=False)
         make(1, status="pending")
         make(1, status="discarded")

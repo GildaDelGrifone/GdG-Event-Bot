@@ -186,6 +186,25 @@ def _publish_blocking(event, start_end):
     return {"id": eb_id, "url": url}, logo_error, collection_warning
 
 
+def is_gone(error):
+    """True when Eventbrite says the event does not exist any more (e.g. it was deleted by hand in the dashboard)."""
+    return isinstance(error, EventbriteError) and error.error == 'NOT_FOUND'
+
+
+async def unlink_deleted_eventbrite_event(context, event_id):
+    """Forgets an Eventbrite event that no longer exists, tells the admins and refreshes the card. Idempotent."""
+    event = get_event(event_id)
+    if not event or not event.get('eventbrite_event_id'):
+        return
+    clear_eventbrite_info(event_id)
+    logger.info(f"The Eventbrite event of #{event_id} no longer exists; link removed.")
+    text = f"ℹ️ Evento #{event_id} eliminato su Eventbrite: collegamento rimosso."
+    if event.get('status') == 'approved':
+        text += " Puoi ripubblicarlo con [🎟️ Pubblica su Eventbrite]."
+    await notify_admin(context, config.ADMIN_CHAT_ID, text, event_id=event_id)
+    await refresh_admin_card(context, event_id)
+
+
 async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
     """Publishes an approved event on Eventbrite (shared by the button and /event_publish_eventbrite). Idempotent."""
     if not eventbrite_enabled():
@@ -220,7 +239,16 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
         return
 
     try:
-        result, logo_error, collection_warning = await asyncio.to_thread(_publish_blocking, event, start_end)
+        try:
+            result, logo_error, collection_warning = await asyncio.to_thread(_publish_blocking, event, start_end)
+        except EventbriteError as e:
+            if not (is_gone(e) and event.get('eventbrite_event_id')):
+                raise
+            # The draft we were resuming was deleted by hand: start again from scratch, once
+            logger.info(f"The draft Eventbrite event of #{event_id} no longer exists; creating a new one.")
+            clear_eventbrite_info(event_id)
+            event = get_event(event_id)
+            result, logo_error, collection_warning = await asyncio.to_thread(_publish_blocking, event, start_end)
     except Exception as e:
         logger.error(f"Eventbrite publish failed for event #{event_id}: {e}")
         await notify_admin(context, admin_chat_id,
@@ -306,6 +334,9 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
             await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Logo non aggiornato su Eventbrite per #{event['id']} ({logo_error})",
                                reply_markup=_logo_retry_keyboard(event['id']), event_id=event['id'])
     except Exception as e:
+        if is_gone(e):
+            await unlink_deleted_eventbrite_event(context, event['id'])
+            return
         logger.error(f"Eventbrite sync failed for event #{event.get('id')}: {e}")
         await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Sync Eventbrite fallita per #{event.get('id')}: {e}", event_id=event['id'])
 

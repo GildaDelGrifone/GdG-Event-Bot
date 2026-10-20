@@ -25,7 +25,7 @@ from core.db import (
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
 from utils.templates import format_event_title_link
-from bot.service.eventbrite import finish_eventbrite_cancellation, notify_admin
+from bot.service.eventbrite import finish_eventbrite_cancellation, is_gone, notify_admin, unlink_deleted_eventbrite_event
 from bot.service.notices import send_discussion_notice
 from bot.service.posts import update_event_messages
 
@@ -107,7 +107,15 @@ async def _announce(ctx, event, changes):
 
 async def _poll_event(ctx, event):
     event_id, eb_id = event['id'], event['eventbrite_event_id']
-    eb_event = await asyncio.to_thread(get_eventbrite_event, eb_id)
+    try:
+        eb_event = await asyncio.to_thread(get_eventbrite_event, eb_id)
+    except EventbriteError as e:
+        if not is_gone(e):
+            raise
+        await unlink_deleted_eventbrite_event(ctx, event_id)  # deleted by hand: stop polling it
+        _last_full_fetch.pop(event_id, None)
+        _mismatch_logged.discard(event_id)
+        return
     await _check_cancellation(ctx, event, eb_event)
 
     # Same number sold as the seats we hold: nobody booked or cancelled, so the orders call would be wasted

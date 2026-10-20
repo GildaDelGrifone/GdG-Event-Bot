@@ -141,6 +141,29 @@ class TestPublish(EventbriteServiceCase):
         self.mocks["create_event"].assert_called_once()  # not created twice
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
 
+    async def test_a_draft_deleted_by_hand_is_created_again_once(self):
+        event_id = self.make_event()
+        self.link(event_id, eventbrite_status="draft", eventbrite_event_id="old1")
+        # the first step on the old draft fails with NOT_FOUND, everything after the re-creation works
+        self.mocks["set_description"].side_effect = [EventbriteError(404, "NOT_FOUND", ""), 1]
+
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+
+        self.mocks["create_event"].assert_called_once()
+        event = db.get_event(event_id)
+        self.assertEqual((event["eventbrite_event_id"], event["eventbrite_status"]), ("eb1", "live"))
+        self.assertIn("✅ Evento pubblicato", " ".join(self.texts()))
+
+    async def test_a_second_not_found_is_reported(self):
+        event_id = self.make_event()
+        self.link(event_id, eventbrite_status="draft", eventbrite_event_id="old1")
+        self.mocks["set_description"].side_effect = EventbriteError(404, "NOT_FOUND", "")
+
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+
+        self.assertEqual(self.mocks["create_event"].call_count, 1)  # re-created once, not in a loop
+        self.assertTrue(any("pubblicazione fallita" in t for t in self.texts()))
+
     async def test_resume_skips_the_ticket_class_and_bumps_the_description_version(self):
         event_id = self.make_event()
         self.link(event_id, eventbrite_status="draft", eventbrite_content_version=1)
@@ -257,6 +280,20 @@ class TestSync(EventbriteServiceCase):
             await service.sync_eventbrite(self.context, self.event(disabled), content_changed=True)
 
         self.no_http()
+
+    async def test_sync_of_an_event_deleted_by_hand_unlinks_it(self):
+        event_id = self.make_event()
+        self.link(event_id)
+        db.book_seat(event_id, 1, username="a")
+        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(404, "NOT_FOUND", "")
+
+        await service.sync_eventbrite(self.context, db.get_event(event_id))
+
+        self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
+        self.assertEqual(len(self.texts()), 1)
+        self.assertIn("eliminato su Eventbrite", self.texts()[0])
+        self.assertIn("Pubblica su Eventbrite", self.texts()[0])
+        self.assertFalse(any("Sync Eventbrite fallita" in t for t in self.texts()))
 
     async def test_unchanged_quantity_makes_no_call(self):
         event_id = self.make_event()
