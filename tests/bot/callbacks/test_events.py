@@ -100,10 +100,10 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         super().setUp()
         self.context = make_context()
-        self.publish = patch("bot.callbacks.events.publish_event_to_eventbrite", new_callable=AsyncMock).start()
+        self.publish = patch("bot.callbacks.events.start_eventbrite_publish", new_callable=AsyncMock).start()
         self.cancel = patch("bot.callbacks.events.cancel_on_eventbrite", new_callable=AsyncMock).start()
         self.reactivate = patch("bot.callbacks.events.reactivate_on_eventbrite", new_callable=AsyncMock).start()
-        self.recreate = patch("bot.callbacks.events.recreate_on_eventbrite", new_callable=AsyncMock).start()
+        self.recreate = self.publish
         self.update_messages = patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock).start()
         patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
         patch("bot.callbacks.events.send_reactivation_notice", new_callable=AsyncMock).start()
@@ -175,7 +175,7 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         update, query = callback_update(f"eb_recreate_{event_id}", chat_id=999)
         await handle_callback_query(update, self.context)
         query.edit_message_reply_markup.assert_awaited_once_with(reply_markup=None)
-        self.recreate.assert_awaited_once_with(self.context, event_id, 999)
+        self.recreate.assert_awaited_once_with(self.context, event_id, 999, recreate=True)
 
     async def test_cancel_and_reactivate_mirror_on_eventbrite_only_for_linked_events(self):
         linked = create_event(status="approved")

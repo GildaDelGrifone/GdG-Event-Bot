@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
-from bot.service.eventbrite import publish_event_to_eventbrite
+from bot.service.eventbrite import start_eventbrite_publish
 from core.db import get_event
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @admin_only()
 async def event_publish_eventbrite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Same as the [🎟️ Pubblica su Eventbrite] button; every other check lives in publish_event_to_eventbrite."""
+    """Same as the [🎟️ Pubblica su Eventbrite] button; every other check lives in publish_event_to_eventbrite (which runs in the background)."""
     msg = resolve_message(update)
     if not msg:
         return
@@ -44,4 +44,4 @@ async def event_publish_eventbrite_command(update: Update, context: ContextTypes
         return
 
     logger.info(f"{describe_user(update.effective_user)} requested Eventbrite publication of event #{event_id}.")
-    await publish_event_to_eventbrite(context, event_id, msg.chat_id)
+    await start_eventbrite_publish(context, event_id, msg.chat_id)

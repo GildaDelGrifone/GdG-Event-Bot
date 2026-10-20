@@ -105,6 +105,22 @@ class TestDiscussionForward(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         text = self.context.bot.send_message.call_args.kwargs["text"]
         self.assertIn("🎟️ Prenota anche su Eventbrite: <a href=\"https://eventbrite.example/e/1\">link</a>", text)
 
+    async def test_link_published_while_the_reply_was_being_sent_is_added_afterwards(self):
+        async def publish_finishes_meanwhile(**kwargs):
+            db.set_eventbrite_info(self.event_id, eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="live")
+            return MagicMock(chat_id=-100222, message_id=4242)
+        self.context.bot.send_message.side_effect = publish_finishes_meanwhile
+
+        await handle_discussion_forward(self.forward(), self.context)
+
+        call = self.context.bot.edit_message_text.call_args.kwargs
+        self.assertEqual((call["chat_id"], call["message_id"]), (-100222, 4242))
+        self.assertIn("Prenota anche su Eventbrite", call["text"])
+
+    async def test_no_extra_edit_when_nothing_changed(self):
+        await handle_discussion_forward(self.forward(), self.context)
+        self.context.bot.edit_message_text.assert_not_called()
+
     async def test_existing_reply_is_edited_as_text_with_the_link(self):
         db.update_discussion_message_info(self.event_id, 4242, -100222)
         db.set_eventbrite_info(self.event_id, eventbrite_url="https://eventbrite.example/e/1", eventbrite_status="live")

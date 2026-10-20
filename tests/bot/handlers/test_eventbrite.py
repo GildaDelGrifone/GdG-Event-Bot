@@ -13,7 +13,7 @@ class TestEventPublishEventbriteCommand(TempDBMixin, unittest.IsolatedAsyncioTes
         super().setUp()
         self.event_id = create_event(status="approved", title="Avventura")
         self.context = make_context()
-        patcher = patch("bot.handlers.eventbrite.publish_event_to_eventbrite", new_callable=AsyncMock)
+        patcher = patch("bot.handlers.eventbrite.start_eventbrite_publish", new_callable=AsyncMock)
         self.publish = patcher.start()
         self.addCleanup(patcher.stop)
 

@@ -14,8 +14,8 @@ from bot.keyboards import (
     get_eventbrite_cancel_confirmation_keyboard,
 )
 from bot.service.eventbrite import (
-    cancel_on_eventbrite, cancel_only_on_eventbrite, finish_eventbrite_cancellation, publish_event_to_eventbrite, reactivate_on_eventbrite,
-    recreate_on_eventbrite, retry_logo_on_eventbrite,
+    cancel_on_eventbrite, cancel_only_on_eventbrite, finish_eventbrite_cancellation, reactivate_on_eventbrite,
+    retry_logo_on_eventbrite, start_eventbrite_publish,
 )
 from bot.service.posts import update_event_messages
 from bot.state import runtime_state
@@ -124,7 +124,7 @@ async def handle_publish_event_with_eventbrite(query, context, payload):
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id} (+ Eventbrite).")
     await _publish(query, context, event_id)
-    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+    await start_eventbrite_publish(context, event_id, query.message.chat_id)
 
 
 async def handle_publish_eventbrite_only(query, context, payload):
@@ -132,14 +132,14 @@ async def handle_publish_eventbrite_only(query, context, payload):
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} approved event #{event_id} on Eventbrite only.")
     await _publish(query, context, event_id, telegram=False)
-    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+    await start_eventbrite_publish(context, event_id, query.message.chat_id)
 
 
 async def handle_eventbrite_publish(query, context, payload):
     await query.answer()
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} requested Eventbrite publication of event #{event_id}.")
-    await publish_event_to_eventbrite(context, event_id, query.message.chat_id)
+    await start_eventbrite_publish(context, event_id, query.message.chat_id)
 
 
 async def handle_eventbrite_recreate(query, context, payload):
@@ -150,7 +150,7 @@ async def handle_eventbrite_recreate(query, context, payload):
         await query.edit_message_reply_markup(reply_markup=None)  # one click only
     except Exception as e:
         logger.debug(f"Could not remove the recreate button: {e}")
-    await recreate_on_eventbrite(context, event_id, query.message.chat_id)
+    await start_eventbrite_publish(context, event_id, query.message.chat_id, recreate=True)
 
 
 def _eventbrite_cancellable(event):

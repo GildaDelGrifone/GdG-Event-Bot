@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event_by_telegram_message_id, update_discussion_message_info
+from core.db import get_event, get_event_by_telegram_message_id, update_discussion_message_info
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
 from utils.templates import format_discussion_booking_message, recap_links_text
@@ -66,6 +66,23 @@ async def _reply_recap_links(context, message, forward_msg_id):
         logger.error(f"Error posting recap links to discussion group: {e}")
 
 
+async def _add_link_published_meanwhile(context, event_id, reply_msg, sent_text, keyboard):
+    """The Eventbrite publish runs in the background: if it finished while this message was being sent, its own edit
+    could not find the message yet, so apply the link here."""
+    fresh = get_event(event_id)
+    text = format_discussion_booking_message(fresh)
+    if text == sent_text:
+        return
+    try:
+        await context.bot.edit_message_text(
+            chat_id=reply_msg.chat_id, message_id=reply_msg.message_id, text=text, reply_markup=keyboard,
+            parse_mode="HTML", disable_web_page_preview=True,
+        )
+    except Exception as e:
+        if not is_not_modified_error(e):
+            logger.error(f"Error adding the Eventbrite link to the booking reply of event {event_id}: {e}")
+
+
 async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Attaches booking buttons (or recap links) under channel posts auto-forwarded into the discussion group."""
     message = update.message or update.channel_post
@@ -114,10 +131,11 @@ async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAUL
                 logger.error(f"Error updating existing discussion reply markup: {e}")
         return
 
+    text = format_discussion_booking_message(event)
     try:
         reply_msg = await context.bot.send_message(
             chat_id=message.chat_id,
-            text=format_discussion_booking_message(event),
+            text=text,
             reply_to_message_id=message.message_id,
             reply_markup=pub_keyboard,
             parse_mode="HTML",
@@ -125,5 +143,6 @@ async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAUL
         )
         update_discussion_message_info(event['id'], reply_msg.message_id, message.chat_id)
         logger.info(f"Successfully posted booking buttons reply in discussion group for event {event['id']}")
+        await _add_link_published_meanwhile(context, event['id'], reply_msg, text, pub_keyboard)
     except Exception as e:
         logger.error(f"Error sending booking buttons to discussion group: {e}")

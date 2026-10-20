@@ -621,3 +621,29 @@ async def recreate_on_eventbrite(context, event_id, admin_chat_id):
     """Forgets a cancelled Eventbrite event and publishes a fresh one."""
     clear_eventbrite_info(event_id)
     await publish_event_to_eventbrite(context, event_id, admin_chat_id)
+
+
+async def _run_eventbrite_publish(context, event_id, admin_chat_id, recreate):
+    try:
+        if recreate:
+            await recreate_on_eventbrite(context, event_id, admin_chat_id)
+        else:
+            await publish_event_to_eventbrite(context, event_id, admin_chat_id)
+    except Exception as e:
+        logger.error(f"Background Eventbrite publish of event #{event_id} crashed: {e}")
+    finally:
+        runtime_state.eventbrite_publishing.discard(event_id)
+
+
+async def start_eventbrite_publish(context, event_id, admin_chat_id, recreate=False):
+    """Publishes (or re-creates) the event on Eventbrite in the background and returns at once, so the Telegram update
+    that asked for it is not held up: the booking message of the discussion group is sent right away and gets the
+    Eventbrite link when the publish ends (publish_event_to_eventbrite ends with update_event_messages). Failures are
+    reported to the admins by the publish itself. One publish per event at a time."""
+    if event_id in runtime_state.eventbrite_publishing:
+        await notify_admin(context, admin_chat_id, f"⏳ Pubblicazione su Eventbrite già in corso per #{event_id}", event_id=event_id)
+        return
+    runtime_state.eventbrite_publishing.add(event_id)
+    task = asyncio.create_task(_run_eventbrite_publish(context, event_id, admin_chat_id, recreate))
+    runtime_state.eventbrite_tasks.add(task)
+    task.add_done_callback(runtime_state.eventbrite_tasks.discard)

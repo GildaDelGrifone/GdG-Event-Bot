@@ -1,3 +1,4 @@
+import asyncio
 import os
 import unittest
 from contextlib import ExitStack
@@ -847,6 +848,74 @@ class TestLogoRetry(EventbriteServiceCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBackgroundPublish(EventbriteServiceCase):
+    def setUp(self):
+        super().setUp()
+        patcher = patch.object(service.runtime_state, "eventbrite_publishing", set())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        tasks = patch.object(service.runtime_state, "eventbrite_tasks", set())
+        tasks.start()
+        self.addCleanup(tasks.stop)
+
+    async def finish(self):
+        await asyncio.gather(*list(service.runtime_state.eventbrite_tasks))
+
+    async def test_returns_at_once_and_publishes_in_the_background(self):
+        event_id = self.make_event()
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow_publish(context, eid, chat):
+            started.set()
+            await release.wait()
+
+        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
+            await service.start_eventbrite_publish(self.context, event_id, ADMIN)  # returns although the publish waits
+            await started.wait()
+            self.assertIn(event_id, service.runtime_state.eventbrite_publishing)
+            release.set()
+            await self.finish()
+        publish.assert_called_once_with(self.context, event_id, ADMIN)
+        self.assertEqual(service.runtime_state.eventbrite_publishing, set())
+        self.assertEqual(service.runtime_state.eventbrite_tasks, set())
+
+    async def test_a_second_press_while_in_flight_is_refused(self):
+        event_id = self.make_event()
+        release = asyncio.Event()
+
+        async def slow_publish(context, eid, chat):
+            await release.wait()
+
+        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
+            await service.start_eventbrite_publish(self.context, event_id, ADMIN)
+            await service.start_eventbrite_publish(self.context, event_id, ADMIN)
+            release.set()
+            await self.finish()
+        publish.assert_called_once()
+        self.assertIn(f"⏳ Pubblicazione su Eventbrite già in corso per #{event_id}", self.texts())
+
+    async def test_the_event_is_released_when_the_publish_crashes(self):
+        event_id = self.make_event()
+        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=RuntimeError("boom")):
+            await service.start_eventbrite_publish(self.context, event_id, ADMIN)
+            await self.finish()
+        self.assertEqual(service.runtime_state.eventbrite_publishing, set())
+
+    async def test_recreate_goes_through_the_recreate_flow(self):
+        event_id = self.make_event()
+        with patch("bot.service.eventbrite.recreate_on_eventbrite") as recreate:
+            await service.start_eventbrite_publish(self.context, event_id, ADMIN, recreate=True)
+            await self.finish()
+        recreate.assert_called_once_with(self.context, event_id, ADMIN)
+
+    async def test_publishing_end_to_end_in_the_background_updates_the_messages(self):
+        event_id = self.make_event()
+        await service.start_eventbrite_publish(self.context, event_id, ADMIN)
+        await self.finish()
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
+        self.update_messages.assert_awaited_once_with(self.context, event_id)
 
 
 class TestPublishVenue(EventbriteServiceCase):
