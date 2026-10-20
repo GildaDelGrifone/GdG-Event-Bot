@@ -321,8 +321,19 @@ All maintenance utilities are located in the `scripts/` directory:
   python3 scripts/eventbrite_setup.py --venues
   python3 scripts/eventbrite_setup.py --create-venue --name "Gilda del Grifone" \
       --address "Via Ada Negri 8/A" --city Torino --postal-code 10135 --country IT
+
+  # Optional: create the two collections and print their ids
+  python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo"
+  python3 scripts/eventbrite_setup.py --create-collection "Giochi da tavolo"
   ```
-  Fill `EVENTBRITE_TOKEN`, `EVENTBRITE_ORGANIZATION_ID` and `EVENTBRITE_VENUE_ID` in `.env` to enable the integration. Eventbrite has no sandbox: use `EVENTBRITE_LISTED=false` while testing.
+  Setup order:
+  1. Put `EVENTBRITE_TOKEN` in `.env`, then run `--check --orgs` and set `EVENTBRITE_ORGANIZATION_ID`.
+  2. Run `--create-venue` (or `--venues` to find an existing one) and set `EVENTBRITE_VENUE_ID`. These three values enable the integration.
+  3. Optional, for collections: run `--create-collection` once per collection and set `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` to the printed ids. For collections already made in the dashboard, the id is the number at the end of their URL (`/cc/name-<id>`).
+  4. The API creates collections as **drafts** and cannot publish them: publish each one from the Eventbrite dashboard.
+  5. Restart the bot.
+
+  Eventbrite has no sandbox: use `EVENTBRITE_LISTED=false` while testing.
 
 - **Inspect an Eventbrite Event (read-only):**
   ```bash

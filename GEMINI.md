@@ -261,6 +261,8 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
 - **Rate budget:** about one Eventbrite call per tracked event per poll (the orders call only on a change or at the periodic full check). With 10 events every 2 minutes that is about 300 calls per hour plus ~20 for the full checks, under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application (event creation/copy and publishing: 200/hour each).
 
+**Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
+
 **Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited. A failure is only a warning to the admins. Already published events are not backfilled.
 
 **Admin notices:** every Eventbrite notice about one event is sent as a reply to that event's admin card (`notify_admin(..., event_id=)`; plain message if the card is gone). The nightly cleanup summary covers several events, so it is a plain message.
@@ -384,7 +386,7 @@ GdG-Event-Bot/
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
-│   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create the venue
+│   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create the venue and collections
 │   ├── eventbrite_inspect.py # Read-only Eventbrite check: quantity_sold vs orders/attendees (--watch)
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
 ├── tests/                # unittest/pytest suite mirroring the source tree; shared helpers in tests/support/ (see §3.3)
