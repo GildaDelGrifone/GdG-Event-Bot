@@ -57,11 +57,14 @@ def event_payload(event, include_dates=True):
         "name": {"html": html.escape(event_name(event))},
         "summary": event_summary(event),
         "currency": config.EVENTBRITE_CURRENCY,
-        "venue_id": event.get("eventbrite_venue_id") or config.EVENTBRITE_VENUE_ID,
         "listed": bool(config.EVENTBRITE_LISTED),
         "shareable": True,
         "show_remaining": True,
     }
+    # Only the venue the event was published with: events without one (published before venues were stored) are
+    # never moved by an update, whatever EVENTBRITE_VENUE_ID is now
+    if event.get("eventbrite_venue_id"):
+        payload["venue_id"] = event["eventbrite_venue_id"]
     if config.EVENTBRITE_ORGANIZER_ID:
         payload["organizer_id"] = config.EVENTBRITE_ORGANIZER_ID
     if include_dates:

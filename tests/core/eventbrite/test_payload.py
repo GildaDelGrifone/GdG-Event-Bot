@@ -57,9 +57,9 @@ class TestEventPayload(unittest.TestCase):
     def test_payload_fields(self):
         with eventbrite_credentials(EVENTBRITE_ORGANIZER_ID="org-9", EVENTBRITE_LISTED=False):
             payload = event_payload(event(date="Venerdì 06-11-2099 21:00", normalized_date="06-11-2099"))
+        self.assertNotIn("venue_id", payload)
         self.assertEqual(payload["name"], {"html": "Avventura D&amp;D"})
         self.assertEqual(payload["summary"], "Una grande avventura")
-        self.assertEqual(payload["venue_id"], "venue1")
         self.assertEqual(payload["organizer_id"], "org-9")
         self.assertEqual((payload["currency"], payload["listed"]), ("EUR", False))
         self.assertTrue(payload["shareable"] and payload["show_remaining"])
@@ -69,7 +69,7 @@ class TestEventPayload(unittest.TestCase):
     def test_the_events_own_venue_wins_over_the_default(self):
         with eventbrite_credentials():
             self.assertEqual(event_payload(event(eventbrite_venue_id="venue2"), include_dates=False)["venue_id"], "venue2")
-            self.assertEqual(event_payload(event(eventbrite_venue_id=None), include_dates=False)["venue_id"], "venue1")
+            self.assertNotIn("venue_id", event_payload(event(eventbrite_venue_id=None), include_dates=False))
 
     def test_without_dates_or_organizer(self):
         with eventbrite_credentials():

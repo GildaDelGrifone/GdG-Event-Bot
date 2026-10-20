@@ -884,6 +884,12 @@ class TestPublishVenue(EventbriteServiceCase):
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
         self.assertEqual(self.created_venue(), "venue1")
 
+    async def test_syncing_a_legacy_event_never_sends_a_venue(self):
+        event_id = self.make_event()
+        self.link(event_id)  # published before venues were stored: eventbrite_venue_id stays NULL
+        await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+        self.assertNotIn("venue_id", self.mocks["update_event"].call_args.args[1])
+
     async def test_a_pick_that_is_no_longer_configured_falls_back_to_the_default(self):
         service.runtime_state.eventbrite_venue = "gone"
         event_id = self.make_event()

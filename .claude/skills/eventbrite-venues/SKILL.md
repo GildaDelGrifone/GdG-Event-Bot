@@ -35,7 +35,7 @@ At least one field is required.
 
 ## Rules
 1. **Street address from the user.** A Google Maps link (`maps.app.goo.gl/...`) only resolves (`curl -sL -o /dev/null -w '%{url_effective}'`) to a place name and coordinates, and reverse geocoding gives a nearby street, not the venue's address. Ask the user for the street address, then confirm the coordinates the script prints match the ones in the link.
-2. **Do not edit a venue that events already use** (the one in `EVENTBRITE_VENUE_ID` or `EVENTBRITE_VENUE_ID_ALTERNATIVES`, or one stored on published events) without asking: it moves every event held there. Prefer creating a new venue, or reusing an unused one the user names.
+2. **Editing a venue's name or address changes it for every event held there** (events point to the venue, not a copy), so do not edit one that events already use without asking; prefer creating a new venue or reusing an unused one the user names. Changing `EVENTBRITE_VENUE_ID` (the default) is safe: it only affects events published afterwards, existing events keep their venue.
 3. State what you will change (id, old values, new values) and get a yes before any create or update; both are visible on the real account.
 4. Use a throw-away approach for experiments: never create test venues you cannot remove, since the API cannot delete them.
 
