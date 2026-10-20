@@ -170,6 +170,13 @@ class TestCancellationDetection(PollCase):
         self.assertEqual(self.admin_texts(),
                          [f"✅ Evento #{event_id} annullato su Eventbrite (iscritti avvisati da Eventbrite)"])
 
+    async def test_events_already_cancelled_on_eventbrite_are_not_polled(self):
+        event_id = self.make_event()
+        db.set_eventbrite_info(event_id, eventbrite_status="canceled")
+        await poll_eventbrite_bookings(self.bot)
+        self.get_event_mock.assert_not_called()
+        self.orders_mock.assert_not_called()
+
     async def test_warning_when_eventbrite_cancelled_but_telegram_is_active(self):
         event_id = self.make_event()
         self.eb_status = "canceled"

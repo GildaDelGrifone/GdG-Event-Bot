@@ -371,8 +371,10 @@ def _try_cancel(event_id, eb_id):
     try:
         cancel_event(eb_id)
     except EventbriteError as e:
-        logger.warning(f"Eventbrite refused to cancel event #{event_id} ({e.error}).")
-        return False
+        if e.error != 'ALREADY_CANCELED':
+            logger.warning(f"Eventbrite refused to cancel event #{event_id} ({e.error}).")
+            return False
+        logger.info(f"Event #{event_id} was already cancelled on Eventbrite.")  # e.g. cancelled by hand
     set_eventbrite_info(event_id, eventbrite_status='canceled')
     return True
 

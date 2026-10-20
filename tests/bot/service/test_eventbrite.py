@@ -553,6 +553,18 @@ class TestFinishCancellation(EventbriteServiceCase):
         self.assertIn("non permette ancora di annullare", self.texts()[-1])
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "closed")
 
+    async def test_an_event_already_cancelled_by_hand_is_marked_cancelled_once(self):
+        event_id = self.closed_event()
+        self.mocks["cancel_event"].side_effect = EventbriteError(400, "ALREADY_CANCELED", "")
+
+        with self.assertNoLogs("bot.service.eventbrite", level="WARNING"):
+            await self.finish(event_id, from_poller=True)
+
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
+        self.mocks["cancel_event"].assert_called_once()
+        await self.finish(event_id, from_poller=True)  # no longer 'closed': no second attempt
+        self.mocks["cancel_event"].assert_called_once()
+
     async def test_only_closed_events_are_finished(self):
         event_id = self.make_event(status="cancelled")
         self.link(event_id, eventbrite_status="canceled")
