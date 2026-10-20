@@ -42,7 +42,7 @@ class PollCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     def make_event(self, status="approved", date="06-11-2099", eb_id="eb1", **overrides):
         fields = dict(title="Avventura <D&D>", date=f"Venerdì {date} 21:00", normalized_date=date, max_seats=4,
                       seats="4/4", booked_seats=0)
-        event_id = create_event(status=status, telegram_message_id=900, **{**fields, **overrides})
+        event_id = create_event(status=status, **{"telegram_message_id": 900, **fields, **overrides})
         db.update_event_field(event_id, "discussion_message_id", 321)
         if eb_id:
             db.set_eventbrite_info(event_id, eventbrite_event_id=eb_id, eventbrite_status="live")
@@ -73,6 +73,32 @@ class TestDiff(PollCase):
             "🎟️ Mario &lt;R.&gt; ha prenotato 2 posti tramite Eventbrite per: <b>Avventura &lt;D&amp;D&gt;</b>"))
         self.assertEqual(call.kwargs["reply_to_message_id"], 321)
         self.assertIsNotNone(event["eventbrite_synced_at"])
+
+    async def test_eventbrite_only_events_are_announced_in_the_admin_chat(self):
+        event_id = self.make_event(telegram_message_id=None)
+        self.orders = {"o1": ("Mario <R.>", 2)}
+
+        await poll_eventbrite_bookings(self.bot)
+
+        self.assertEqual(self.discussion_calls(), [])
+        (call,) = [c for c in self.bot.send_message.call_args_list if c.kwargs["chat_id"] == ADMIN_CHAT_ID]
+        self.assertTrue(call.kwargs["text"].startswith("🎟️ Mario &lt;R.&gt; ha prenotato 2 posti tramite Eventbrite"))
+        self.assertEqual(call.kwargs["parse_mode"], "HTML")
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)
+
+        self.bot.send_message.reset_mock()
+        self.orders = {}
+        await poll_eventbrite_bookings(self.bot)
+        self.assertIn("ha liberato 2 posti (Eventbrite)", self.admin_texts()[0])
+
+    async def test_eventbrite_only_announcements_follow_the_notifications_switch(self):
+        self.make_event(telegram_message_id=None)
+        self.orders = {"o1": ("Mario R.", 1)}
+
+        with patched_config(EVENTBRITE_BOOKING_NOTIFICATIONS=False):
+            await poll_eventbrite_bookings(self.bot)
+
+        self.assertEqual(self.admin_texts(), [])
 
     async def test_announcements_can_be_turned_off_while_seats_still_sync(self):
         event_id = self.make_event()

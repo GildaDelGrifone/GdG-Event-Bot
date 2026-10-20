@@ -703,6 +703,10 @@ class TestNoticesReplyToTheAdminCard(EventbriteServiceCase):
         self.assertEqual([c.get("reply_to_message_id") for c in calls], [500, None])
         self.assertEqual(calls[1]["text"], "ciao")
 
+    async def test_parse_mode_is_passed_through(self):
+        await service.notify_admin(self.context, ADMIN, "<b>ciao</b>", parse_mode="HTML")
+        self.assertEqual(self.context.bot.send_message.call_args.kwargs["parse_mode"], "HTML")
+
     async def test_notices_without_an_event_are_plain(self):
         await service.notify_admin(self.context, ADMIN, "ciao")
         self.assertEqual(self.replies(), [None])

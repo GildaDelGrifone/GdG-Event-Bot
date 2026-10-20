@@ -117,7 +117,7 @@ IG_ACCOUNT_ID=178414...
 # EVENTBRITE_ONLY_MODE=false           # start in Eventbrite-only mode (see /bot_eventbrite_only_toggle): no Telegram publish buttons, no Instagram story
 # EVENTBRITE_COLLECTION_ROLEPLAY=         # Eventbrite collection id for roleplaying events (python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo")
 # EVENTBRITE_COLLECTION_BOARDGAMES=       # same, for the other events; both empty = events are not put in collections
-# EVENTBRITE_BOOKING_NOTIFICATIONS=true  # discussion-group notice for Eventbrite bookings/releases
+# EVENTBRITE_BOOKING_NOTIFICATIONS=true  # notice for Eventbrite bookings/releases (discussion group; admin chat for Eventbrite-only events)
 
 # Storage Configuration (Optional)
 # DATA_DIR=/path/to/custom/data
@@ -164,7 +164,7 @@ python3 main.py
 - Users click `[👥 Lista]` to open a private DM with the bot and view the full list of participants without spamming the group, or manually call `/event_subs <id>` (or `/subs <id>`, or `/event_subs_<id>`).
 - **Same-Day Conflict Warning:** If a user reserves a seat on an event while already subscribed to another valid event (not cancelled or unsubscribed) scheduled for the same day, the bot processes the reservation normally and immediately posts a warning in the discussion chat. The warning tags the user, lists the conflicting event(s) with titles and direct message links, and reminds the user to release their seat from whichever event they decide not to attend.
 - Users click `[➖ Annulla]` to release reserved seats.
-- **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group (`EVENTBRITE_BOOKING_NOTIFICATIONS=false` silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored.
+- **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group, or in the admin chat (as a reply to the event card) for Eventbrite-only events (`EVENTBRITE_BOOKING_NOTIFICATIONS=false` silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored.
 
 ### 3. Daily Recap Flow
 - Runs automatically at **16:00** on Mondays, Wednesdays, Fridays, Saturdays, and Sundays (silent if no events are scheduled).

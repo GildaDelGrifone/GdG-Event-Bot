@@ -52,12 +52,12 @@ def _eb_seats_and_quantity(event):
     return eb_seats, ticket_quantity(event, eb_seats, config.EVENTBRITE_UNLIMITED_CAPACITY)
 
 
-async def notify_admin(context, chat_id, text, reply_markup=None, event_id=None):
-    """Plain-text notice. With event_id, in the admin chat, it replies to the event's admin card (plain send if the
+async def notify_admin(context, chat_id, text, reply_markup=None, event_id=None, parse_mode=None):
+    """Plain-text notice (HTML with parse_mode). With event_id, in the admin chat, it replies to the event's admin card (plain send if the
     card is gone), like the other admin notices."""
     if not chat_id:
         return
-    kwargs = dict(chat_id=chat_id, text=text, reply_markup=reply_markup, disable_web_page_preview=True)
+    kwargs = dict(chat_id=chat_id, text=text, reply_markup=reply_markup, disable_web_page_preview=True, parse_mode=parse_mode)
     card_id = None
     if event_id and str(chat_id) == str(config.ADMIN_CHAT_ID):
         event = get_event(event_id)

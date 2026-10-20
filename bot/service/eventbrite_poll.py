@@ -103,7 +103,10 @@ async def _announce(ctx, event, changes):
             text = f"❌ {html.escape(name)} ha liberato {_seats_label(-delta)} (Eventbrite) per: {title}"
         else:
             continue
-        await send_discussion_notice(ctx, event, text, label="Eventbrite booking notice")
+        if event.get('telegram_message_id'):
+            await send_discussion_notice(ctx, event, text, label="Eventbrite booking notice")
+        else:  # Eventbrite-only event: no discussion group traffic, the admins keep track in their chat
+            await notify_admin(ctx, config.ADMIN_CHAT_ID, text, event_id=event['id'], parse_mode="HTML")
 
 
 async def _poll_event(ctx, event):
