@@ -14,6 +14,7 @@ CALLBACK_ROUTES = (
     ("eb_logo_", events.handle_eventbrite_logo_retry),
     ("eb_cancel_ask_", events.handle_eventbrite_cancel_ask),
     ("eb_cancel_do_", events.handle_eventbrite_cancel_do),
+    ("ebvenue_close", venues.handle_venue_close),
     ("ebvenue_", venues.handle_venue_pick),
     ("discard_event_", events.handle_discard_event),
     ("cancel_event_", events.handle_cancel_event),

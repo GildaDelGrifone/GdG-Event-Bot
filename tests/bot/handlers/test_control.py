@@ -102,7 +102,7 @@ class TestEventbriteVenueCommand(unittest.IsolatedAsyncioTestCase):
         with as_admin_chat(), self.two_venues():
             await bot_eventbrite_venue_command(update, make_context())
             self.assertEqual(self.labels(update.message.reply_text.call_args.kwargs["reply_markup"]),
-                             [("✅ Gilda (predefinito)", "ebvenue_v1"), ("To Play", "ebvenue_v2")])
+                             [("✅ Gilda (predefinito)", "ebvenue_v1"), ("To Play", "ebvenue_v2"), ("❌ Chiudi", "ebvenue_close")])
 
     async def test_a_single_venue_has_nothing_to_choose(self):
         update = admin_update()

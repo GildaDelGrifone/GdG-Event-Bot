@@ -27,6 +27,7 @@ def get_venue_keyboard(venues, current_id, default_id):
     for venue_id, name in venues:
         label = ("✅ " if venue_id == current_id else "") + name + (" (predefinito)" if venue_id == default_id else "")
         rows.append([InlineKeyboardButton(label, callback_data=f"ebvenue_{venue_id}")])
+    rows.append([InlineKeyboardButton("❌ Chiudi", callback_data="ebvenue_close")])
     return InlineKeyboardMarkup(rows)
 
 

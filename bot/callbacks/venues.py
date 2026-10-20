@@ -11,6 +11,15 @@ from bot.state import runtime_state
 logger = logging.getLogger(__name__)
 
 
+async def handle_venue_close(query, context, payload):
+    """`[❌ Chiudi]` button of /bot_eventbrite_venue: removes the picker message."""
+    await query.answer("Chiuso.")
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+
 async def handle_venue_pick(query, context, payload):
     """`[📍 sede]` button of /bot_eventbrite_venue: sets the venue used for the events published from now on."""
     if not (config.ADMIN_CHAT_ID and str(query.message.chat_id) == str(config.ADMIN_CHAT_ID)):
