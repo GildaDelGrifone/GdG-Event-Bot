@@ -7,11 +7,17 @@ TICKET_NAME = "Posto"
 CLOSE_SALES_AFTER = timedelta(minutes=2)  # Eventbrite rejects a sales_end that is not in the future
 
 
-def create_free_ticket_class(eb_id, quantity, sales_end_utc=None):
-    """Creates the single free ticket class; sales end at sales_end_utc (aware datetime). Returns the ticket class JSON."""
+def create_free_ticket_class(eb_id, quantity, sales_end_utc=None, closed=False, now=None):
+    """Creates the single free ticket class; sales end at sales_end_utc (aware datetime). Returns the ticket class JSON.
+
+    closed=True is for an event with no seat left: the ticket is hidden and its sales end in a couple of minutes, so
+    the event page is visible but nothing can be bought (see update_ticket_capacity)."""
     ticket_class = {"name": TICKET_NAME, "free": True, "quantity_total": quantity}
     if sales_end_utc is not None:
         ticket_class["sales_end"] = utc_string(sales_end_utc)
+    if closed:
+        ticket_class["hidden"] = True
+        ticket_class["sales_end"] = utc_string((now or datetime.now(timezone.utc)) + CLOSE_SALES_AFTER)
     return eb_post(f"/events/{eb_id}/ticket_classes/", json={"ticket_class": ticket_class})
 
 

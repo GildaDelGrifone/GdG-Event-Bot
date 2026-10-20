@@ -186,28 +186,38 @@ class TestPublish(EventbriteServiceCase):
         self.no_http()
         self.assertEqual(self.texts(), ["ℹ️ Evento già pubblicato su Eventbrite: https://eventbrite.example/e/eb1"])
 
-    async def test_refused_for_a_zero_zero_completo_event(self):
+    async def test_a_zero_zero_completo_event_is_published_sold_out(self):
         event_id = self.make_event(seats="0/0 Completo", max_seats=0)
 
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
 
-        self.no_http()
-        self.assertEqual(self.texts(), [
-            "❌ Eventbrite: l'evento non ha posti liberi (0/0), non c'è nulla da prenotare su Eventbrite. "
-            "Aggiorna i posti con /event_edit_seats e riprova con [🎟️ Pubblica su Eventbrite]."])
-        self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
-        self.context.bot.edit_message_reply_markup.assert_not_called()  # the admin card keeps its buttons
-        self.context.bot.edit_message_text.assert_not_called()
+        self.assertEqual(self.mocks["create_free_ticket_class"].call_args.args[:2], ("eb1", 1))
+        self.assertTrue(self.mocks["create_free_ticket_class"].call_args.kwargs["closed"])
+        self.mocks["publish_event"].assert_called_once_with("eb1")
+        event = db.get_event(event_id)
+        self.assertEqual((event["eventbrite_status"], event["eventbrite_quantity_total"]), ("live", 0))
+        self.assertIn("✅ Evento pubblicato su Eventbrite", self.texts()[0])
+        self.assertIn("Evento esaurito", self.texts()[0])
+        self.context.bot.edit_message_text.assert_not_called()  # the admin card keeps its buttons
 
-    async def test_refused_for_an_event_fully_booked_on_telegram(self):
+    async def test_an_event_fully_booked_on_telegram_is_published_sold_out(self):
         event_id = self.make_event(max_seats=2, seats="2/2")
         db.book_seat(event_id, 1, username="a")
         db.book_seat(event_id, 2, username="b")
 
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
 
-        self.no_http()
-        self.assertIn("non ha posti liberi (0/2)", self.texts()[0])
+        self.assertTrue(self.mocks["create_free_ticket_class"].call_args.kwargs["closed"])
+        self.assertEqual(db.get_event(event_id)["eventbrite_quantity_total"], 0)
+
+    async def test_a_sold_out_event_reopens_when_a_seat_frees_up(self):
+        event_id = self.make_event(seats="0/0 Completo", max_seats=0)
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        db.update_event_field(event_id, "max_seats", 2)
+
+        await service.sync_eventbrite(self.context, db.get_event(event_id))
+
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 2, 0, ANY)
 
     async def test_allowed_for_an_unlimited_event_using_the_configured_capacity(self):
         event_id = self.make_event(max_seats=None, seats="no limit")

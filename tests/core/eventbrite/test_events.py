@@ -70,6 +70,13 @@ class TestTickets(unittest.TestCase):
         mock_post.assert_called_with("/events/1/ticket_classes/tc1/", json={"ticket_class": {"quantity_total": 2}})
 
 
+    def test_create_closed_hides_the_ticket_and_ends_its_sales_shortly(self, mock_post):
+        end = datetime(2099, 11, 7, tzinfo=timezone.utc)
+        now = datetime(2099, 1, 1, 12, 0, tzinfo=timezone.utc)
+        tickets.create_free_ticket_class("1", 1, end, closed=True, now=now)
+        mock_post.assert_called_once_with("/events/1/ticket_classes/", json={"ticket_class": {
+            "name": "Posto", "free": True, "quantity_total": 1, "sales_end": "2099-01-01T12:02:00Z", "hidden": True}})
+
     def test_capacity_with_free_seats_sets_the_total_and_reopens_sales(self, mock_post):
         end = datetime(2099, 11, 7, tzinfo=timezone.utc)
         tickets.update_ticket_capacity("1", "tc1", 3, 1, end)

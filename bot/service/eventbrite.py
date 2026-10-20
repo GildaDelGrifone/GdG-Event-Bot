@@ -120,15 +120,6 @@ def _recreate_keyboard(event_id):
     return InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Ricrea su Eventbrite", callback_data=f"eb_recreate_{event_id}")]])
 
 
-def _full_event_message(event):
-    max_seats = int(event['max_seats'])
-    free = max(0, max_seats - int(event.get('booked_seats') or 0))
-    return (
-        f"❌ Eventbrite: l'evento non ha posti liberi ({free}/{max_seats}), non c'è nulla da prenotare su Eventbrite. "
-        "Aggiorna i posti con /event_edit_seats e riprova con [🎟️ Pubblica su Eventbrite]."
-    )
-
-
 def _is_full(event):
     """Full = limited capacity with nothing left to sell. Unlimited (max_seats NULL) is never full; 0/0 Completo is."""
     if event.get('max_seats') is None:
@@ -184,8 +175,12 @@ def _publish_blocking(event, start_end):
 
     quantity = event.get('eventbrite_quantity_total')
     if not event.get('eventbrite_ticket_class_id'):
+        # No seat left: the event is published as sold out (a 1-seat hidden ticket, 0 = "sales closed" in the database)
+        closed = _is_full(event)
         _, quantity = _eb_seats_and_quantity(event)
-        ticket_class = create_free_ticket_class(eb_id, quantity, start_end[1])
+        if closed:
+            quantity = 0
+        ticket_class = create_free_ticket_class(eb_id, quantity or 1, start_end[1], closed=closed)
         set_eventbrite_info(event_id, eventbrite_ticket_class_id=ticket_class['id'], eventbrite_quantity_total=quantity)
 
     image_path = event.get('image_path')
@@ -202,7 +197,7 @@ def _publish_blocking(event, start_end):
     publish_event(eb_id)
     set_eventbrite_info(event_id, eventbrite_status='live', eventbrite_url=url, eventbrite_quantity_total=quantity)
     collection_warning = _assign_collection({**event, 'eventbrite_event_id': eb_id})
-    return {"id": eb_id, "url": url}, logo_error, collection_warning
+    return {"id": eb_id, "url": url, "sold_out": quantity == 0}, logo_error, collection_warning
 
 
 def is_gone(error):
@@ -253,9 +248,6 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
     except ValueError as e:
         await notify_admin(context, admin_chat_id, f"❌ Eventbrite: {e}", event_id=event_id)
         return
-    if not event.get('eventbrite_ticket_class_id') and _is_full(event):
-        await notify_admin(context, admin_chat_id, _full_event_message(event), event_id=event_id)
-        return
 
     try:
         try:
@@ -281,6 +273,8 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
     if collection_warning:
         await notify_admin(context, admin_chat_id, collection_warning, event_id=event_id)
     text = f"✅ Evento pubblicato su Eventbrite: {result['url']}"
+    if result.get('sold_out'):
+        text += "\nℹ️ Evento esaurito: pubblicato senza biglietti acquistabili (si riaprono se si libera un posto)."
     if len(eventbrite_venue_ids()) > 1:
         venue_id = (get_event(event_id) or {}).get('eventbrite_venue_id')
         if venue_id:
