@@ -158,7 +158,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 
 ### 2.6. Cancellation & Reactivation System
 - **Cancellation (`[Cancel]` / `[❌ Annulla Evento]`):**
-  - Admins can click Cancel on any event. The button only asks for confirmation: it swaps the card buttons for `[✅ Sì, annulla]` (`cancel_confirm_<id>`) and `[↩️ Indietro]` (`cancel_abort_<id>`), and shows a popup with the booked seats and, if any, the Eventbrite seats whose orders must then be cancelled from the dashboard. Nothing changes until the confirmation; a repeated confirmation is ignored.
+  - Admins can click Cancel on any event. The button only asks for confirmation: it swaps the card buttons for `[✅ Sì, annulla]` (`cancel_confirm_<id>`) and `[↩️ Indietro]` (`cancel_abort_<id>`), with no popup. Nothing changes until the confirmation; a repeated confirmation is ignored.
   - Status set to `cancelled` in DB.
   - Live public post is updated with `❌ [ANNULLATO]` and `🪑 Posti: 0/<max_seats> [ANNULLATO]`, and booking buttons are removed.
   - A notification is sent to the public discussion group (`DISCUSSION_GROUP_ID`) where all subscribed Telegram users are tagged and informed of the cancellation with the bold event title (hyperlinked to the event post if available, `disable_web_page_preview=True`). If no subscribers, sends a general cancellation notice.

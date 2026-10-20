@@ -2,7 +2,7 @@ import logging
 
 from core import config
 from core.db import (
-    delete_event, eventbrite_seat_count, get_event, update_event_status, update_telegram_message_info,
+    delete_event, get_event, update_event_status, update_telegram_message_info,
 )
 from utils.image_utils import create_story_image, delete_local_image
 from utils.templates import format_public_event_message
@@ -165,12 +165,8 @@ async def handle_eventbrite_cancel_ask(query, context, payload):
     if not _eventbrite_cancellable(event):
         await query.answer("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
         return
-    eb_seats = eventbrite_seat_count(event_id)
-    warning = "Annullare l'evento solo su Eventbrite? Su Telegram resta attivo e il gruppo non viene avvisato."
-    if eb_seats:
-        warning += f" {eb_seats} posti Eventbrite: riceverai i link per annullare ogni ordine."
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} on Eventbrite only.")
-    await query.answer(warning, show_alert=True)
+    await query.answer()
     try:
         await query.edit_message_reply_markup(reply_markup=get_eventbrite_cancel_confirmation_keyboard(event_id))
     except Exception as e:
@@ -238,13 +234,8 @@ async def handle_cancel_event(query, context, payload):
         await query.answer("Evento non trovato.", show_alert=True)
         return
 
-    eb_seats = eventbrite_seat_count(event_id)
-    telegram_seats = max(0, int(event.get('booked_seats') or 0) - eb_seats)
-    warning = f"Annullare l'evento? Gli iscritti verranno avvisati ({telegram_seats} posti su Telegram)."
-    if eb_seats:
-        warning += f" {eb_seats} posti Eventbrite: dopo la conferma riceverai i link per annullare ogni ordine."
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} (confirmation requested).")
-    await query.answer(warning, show_alert=True)
+    await query.answer()
     try:
         await query.edit_message_reply_markup(reply_markup=get_cancel_confirmation_keyboard(event_id))
     except Exception as e:

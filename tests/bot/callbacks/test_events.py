@@ -231,28 +231,11 @@ class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(db.get_event(event_id)["status"], "approved")
         self.assertEqual(self.buttons(query), [("✅ Sì, annulla", f"cancel_confirm_{event_id}"),
                                               ("↩️ Indietro", f"cancel_abort_{event_id}")])
-        alert, kwargs = query.answer.call_args.args[0], query.answer.call_args.kwargs
-        self.assertTrue(kwargs["show_alert"])
-        self.assertIn("2 posti su Telegram", alert)
-        self.assertNotIn("Eventbrite", alert)
-        self.assertLessEqual(len(alert), 200)  # Telegram's popup limit
+        query.answer.assert_awaited_once_with()  # no popup: the confirmation buttons are the warning
         query.edit_message_caption.assert_not_called()
         self.cancel_eb.assert_not_awaited()
         self.update_messages.assert_not_awaited()
         self.notice.assert_not_awaited()
-
-    async def test_the_warning_mentions_the_eventbrite_orders(self):
-        event_id = create_subscribed_event()
-        db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
-        update, query = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
-
-        await handle_callback_query(update, self.context)
-
-        self.assertEqual(self.buttons(query)[0][0], "✅ Sì, annulla")
-        alert = query.answer.call_args.args[0]
-        self.assertIn("2 posti Eventbrite: dopo la conferma riceverai i link per annullare ogni ordine", alert)
-        self.assertIn("2 posti su Telegram", alert)
-        self.assertLessEqual(len(alert), 200)
 
     async def test_unknown_event(self):
         update, query = callback_update("cancel_event_999", text=None, caption="Card", photo=True)
@@ -360,10 +343,7 @@ class TestEventbriteOnlyCancelCallbacks(TempDBMixin, unittest.IsolatedAsyncioTes
 
         await handle_callback_query(update, self.context)
 
-        alert = query.answer.call_args.args[0]
-        self.assertIn("solo su Eventbrite", alert)
-        self.assertIn("2 posti Eventbrite", alert)
-        self.assertLessEqual(len(alert), 200)
+        query.answer.assert_awaited_once_with()  # no popup: the confirmation buttons are the warning
         keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
         self.assertEqual([(b.text, b.callback_data) for b in keyboard.inline_keyboard[0]], [
             ("✅ Sì, annulla su EB", f"eb_cancel_do_{event_id}"),
