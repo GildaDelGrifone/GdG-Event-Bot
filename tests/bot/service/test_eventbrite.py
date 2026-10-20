@@ -2,7 +2,7 @@ import asyncio
 import os
 import unittest
 from contextlib import ExitStack
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import core.db as db
 from bot.service import eventbrite as service
@@ -14,7 +14,7 @@ from tests.support.telegram import ADMIN_CHAT_ID, make_context
 
 PATCHED = (
     "create_event", "update_event", "publish_event", "unpublish_event", "cancel_event", "set_description",
-    "create_free_ticket_class", "update_ticket_quantity", "upload_logo", "fetch_active_orders",
+    "create_free_ticket_class", "update_ticket_quantity", "update_ticket_capacity", "upload_logo", "fetch_active_orders",
     "add_event_to_collection", "remove_event_from_collection",
 )
 ADMIN = int(ADMIN_CHAT_ID)
@@ -196,6 +196,8 @@ class TestPublish(EventbriteServiceCase):
             "❌ Eventbrite: l'evento non ha posti liberi (0/0), non c'è nulla da prenotare su Eventbrite. "
             "Aggiorna i posti con /event_edit_seats e riprova con [🎟️ Pubblica su Eventbrite]."])
         self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
+        self.context.bot.edit_message_reply_markup.assert_not_called()  # the admin card keeps its buttons
+        self.context.bot.edit_message_text.assert_not_called()
 
     async def test_refused_for_an_event_fully_booked_on_telegram(self):
         event_id = self.make_event(max_seats=2, seats="2/2")
@@ -286,7 +288,7 @@ class TestSync(EventbriteServiceCase):
         event_id = self.make_event()
         self.link(event_id)
         db.book_seat(event_id, 1, username="a")
-        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(404, "NOT_FOUND", "")
+        self.mocks["update_ticket_capacity"].side_effect = EventbriteError(404, "NOT_FOUND", "")
 
         await service.sync_eventbrite(self.context, db.get_event(event_id))
 
@@ -309,23 +311,41 @@ class TestSync(EventbriteServiceCase):
 
         await service.sync_eventbrite(self.context, self.event(event_id))
 
-        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 3)
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 3, ANY, ANY)
         self.assertEqual(self.event(event_id)["eventbrite_quantity_total"], 3)
         await service.sync_eventbrite(self.context, self.event(event_id))
-        self.mocks["update_ticket_quantity"].assert_called_once()  # cached: no repeat
+        self.mocks["update_ticket_capacity"].assert_called_once()  # cached: no repeat
+
+    async def test_no_seat_left_closes_the_sales_instead_of_failing(self):
+        event_id = self.make_event(seats="0/4", booked_seats=4)
+        self.link(event_id, eventbrite_quantity_total=4)
+
+        await service.sync_eventbrite(self.context, self.event(event_id))
+
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 0, 0, ANY)
+        self.assertEqual(self.event(event_id)["eventbrite_quantity_total"], 0)
+        self.assertFalse(any("Sync Eventbrite fallita" in t for t in self.texts()))
+
+    async def test_seats_freeing_up_reopen_the_sales(self):
+        event_id = self.make_event()
+        self.link(event_id, eventbrite_quantity_total=0)
+
+        await service.sync_eventbrite(self.context, self.event(event_id))
+
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 4, 0, ANY)
 
     async def test_eventbrite_bookings_do_not_change_the_quantity(self):
         event_id = self.make_event()
         self.link(event_id, eventbrite_quantity_total=4)
         db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
         await service.sync_eventbrite(self.context, self.event(event_id))
-        self.mocks["update_ticket_quantity"].assert_not_called()
+        self.mocks["update_ticket_capacity"].assert_not_called()
 
     async def test_cancelled_events_do_not_push_capacity(self):
         event_id = self.make_event(status="cancelled")
         self.link(event_id, eventbrite_quantity_total=99)
         await service.sync_eventbrite(self.context, self.event(event_id))
-        self.mocks["update_ticket_quantity"].assert_not_called()
+        self.mocks["update_ticket_capacity"].assert_not_called()
 
     async def test_content_change_updates_the_event_and_the_next_description_version(self):
         event_id = self.make_event()
@@ -367,7 +387,7 @@ class TestSync(EventbriteServiceCase):
         event_id = self.make_event()
         self.link(event_id)
         db.book_seat(event_id, 1, username="a")
-        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(500, "SERVER_ERROR", "boom")
+        self.mocks["update_ticket_capacity"].side_effect = EventbriteError(500, "SERVER_ERROR", "boom")
 
         await service.sync_eventbrite(self.context, self.event(event_id))
 
@@ -389,7 +409,7 @@ class TestCancel(EventbriteServiceCase):
 
         self.mocks["unpublish_event"].assert_called_once_with("eb1")
         self.mocks["cancel_event"].assert_not_called()
-        self.mocks["update_ticket_quantity"].assert_not_called()
+        self.mocks["update_ticket_capacity"].assert_not_called()
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "unpublished")
 
     async def test_unpublish_refused_falls_through_to_the_cancel_branch(self):
@@ -480,7 +500,7 @@ class TestReactivate(EventbriteServiceCase):
         self.mocks["publish_event"].assert_called_once_with("eb1")
         self.assertEqual(self.mocks["update_event"].call_args.args[1]["name"], {"html": "Avventura"})
         self.mocks["set_description"].assert_called_once()
-        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 4)  # forced even if cached
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 4, ANY, ANY)  # forced even if cached
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
         self.assertIn(f"✅ Evento #{event_id} riattivato anche su Eventbrite", self.texts())
 
@@ -492,7 +512,7 @@ class TestReactivate(EventbriteServiceCase):
 
         self.mocks["publish_event"].assert_not_called()
         self.assertEqual(self.mocks["update_event"].call_args.args[1]["name"], {"html": "Avventura"})
-        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 4)
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 4, ANY, ANY)
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
 
     async def test_canceled_event_cannot_be_revived_and_offers_to_recreate_it(self):
@@ -845,7 +865,7 @@ class TestLogoRetry(EventbriteServiceCase):
 
         await service.sync_eventbrite(self.context, db.get_event(event_id), image_changed=True)
 
-        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 3)
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 3, ANY, ANY)
         self.assertEqual(self.texts(), [f"⚠️ Logo non aggiornato su Eventbrite per #{event_id} (Whoops!)"])
         self.assertEqual(self.logo_button(), f"eb_logo_{event_id}")
 
@@ -980,35 +1000,44 @@ class TestReserveOnEventbrite(EventbriteServiceCase):
 
     async def test_pushes_the_total_and_keeps_the_booking_when_the_seat_is_free(self):
         event_id = self.booked_event()
-        self.mocks["update_ticket_quantity"].return_value = {"quantity_sold": 0}
+        self.mocks["update_ticket_capacity"].return_value = {"quantity_sold": 0}
 
         self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
 
-        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 1)
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 1, ANY, ANY)
         self.assertEqual(db.get_event(event_id)["eventbrite_quantity_total"], 1)
+
+    async def test_the_last_seat_is_kept_when_eventbrite_has_sold_nothing(self):
+        event_id = self.make_event(max_seats=4, seats="0/4", booked_seats=4)
+        self.link(event_id)
+        self.mocks["update_ticket_capacity"].return_value = {"quantity_sold": 0}
+
+        self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
+
+        self.mocks["update_ticket_capacity"].assert_called_once_with("eb1", "tc1", 0, 0, ANY)
 
     async def test_refuses_when_eventbrite_already_sold_more_than_we_know(self):
         event_id = self.booked_event()
-        self.mocks["update_ticket_quantity"].return_value = {"quantity_sold": 2}  # we hold 0 Eventbrite seats
+        self.mocks["update_ticket_capacity"].return_value = {"quantity_sold": 2}  # we hold 0 Eventbrite seats
 
         self.assertFalse(await service.reserve_on_eventbrite(self.context, event_id))
 
     async def test_refuses_when_eventbrite_rejects_a_total_below_what_it_sold(self):
         event_id = self.booked_event()
-        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(
+        self.mocks["update_ticket_capacity"].side_effect = EventbriteError(
             400, "INVALID_QUANTITY_TOTAL", "quantity_total cannot be less than quantity_sold")
 
         self.assertFalse(await service.reserve_on_eventbrite(self.context, event_id))
 
     async def test_other_failures_keep_the_booking(self):
         event_id = self.booked_event()
-        self.mocks["update_ticket_quantity"].side_effect = ConnectionError("down")
+        self.mocks["update_ticket_capacity"].side_effect = ConnectionError("down")
 
         self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
 
     async def test_a_deleted_event_is_unlinked_and_the_booking_kept(self):
         event_id = self.booked_event()
-        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(404, "NOT_FOUND", "gone")
+        self.mocks["update_ticket_capacity"].side_effect = EventbriteError(404, "NOT_FOUND", "gone")
 
         self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
         self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])

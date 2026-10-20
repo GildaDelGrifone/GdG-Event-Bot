@@ -70,5 +70,24 @@ class TestTickets(unittest.TestCase):
         mock_post.assert_called_with("/events/1/ticket_classes/tc1/", json={"ticket_class": {"quantity_total": 2}})
 
 
+    def test_capacity_with_free_seats_sets_the_total_and_reopens_sales(self, mock_post):
+        end = datetime(2099, 11, 7, tzinfo=timezone.utc)
+        tickets.update_ticket_capacity("1", "tc1", 3, 1, end)
+        mock_post.assert_called_with("/events/1/ticket_classes/tc1/", json={"ticket_class": {
+            "quantity_total": 3, "hidden": False, "sales_end": "2099-11-07T00:00:00Z"}})
+
+    def test_capacity_without_seats_and_with_sales_keeps_the_total_at_sold_and_ends_sales(self, mock_post):
+        now = datetime(2099, 1, 1, 12, 0, tzinfo=timezone.utc)
+        tickets.update_ticket_capacity("1", "tc1", 2, 2, None, now=now)
+        mock_post.assert_called_with("/events/1/ticket_classes/tc1/", json={"ticket_class": {
+            "sales_end": "2099-01-01T12:02:00Z", "quantity_total": 2}})
+
+    def test_capacity_without_seats_and_without_sales_hides_the_ticket_and_never_sends_zero(self, mock_post):
+        now = datetime(2099, 1, 1, 12, 0, tzinfo=timezone.utc)
+        tickets.update_ticket_capacity("1", "tc1", 0, 0, None, now=now)
+        mock_post.assert_called_with("/events/1/ticket_classes/tc1/", json={"ticket_class": {
+            "sales_end": "2099-01-01T12:02:00Z", "hidden": True}})
+
+
 if __name__ == "__main__":
     unittest.main()

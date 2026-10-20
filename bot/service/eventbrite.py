@@ -35,7 +35,7 @@ from core.eventbrite import (
     upload_logo,
 )
 from core.eventbrite.media import short_reason
-from core.eventbrite.tickets import update_ticket_quantity
+from core.eventbrite.tickets import update_ticket_capacity, update_ticket_quantity
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
 from bot.state import runtime_state
@@ -294,14 +294,23 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
 
 # ---------------------------------------------------------------- sync
 
+def _update_capacity(event, eb_seats, quantity):
+    """Pushes the ticket total (closing sales when no seat is left, see update_ticket_capacity); returns the response."""
+    try:
+        sales_end = event_start_end(event)[1]
+    except ValueError:  # past or undated event: leave the sales end alone
+        sales_end = None
+    return update_ticket_capacity(event['eventbrite_event_id'], event['eventbrite_ticket_class_id'], quantity, eb_seats, sales_end)
+
+
 def _push_capacity(event, force=False):
     eb_id, tc_id = event['eventbrite_event_id'], event.get('eventbrite_ticket_class_id')
     if not tc_id:
         logger.warning(f"Event #{event['id']} has no Eventbrite ticket class; capacity not pushed.")
         return
-    _, quantity = _eb_seats_and_quantity(event)
+    eb_seats, quantity = _eb_seats_and_quantity(event)
     if force or quantity != event.get('eventbrite_quantity_total'):
-        update_ticket_quantity(eb_id, tc_id, quantity)
+        _update_capacity(event, eb_seats, quantity)
         set_eventbrite_info(event['id'], eventbrite_quantity_total=quantity)
 
 
@@ -309,7 +318,7 @@ def _reserve_blocking(event):
     """Pushes the new ticket total and reads quantity_sold from the same response: True when the seat is still ours."""
     eb_seats, quantity = _eb_seats_and_quantity(event)
     try:
-        response = update_ticket_quantity(event['eventbrite_event_id'], event['eventbrite_ticket_class_id'], quantity)
+        response = _update_capacity(event, eb_seats, quantity)
     except EventbriteError as e:
         # Eventbrite refuses a total below what it already sold: the last seat went there first
         if e.status_code == 400 and 'quantity' in f"{e.error} {e.description}".lower():
