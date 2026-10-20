@@ -283,6 +283,21 @@ class TestEventbriteCancelRetry(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finish.call_args.args[1]["id"], event_id)
         self.assertEqual(finish.call_args.args[2], 999)
 
+    async def test_the_links_message_is_passed_as_temporary(self):
+        event_id = create_event(status="cancelled")
+        update, query = callback_update(f"eb_cancel_retry_{event_id}", chat_id=999, message_id=123)
+        with patch("bot.callbacks.events.finish_eventbrite_cancellation", new_callable=AsyncMock) as finish:
+            await handle_callback_query(update, make_context())
+        self.assertIs(finish.call_args.kwargs["temporary_message"], query.message)
+
+    async def test_the_admin_card_itself_is_never_deleted(self):
+        event_id = create_event(status="cancelled")
+        update, query = callback_update(f"eb_cancel_retry_{event_id}", chat_id=999, message_id=123)
+        with patch("bot.callbacks.events.get_event", return_value={"id": event_id, "admin_message_id": 123}), \
+                patch("bot.callbacks.events.finish_eventbrite_cancellation", new_callable=AsyncMock) as finish:
+            await handle_callback_query(update, make_context())
+        self.assertIsNone(finish.call_args.kwargs["temporary_message"])
+
     async def test_unknown_event(self):
         update, query = callback_update("eb_cancel_retry_999", chat_id=999)
         with patch("bot.callbacks.events.finish_eventbrite_cancellation", new_callable=AsyncMock) as finish:

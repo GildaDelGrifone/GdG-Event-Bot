@@ -374,10 +374,11 @@ async def cancel_on_eventbrite(context, event):
         await _notify(context, config.ADMIN_CHAT_ID, text, reply_markup=keyboard)
 
 
-async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_poller=False):
+async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_poller=False, temporary_message=None):
     """Completes a 'closed' cancellation once every order has been cancelled from the dashboard.
 
     From the [🔁 …] button it re-sends the links of the orders still active; from the poller it stays quiet.
+    `temporary_message` is the order-links message the button was pressed on: it is deleted once the event is cancelled.
     """
     if not eventbrite_enabled() or not event or event.get('eventbrite_status') != 'closed':
         if not from_poller and event and event.get('eventbrite_status') == 'canceled':
@@ -399,6 +400,11 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
         return
 
     if cancelled:
+        if temporary_message:
+            try:
+                await temporary_message.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete the order-links message of event #{event_id}: {e}")
         await _notify(context, admin_chat_id,
                       f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite")
         await refresh_admin_card(context, event_id)

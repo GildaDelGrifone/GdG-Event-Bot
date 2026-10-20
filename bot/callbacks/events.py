@@ -185,7 +185,11 @@ async def handle_eventbrite_cancel_retry(query, context, payload):
     if not event:
         await query.answer("Evento non trovato.", show_alert=True)
         return
-    await finish_eventbrite_cancellation(context, event, query.message.chat_id)
+    # The order-links message is temporary; the button on the admin card itself must stay
+    is_card = query.message.message_id == event.get('admin_message_id')
+    await finish_eventbrite_cancellation(
+        context, event, query.message.chat_id, temporary_message=None if is_card else query.message
+    )
 
 
 async def handle_discard_event(query, context, payload):

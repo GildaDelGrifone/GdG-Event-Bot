@@ -495,6 +495,32 @@ class TestFinishCancellation(EventbriteServiceCase):
         self.assertEqual(self.texts(),
                          [f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite"])
 
+    async def test_the_temporary_links_message_is_deleted_once_cancelled(self):
+        event_id = self.closed_event()
+        temporary = MagicMock()
+        temporary.delete = AsyncMock()
+        await service.finish_eventbrite_cancellation(
+            self.context, db.get_event(event_id), ADMIN, temporary_message=temporary)
+        temporary.delete.assert_awaited_once()
+
+    async def test_the_temporary_message_stays_while_orders_remain(self):
+        event_id = self.closed_event()
+        self.mocks["fetch_active_orders"].return_value = {"o2": ("Anna B.", 1)}
+        temporary = MagicMock()
+        temporary.delete = AsyncMock()
+        await service.finish_eventbrite_cancellation(
+            self.context, db.get_event(event_id), ADMIN, temporary_message=temporary)
+        temporary.delete.assert_not_awaited()
+
+    async def test_a_failed_delete_does_not_block_the_confirmation(self):
+        event_id = self.closed_event()
+        temporary = MagicMock()
+        temporary.delete = AsyncMock(side_effect=Exception("too old"))
+        await service.finish_eventbrite_cancellation(
+            self.context, db.get_event(event_id), ADMIN, temporary_message=temporary)
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
+        self.assertEqual(len(self.texts()), 1)
+
     async def test_button_resends_only_the_remaining_orders(self):
         event_id = self.closed_event()
         self.mocks["fetch_active_orders"].return_value = {"o2": ("Anna B.", 1)}
