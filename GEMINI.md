@@ -548,6 +548,7 @@ GdG-Event-Bot/
 | `IG_ACCESS_TOKEN` | Meta Long-Lived Graph API User Access Token | `EAA...` |
 | `IG_ACCOUNT_ID` | Instagram Business Account Numeric ID | `178414...` |
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
+| `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages | `4` |
 | `ALLOW_GROUP_EVENT_NEXT` | (Optional) Enable/disable `/event_next` in discussion group (`true`/`false`) | `true` |
 | `EVENTBRITE_TOKEN` | (Optional) Eventbrite private OAuth token | `ABC...` |

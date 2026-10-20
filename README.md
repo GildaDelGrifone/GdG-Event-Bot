@@ -122,6 +122,9 @@ IG_ACCOUNT_ID=178414...
 # Storage Configuration (Optional)
 # DATA_DIR=/path/to/custom/data
 
+# Logging (Optional): DEBUG, INFO (default), WARNING, ERROR or CRITICAL. DEBUG also shows the Eventbrite poller job lines.
+# LOG_LEVEL=INFO
+
 # Collage Configuration (Optional)
 MAX_EVENTS_PER_ROW=4
 ```

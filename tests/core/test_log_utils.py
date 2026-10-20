@@ -5,7 +5,9 @@ import zipfile
 from datetime import datetime
 from unittest.mock import patch
 
-from core.log_utils import DailyMonthlyLogHandler, zip_completed_months
+import logging
+
+from core.log_utils import DailyMonthlyLogHandler, JobLinesToDebug, zip_completed_months
 
 
 class TestLogUtils(unittest.TestCase):
@@ -80,6 +82,40 @@ class TestLogUtils(unittest.TestCase):
              patch("logging.handlers.TimedRotatingFileHandler.doRollover"):
             handler.doRollover()
             mock_check.assert_called_once()
+
+
+class TestJobLinesToDebug(unittest.TestCase):
+    JOB = "poll_eventbrite_bookings"
+
+    def root_level(self, level):
+        root = logging.getLogger()
+        self.addCleanup(root.setLevel, root.level)
+        root.setLevel(level)
+
+    def record(self, message, level=logging.INFO):
+        return logging.LogRecord("apscheduler.executors.default", level, __file__, 1, message, None, None)
+
+    def test_the_job_line_is_hidden_at_the_default_level(self):
+        record = self.record(f'Running job "{self.JOB} (trigger: interval[0:01:00])"')
+        self.root_level(logging.INFO)
+        self.assertFalse(JobLinesToDebug((self.JOB,)).filter(record))
+
+    def test_the_job_line_is_shown_as_debug_when_debug_is_on(self):
+        record = self.record(f'Job "{self.JOB}" executed successfully')
+        self.root_level(logging.DEBUG)
+        self.assertTrue(JobLinesToDebug((self.JOB,)).filter(record))
+        self.assertEqual((record.levelno, record.levelname), (logging.DEBUG, "DEBUG"))
+
+    def test_other_jobs_are_untouched(self):
+        record = self.record('Running job "send_daily_scheduled_reposts"')
+        self.assertTrue(JobLinesToDebug((self.JOB,)).filter(record))
+        self.assertEqual(record.levelname, "INFO")
+
+    def test_warnings_and_errors_of_the_job_are_untouched(self):
+        for level in (logging.WARNING, logging.ERROR):
+            record = self.record(f'Job "{self.JOB}" raised an exception', level)
+            self.assertTrue(JobLinesToDebug((self.JOB,)).filter(record))
+            self.assertEqual(record.levelno, level)
 
 
 if __name__ == "__main__":

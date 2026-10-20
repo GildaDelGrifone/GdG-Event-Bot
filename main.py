@@ -30,13 +30,13 @@ from bot.callbacks.router import handle_callback_query
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
 from core.scheduler.runner import add_cron_job, add_interval_job, start_scheduler, stop_scheduler
-from core.log_utils import DailyMonthlyLogHandler
+from core.log_utils import DailyMonthlyLogHandler, JobLinesToDebug
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
+    level=getattr(logging, config.LOG_LEVEL),
     handlers=[
         DailyMonthlyLogHandler(log_file_path),
         logging.StreamHandler()
@@ -45,6 +45,8 @@ logging.basicConfig(
 
 # Set httpx logging to WARNING to prevent clutter from Telegram getUpdates polling
 logging.getLogger("httpx").setLevel(logging.WARNING)
+# The Eventbrite poller runs every minute: its "Running job" / "executed successfully" lines are DEBUG only
+logging.getLogger("apscheduler.executors.default").addFilter(JobLinesToDebug(("poll_eventbrite_bookings",)))
 
 logger = logging.getLogger(__name__)
 

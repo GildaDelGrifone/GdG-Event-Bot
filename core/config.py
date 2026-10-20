@@ -53,6 +53,17 @@ EVENTBRITE_COLLECTION_ROLEPLAY = os.getenv("EVENTBRITE_COLLECTION_ROLEPLAY") or 
 EVENTBRITE_COLLECTION_BOARDGAMES = os.getenv("EVENTBRITE_COLLECTION_BOARDGAMES") or None
 EVENTBRITE_BOOKING_NOTIFICATIONS = _env_bool("EVENTBRITE_BOOKING_NOTIFICATIONS", True)
 
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def _env_log_level(name, default="INFO"):
+    """A valid logging level name from the environment; a typo falls back to the default instead of stopping the bot."""
+    value = os.getenv(name, default).strip().upper()
+    return value if value in _LOG_LEVELS else default
+
+
+LOG_LEVEL = _env_log_level("LOG_LEVEL")
+
 MAX_EVENTS_PER_ROW = int(os.getenv("MAX_EVENTS_PER_ROW", "0"))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
