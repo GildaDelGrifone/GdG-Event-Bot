@@ -259,7 +259,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 - when something changed, calls `update_event_messages` (which also pushes the corrected capacity), announces each change in the discussion group (`🎟️ Mario R. ha prenotato 2 posti tramite Eventbrite per: …` / `❌ Mario R. ha liberato … (Eventbrite) per: …`, only while the event is `approved` and `EVENTBRITE_BOOKING_NOTIFICATIONS` is on) and alerts the admins on overbooking;
 - for a Telegram-cancelled event in `closed` state with no active orders left, calls `finish_eventbrite_cancellation(..., from_poller=True)`, which completes the Eventbrite cancellation;
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
-- **Rate budget:** two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour, under Eventbrite's 2000-per-hour limit per token.
+- **Rate budget:** two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour, under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application (event creation/copy and publishing: 200/hour each).
 
 **Approved card, second row** (when linked): `[🎟️ Eventbrite]` (dashboard) plus the Eventbrite-only action for the state: `[🚫 Annulla su Eventbrite]` (`eb_cancel_ask_<id>` → confirm `eb_cancel_do_<id>` / back `cancel_abort_<id>`) when `live`/`unpublished`, `[🔁 Completa annullamento]` (`eb_cancel_retry_<id>`) when `closed`, `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`) when `canceled`. `sync_eventbrite` skips `closed` events so a cancellation in progress is never reopened or renamed back.
 
@@ -370,6 +370,7 @@ GdG-Event-Bot/
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
 │   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create the venue
+│   ├── eventbrite_inspect.py # Read-only Eventbrite check: quantity_sold vs orders/attendees (--watch)
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
 ├── tests/                # unittest/pytest suite mirroring the source tree; shared helpers in tests/support/ (see §3.3)
 ├── data/                 # Default local storage for SQLite DB, fonts, and images

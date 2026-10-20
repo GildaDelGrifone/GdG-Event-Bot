@@ -318,6 +318,16 @@ All maintenance utilities are located in the `scripts/` directory:
   ```
   Fill `EVENTBRITE_TOKEN`, `EVENTBRITE_ORGANIZATION_ID` and `EVENTBRITE_VENUE_ID` in `.env` to enable the integration. Eventbrite has no sandbox: use `EVENTBRITE_LISTED=false` while testing.
 
+- **Inspect an Eventbrite Event (read-only):**
+  ```bash
+  # Ticket quantities (quantity_sold) versus orders and attendees; the ID is in the dashboard URL
+  python3 scripts/eventbrite_inspect.py 2003659307927
+
+  # Keep watching, printing only when something changes (every 20 seconds, minimum 15)
+  python3 scripts/eventbrite_inspect.py 2003659307927 --watch 20
+  ```
+  Shows the event status, each ticket class (`quantity_total`, `quantity_sold`, `quantity_pending`), every order with its cancelled/refunded/active attendees, whether `quantity_sold` matches the active attendees, and the Eventbrite seats the bot has stored. Only ids and counts are printed, never names or emails.
+
 - **Check Meta Instagram Token:**
   ```bash
   python3 scripts/test_ig.py

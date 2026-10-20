@@ -1,7 +1,7 @@
 """Polls Eventbrite for booking changes and mirrors them into the shared seat pool.
 
 Budget: two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour,
-under Eventbrite's 2000-per-hour token limit.
+under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application.
 """
 import asyncio
 import html
