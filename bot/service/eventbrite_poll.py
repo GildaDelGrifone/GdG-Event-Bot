@@ -68,7 +68,7 @@ async def _check_cancellation(ctx, event, eb_event):
     if eb_event.get('status') != 'canceled' or event.get('eventbrite_status') == 'canceled':
         return
     set_eventbrite_info(event['id'], eventbrite_status='canceled')
-    if event['status'] == 'cancelled':
+    if event['status'] == 'cancelled' or event.get('eventbrite_status') == 'closed':  # a cancellation we started
         await _notify_admins(ctx, f"✅ Evento #{event['id']} annullato su Eventbrite (iscritti avvisati da Eventbrite)")
     else:
         await _notify_admins(ctx, f"⚠️ Evento #{event['id']} annullato su Eventbrite ma attivo su Telegram")
@@ -96,8 +96,9 @@ async def _poll_event(ctx, event):
     if changes:
         await update_event_messages(ctx, event_id)
         current = get_event(event_id) or event
-        # Seats keep syncing for cancelled events, but refunds there are not worth announcing
-        if config.EVENTBRITE_BOOKING_NOTIFICATIONS and current.get('status') == 'approved':
+        # Seats keep syncing for cancelled events (on Telegram or Eventbrite only), but the group is not told
+        if (config.EVENTBRITE_BOOKING_NOTIFICATIONS and current.get('status') == 'approved'
+                and current.get('eventbrite_status') == 'live'):
             await _announce(ctx, current, changes)
         if any(change[3] for change in changes):
             max_seats = current.get('max_seats')
@@ -108,7 +109,7 @@ async def _poll_event(ctx, event):
             )
     # Every order was cancelled from the dashboard: the cancel API now works, so finish the job
     current = get_event(event_id) or event
-    if not orders and current.get('status') == 'cancelled' and current.get('eventbrite_status') == 'closed':
+    if not orders and current.get('eventbrite_status') == 'closed':
         await finish_eventbrite_cancellation(ctx, current, config.ADMIN_CHAT_ID, from_poller=True)
     set_eventbrite_info(event_id, eventbrite_synced_at=datetime.now().isoformat(timespec='seconds'))
 

@@ -541,5 +541,78 @@ class TestFinishCancellation(EventbriteServiceCase):
         self.assertIn("non completato", self.texts()[-1])
 
 
+class TestCancelOnlyOnEventbrite(EventbriteServiceCase):
+    async def cancel_only(self, event_id):
+        await service.cancel_only_on_eventbrite(self.context, db.get_event(event_id), ADMIN)
+
+    def discussion_or_channel_messages(self):
+        return [c for c in self.context.bot.send_message.call_args_list if c.kwargs["chat_id"] != ADMIN]
+
+    async def test_without_orders_the_event_is_cancelled_for_good_and_telegram_is_untouched(self):
+        event_id = self.make_event()
+        self.link(event_id)
+
+        await self.cancel_only(event_id)
+
+        self.mocks["unpublish_event"].assert_not_called()
+        self.mocks["cancel_event"].assert_called_once_with("eb1")
+        event = db.get_event(event_id)
+        self.assertEqual((event["status"], event["eventbrite_status"]), ("approved", "canceled"))
+        self.assertEqual(self.texts(), [f"✅ Evento #{event_id} annullato su Eventbrite (resta attivo su Telegram)"])
+        self.assertEqual(self.discussion_or_channel_messages(), [])
+        self.update_messages.assert_awaited_once_with(self.context, event_id)  # drops the link from the reply
+
+        edit = self.context.bot.edit_message_reply_markup.call_args.kwargs
+        self.assertEqual(edit["message_id"], 500)
+        second_row = [(b.text, b.callback_data) for b in edit["reply_markup"].inline_keyboard[1]]
+        self.assertEqual(second_row[1], ("🎟️ Ricrea su Eventbrite", f"eb_recreate_{event_id}"))
+
+    async def test_with_orders_admins_get_the_per_order_links_and_the_event_is_closed(self):
+        event_id = self.make_event()
+        self.link(event_id)
+        self.mocks["fetch_active_orders"].return_value = {"o1": ("Mario R.", 2)}
+        self.mocks["cancel_event"].side_effect = EventbriteError(400, "CANNOT_CANCEL", "")
+
+        await self.cancel_only(event_id)
+
+        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 2)
+        self.assertEqual(self.mocks["update_event"].call_args.args[1]["name"], {"html": "[ANNULLATO] Avventura"})
+        event = db.get_event(event_id)
+        self.assertEqual((event["status"], event["eventbrite_status"]), ("approved", "closed"))
+        call = self.context.bot.send_message.call_args.kwargs
+        self.assertTrue(call["text"].endswith("L'evento resta attivo su Telegram."))
+        urls = [b.url for row in call["reply_markup"].inline_keyboard for b in row if b.text.startswith("❌")]
+        self.assertEqual(urls, ["https://www.eventbrite.com/order-cancel?eid=eb1&oid=o1&aid="])
+        self.assertEqual(self.discussion_or_channel_messages(), [])
+
+    async def test_closed_events_are_not_synced_back_open(self):
+        event_id = self.make_event()
+        self.link(event_id, eventbrite_status="closed", eventbrite_quantity_total=2)
+        db.book_seat(event_id, 1, username="a")
+        await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+        self.no_http()
+
+    async def test_failure_is_reported_to_the_admins(self):
+        event_id = self.make_event()
+        self.link(event_id)
+        self.mocks["fetch_active_orders"].side_effect = EventbriteError(500, "SERVER_ERROR", "boom")
+        await self.cancel_only(event_id)
+        self.assertTrue(self.texts()[0].startswith(f"⚠️ Annullamento su Eventbrite fallito per #{event_id}"))
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
+
+    async def test_completing_a_cancellation_refreshes_the_card_for_the_telegram_state(self):
+        approved = self.make_event()
+        self.link(approved, eventbrite_status="closed")
+        await service.finish_eventbrite_cancellation(self.context, db.get_event(approved), ADMIN)
+        keyboard = self.context.bot.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        self.assertIn(f"eb_recreate_{approved}", [b.callback_data for row in keyboard.inline_keyboard for b in row])
+
+        cancelled = self.make_event(status="cancelled")
+        self.link(cancelled, eventbrite_status="closed")
+        await service.finish_eventbrite_cancellation(self.context, db.get_event(cancelled), ADMIN)
+        keyboard = self.context.bot.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, f"reactivate_event_{cancelled}")
+
+
 if __name__ == "__main__":
     unittest.main()

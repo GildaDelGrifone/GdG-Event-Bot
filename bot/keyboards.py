@@ -40,10 +40,31 @@ def get_approved_event_keyboard(event_id, event=None):
     ]]
     if eventbrite_enabled():
         if event and event.get('eventbrite_event_id'):
-            rows.append([InlineKeyboardButton("🎟️ Eventbrite", url=dashboard_url(event['eventbrite_event_id']))])
+            rows.append(_eventbrite_row(event_id, event))
         else:
             rows.append([InlineKeyboardButton("🎟️ Pubblica su Eventbrite", callback_data=f"eb_publish_{event_id}")])
     return InlineKeyboardMarkup(rows)
+
+
+def _eventbrite_row(event_id, event):
+    """Dashboard link plus the Eventbrite-only action that fits the current Eventbrite state."""
+    row = [InlineKeyboardButton("🎟️ Eventbrite", url=dashboard_url(event['eventbrite_event_id']))]
+    status = event.get('eventbrite_status')
+    if status in ('live', 'unpublished'):
+        row.append(InlineKeyboardButton("🚫 Annulla su Eventbrite", callback_data=f"eb_cancel_ask_{event_id}"))
+    elif status == 'closed':
+        row.append(InlineKeyboardButton("🔁 Completa annullamento", callback_data=f"eb_cancel_retry_{event_id}"))
+    elif status == 'canceled':
+        row.append(InlineKeyboardButton("🎟️ Ricrea su Eventbrite", callback_data=f"eb_recreate_{event_id}"))
+    return row
+
+
+def get_eventbrite_cancel_confirmation_keyboard(event_id):
+    """Confirmation for [🚫 Annulla su Eventbrite]: cancels only the Eventbrite event, Telegram stays active."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Conferma annullamento Eventbrite", callback_data=f"eb_cancel_do_{event_id}"),
+        InlineKeyboardButton("↩️ Indietro", callback_data=f"cancel_abort_{event_id}"),
+    ]])
 
 
 def get_cancel_confirmation_keyboard(event_id):

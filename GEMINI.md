@@ -261,6 +261,8 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
 - **Rate budget:** two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour, under Eventbrite's 2000-per-hour limit per token.
 
+**Approved card, second row** (when linked): `[🎟️ Eventbrite]` (dashboard) plus the Eventbrite-only action for the state: `[🚫 Annulla su Eventbrite]` (`eb_cancel_ask_<id>` → confirm `eb_cancel_do_<id>` / back `cancel_abort_<id>`) when `live`/`unpublished`, `[🔁 Completa annullamento]` (`eb_cancel_retry_<id>`) when `closed`, `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`) when `canceled`. `sync_eventbrite` skips `closed` events so a cancellation in progress is never reopened or renamed back.
+
 **Cancel / reactivate matrix** (Telegram `[❌ Annulla Evento]` after the admin confirmed, see §2.6 / `[♻️ Riattiva Evento]`; `eventbrite_status` is our view: `draft|live|unpublished|closed|canceled`):
 
 | Telegram action | Eventbrite state | What happens | New `eventbrite_status` |
@@ -268,6 +270,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 | Cancel | no orders | `unpublish` (reversible); if refused, falls through to the row below | `unpublished` |
 | Cancel | has orders | quantity set to the number sold, event renamed `[ANNULLATO] …`, cancel API tried (Eventbrite refuses it while orders exist); admins get **one `❌ Name (n)` button per order** opening its *Cancel order* page (`order_cancel_url`, capped at 40), plus `[🎟️ Apri dashboard Eventbrite]` and `[🔁 Ho annullato tutto, completa]` (`eb_cancel_retry_<id>`) | `canceled` if accepted, else `closed` |
 | `closed`, every order cancelled from the dashboard | `finish_eventbrite_cancellation` calls the cancel API: automatically from the poller (which sees no active orders left), or at once from `[🔁 …]`, which re-sends the links of the orders still active; the admins get `✅ Tutte le prenotazioni annullate…` | `canceled` |
+| `[🚫 Annulla su Eventbrite]` (Eventbrite only, after `[✅ Conferma annullamento Eventbrite]`) | `live` / `unpublished` | same as *Cancel* with orders, but never unpublishes: without orders the event is cancelled for good. **The Telegram event stays approved** and nothing is posted to the discussion group; the booking reply just loses its Eventbrite link, released seats become free on Telegram, and the poller announces nothing (announcements require `eventbrite_status == 'live'`) | `canceled`, or `closed` until the orders are cancelled |
 | Reactivate | `unpublished` | publish again, push content and capacity | `live` |
 | Reactivate | `closed` | restore the name and force a capacity push | `live` |
 | Reactivate | `canceled` | cannot be revived: admins get `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`), which clears the Eventbrite info and publishes a new event | — |

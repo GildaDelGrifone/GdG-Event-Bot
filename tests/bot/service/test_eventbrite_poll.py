@@ -249,11 +249,41 @@ class TestAutoCompleteCancellation(PollCase):
         self.finish.assert_awaited_once()
         self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
 
-    async def test_not_triggered_for_other_states(self):
+    async def test_eventbrite_only_cancellation_is_completed_too(self):
+        event_id = self.closed_event(status="approved")
+        await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_awaited_once()
+        self.assertEqual(self.finish.call_args.args[1]["id"], event_id)
+
+    async def test_not_triggered_for_live_events(self):
         self.make_event(status="cancelled")  # eventbrite_status 'live'
-        self.closed_event(status="approved")  # reactivated on Telegram meanwhile
+        self.make_event(status="approved")
         await poll_eventbrite_bookings(self.bot)
         self.finish.assert_not_awaited()
+
+
+class TestEventbriteOnlyCancellation(PollCase):
+    async def test_order_cancellations_are_not_announced_while_telegram_stays_active(self):
+        event_id = self.make_event()
+        self.orders = {"o1": ("Mario R.", 2)}
+        await poll_eventbrite_bookings(self.bot)
+        db.set_eventbrite_info(event_id, eventbrite_status="closed")
+        self.bot.send_message.reset_mock()
+
+        self.orders = {}  # the admin cancelled the order from the dashboard
+        await poll_eventbrite_bookings(self.bot)
+
+        self.assertEqual(self.discussion_calls(), [])
+        event = db.get_event(event_id)
+        self.assertEqual((event["status"], event["booked_seats"]), ("approved", 0))  # seats are free again on Telegram
+
+    async def test_eventbrite_side_cancel_of_a_closed_event_is_confirmed_not_warned(self):
+        event_id = self.make_event()
+        db.set_eventbrite_info(event_id, eventbrite_status="closed")
+        self.eb_status = "canceled"
+        await poll_eventbrite_bookings(self.bot)
+        self.assertEqual(self.admin_texts(),
+                         [f"✅ Evento #{event_id} annullato su Eventbrite (iscritti avvisati da Eventbrite)"])
 
 
 if __name__ == "__main__":

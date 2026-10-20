@@ -291,5 +291,69 @@ class TestEventbriteCancelRetry(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         query.answer.assert_awaited_with("Evento non trovato.", show_alert=True)
 
 
+class TestEventbriteOnlyCancelCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.context = make_context()
+        self.cancel_only = patch("bot.callbacks.events.cancel_only_on_eventbrite", new_callable=AsyncMock).start()
+        self.cancel_telegram = patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
+        self.addCleanup(patch.stopall)
+
+    def linked(self, status="approved", eb_status="live"):
+        event_id = create_event(status=status)
+        db.set_eventbrite_info(event_id, eventbrite_event_id="eb1", eventbrite_status=eb_status)
+        return event_id
+
+    async def test_ask_only_swaps_in_the_confirmation(self):
+        event_id = self.linked()
+        db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
+        update, query = callback_update(f"eb_cancel_ask_{event_id}", chat_id=999)
+
+        await handle_callback_query(update, self.context)
+
+        alert = query.answer.call_args.args[0]
+        self.assertIn("solo su Eventbrite", alert)
+        self.assertIn("2 posti Eventbrite", alert)
+        self.assertLessEqual(len(alert), 200)
+        keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        self.assertEqual([(b.text, b.callback_data) for b in keyboard.inline_keyboard[0]], [
+            ("✅ Conferma annullamento Eventbrite", f"eb_cancel_do_{event_id}"),
+            ("↩️ Indietro", f"cancel_abort_{event_id}"),
+        ])
+        self.cancel_only.assert_not_awaited()
+
+    async def test_confirm_cancels_on_eventbrite_only(self):
+        event_id = self.linked()
+        update, query = callback_update(f"eb_cancel_do_{event_id}", chat_id=999)
+
+        await handle_callback_query(update, self.context)
+
+        self.cancel_only.assert_awaited_once()
+        self.assertEqual(self.cancel_only.call_args.args[1]["id"], event_id)
+        self.assertEqual(self.cancel_only.call_args.args[2], 999)
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.cancel_telegram.assert_not_awaited()
+
+    async def test_refused_when_there_is_nothing_to_cancel(self):
+        cases = [self.linked(eb_status="canceled"), self.linked(eb_status="closed"), self.linked(eb_status="draft"),
+                 self.linked(status="cancelled"), create_event(status="approved"), 999]
+        for event_id in cases:
+            for prefix in ("eb_cancel_ask_", "eb_cancel_do_"):
+                with self.subTest(event_id=event_id, prefix=prefix):
+                    update, query = callback_update(f"{prefix}{event_id}", chat_id=999)
+                    await handle_callback_query(update, self.context)
+                    query.answer.assert_awaited_with("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
+                    query.edit_message_reply_markup.assert_not_called()
+        self.cancel_only.assert_not_awaited()
+
+    async def test_back_restores_the_card(self):
+        event_id = self.linked()
+        update, query = callback_update(f"cancel_abort_{event_id}", chat_id=999)
+        with eventbrite_credentials():
+            await handle_callback_query(update, self.context)
+        keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        self.assertIn(f"eb_cancel_ask_{event_id}", [b.callback_data for row in keyboard.inline_keyboard for b in row])
+
+
 if __name__ == "__main__":
     unittest.main()

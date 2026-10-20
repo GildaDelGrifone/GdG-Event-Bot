@@ -32,7 +32,7 @@ from core.eventbrite import (
 )
 from core.eventbrite.tickets import update_ticket_quantity
 from bot.common.messages import is_not_modified_error
-from bot.keyboards import get_approved_event_keyboard
+from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +58,20 @@ async def _notify(context, chat_id, text, reply_markup=None):
 
 
 async def _refresh_admin_card(context, event_id):
-    """Swaps the buttons of the event's admin card; works from both the button and the command."""
+    """Swaps the buttons of the event's admin card (approved or cancelled) to match the current Eventbrite state."""
     event = get_event(event_id)
     admin_message_id = event.get('admin_message_id') if event else None
     if not (admin_message_id and config.ADMIN_CHAT_ID):
         return
+    if event.get('status') == 'approved':
+        keyboard = get_approved_event_keyboard(event_id, event)
+    elif event.get('status') == 'cancelled':
+        keyboard = get_cancelled_event_keyboard(event_id)
+    else:
+        return
     try:
         await context.bot.edit_message_reply_markup(
-            chat_id=config.ADMIN_CHAT_ID, message_id=admin_message_id,
-            reply_markup=get_approved_event_keyboard(event_id, event),
+            chat_id=config.ADMIN_CHAT_ID, message_id=admin_message_id, reply_markup=keyboard,
         )
     except Exception as e:
         if not is_not_modified_error(e) and "message to edit not found" not in str(e).lower():
@@ -228,7 +233,8 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
     """Pushes capacity (always, for approved events), and content/logo when flagged. Never raises."""
     if not eventbrite_enabled() or not event or not event.get('eventbrite_event_id'):
         return
-    if event.get('eventbrite_status') in ('canceled', 'draft'):
+    # 'closed' = cancellation in progress: never reopen sales or rename it back
+    if event.get('eventbrite_status') in ('canceled', 'draft', 'closed'):
         return
     try:
         warnings = await asyncio.to_thread(_sync_blocking, event, content_changed, image_changed)
@@ -241,13 +247,14 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
 
 # ---------------------------------------------------------------- cancel / reactivate
 
-def _cancel_blocking(event):
-    """Returns (outcome, orders): outcome is 'unpublished', 'canceled' or 'closed'; orders is fetch_active_orders()."""
+def _cancel_blocking(event, unpublish_if_empty=True):
+    """Returns (outcome, orders): outcome is 'unpublished', 'canceled' or 'closed'; orders is fetch_active_orders().
+    unpublish_if_empty=False cancels for good even without orders (Eventbrite-only cancellation)."""
     event_id, eb_id = event['id'], event['eventbrite_event_id']
     orders = fetch_active_orders(eb_id)
     eb_seats = sum(seats for _, seats in orders.values())
 
-    if not orders:
+    if not orders and unpublish_if_empty:
         try:
             unpublish_event(eb_id)
             set_eventbrite_info(event_id, eventbrite_status='unpublished')
@@ -348,11 +355,34 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
     if cancelled:
         await _notify(context, admin_chat_id,
                       f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite")
+        await _refresh_admin_card(context, event_id)
     elif not from_poller:
         url = dashboard_url(eb_id)
         await _notify(context, admin_chat_id,
                       f"⚠️ Eventbrite non permette ancora di annullare l'evento #{event_id}. Annullalo dalla dashboard: {url}",
                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Apri dashboard Eventbrite", url=url)]]))
+
+
+async def cancel_only_on_eventbrite(context, event, admin_chat_id):
+    """Cancels the Eventbrite event only: the Telegram event stays approved and nothing is posted to the discussion
+    group (its booking reply just loses the Eventbrite link). Orders follow the same per-order link flow."""
+    event_id = event['id']
+    try:
+        outcome, orders = await asyncio.to_thread(_cancel_blocking, event, False)
+    except Exception as e:
+        logger.error(f"Eventbrite-only cancellation failed for event #{event_id}: {e}")
+        await _notify(context, admin_chat_id, f"⚠️ Annullamento su Eventbrite fallito per #{event_id}: {e}")
+        return
+
+    if outcome == 'canceled':
+        await _notify(context, admin_chat_id, f"✅ Evento #{event_id} annullato su Eventbrite (resta attivo su Telegram)")
+    else:
+        text, keyboard = _orders_cancel_message(event_id, event['eventbrite_event_id'], orders)
+        await _notify(context, admin_chat_id, f"{text} L'evento resta attivo su Telegram.", reply_markup=keyboard)
+    await _refresh_admin_card(context, event_id)
+    # Imported here because bot.service.posts imports this module for sync_eventbrite
+    from bot.service.posts import update_event_messages
+    await update_event_messages(context, event_id)  # removes the Eventbrite link from the discussion reply
 
 
 def _reactivate_blocking(event):

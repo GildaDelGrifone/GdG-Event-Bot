@@ -11,9 +11,10 @@ from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback
 from bot.keyboards import (
     get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
+    get_eventbrite_cancel_confirmation_keyboard,
 )
 from bot.service.eventbrite import (
-    cancel_on_eventbrite, finish_eventbrite_cancellation, publish_event_to_eventbrite, reactivate_on_eventbrite,
+    cancel_on_eventbrite, cancel_only_on_eventbrite, finish_eventbrite_cancellation, publish_event_to_eventbrite, reactivate_on_eventbrite,
     recreate_on_eventbrite,
 )
 from bot.service.posts import update_event_messages
@@ -132,6 +133,41 @@ async def handle_eventbrite_recreate(query, context, payload):
     except Exception as e:
         logger.debug(f"Could not remove the recreate button: {e}")
     await recreate_on_eventbrite(context, event_id, query.message.chat_id)
+
+
+def _eventbrite_cancellable(event):
+    return bool(event and event.get('status') == 'approved' and event.get('eventbrite_event_id')
+                and event.get('eventbrite_status') in ('live', 'unpublished'))
+
+
+async def handle_eventbrite_cancel_ask(query, context, payload):
+    """[🚫 Annulla su Eventbrite] only asks for confirmation; the Telegram event is never touched."""
+    event_id = int(payload)
+    event = get_event(event_id)
+    if not _eventbrite_cancellable(event):
+        await query.answer("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
+        return
+    eb_seats = eventbrite_seat_count(event_id)
+    warning = "Annullare l'evento solo su Eventbrite? Su Telegram resta attivo e il gruppo non viene avvisato."
+    if eb_seats:
+        warning += f" {eb_seats} posti Eventbrite: riceverai i link per annullare ogni ordine."
+    logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} on Eventbrite only.")
+    await query.answer(warning, show_alert=True)
+    try:
+        await query.edit_message_reply_markup(reply_markup=get_eventbrite_cancel_confirmation_keyboard(event_id))
+    except Exception as e:
+        logger.error(f"Could not show the Eventbrite cancel confirmation for event #{event_id}: {e}")
+
+
+async def handle_eventbrite_cancel_do(query, context, payload):
+    event_id = int(payload)
+    event = get_event(event_id)
+    if not _eventbrite_cancellable(event):
+        await query.answer("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
+        return
+    await query.answer()
+    logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id} on Eventbrite only.")
+    await cancel_only_on_eventbrite(context, event, query.message.chat_id)
 
 
 async def handle_eventbrite_cancel_retry(query, context, payload):

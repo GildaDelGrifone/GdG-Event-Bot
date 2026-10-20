@@ -139,6 +139,24 @@ class TestEventbriteKeyboards(unittest.TestCase):
             self.assertEqual(self.rows(get_approved_event_keyboard(5, EB_EVENT))[1],
                              [("🎟️ Eventbrite", None, "https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1")])
 
+    def test_second_row_offers_the_eventbrite_only_action_for_the_current_state(self):
+        dashboard = ("🎟️ Eventbrite", None, "https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1")
+        cases = {
+            "live": ("🚫 Annulla su Eventbrite", "eb_cancel_ask_5", None),
+            "unpublished": ("🚫 Annulla su Eventbrite", "eb_cancel_ask_5", None),
+            "closed": ("🔁 Completa annullamento", "eb_cancel_retry_5", None),
+            "canceled": ("🎟️ Ricrea su Eventbrite", "eb_recreate_5", None),
+        }
+        with eventbrite_credentials():
+            for status, action in cases.items():
+                with self.subTest(status=status):
+                    event = {"eventbrite_event_id": "eb1", "eventbrite_status": status}
+                    rows = self.rows(get_approved_event_keyboard(5, event))
+                    self.assertEqual(rows[1], [dashboard, action])
+                    self.assertEqual(rows[0][0][1], "cancel_event_5")  # the Telegram cancel stays on row one
+            draft = {"eventbrite_event_id": "eb1", "eventbrite_status": "draft"}
+            self.assertEqual(self.rows(get_approved_event_keyboard(5, draft))[1], [dashboard])
+
     def test_eventbrite_rows_become_a_single_button_opening_their_order(self):
         reservations = [
             {"id": 1, "username": "mario", "user_id": 7, "seats_booked": 1, "source": "telegram"},
