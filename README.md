@@ -111,6 +111,7 @@ IG_ACCOUNT_ID=178414...
 # EVENTBRITE_EVENT_DURATION_HOURS=4
 # EVENTBRITE_UNLIMITED_CAPACITY=50       # Eventbrite capacity for events with unlimited seats
 # EVENTBRITE_POLL_MINUTES=2
+# EVENTBRITE_FULL_SYNC_MINUTES=30        # full order check this often even if quantity_sold is unchanged (0 = every poll)
 # EVENTBRITE_BOOKING_NOTIFICATIONS=true  # discussion-group notice for Eventbrite bookings/releases
 
 # Storage Configuration (Optional)

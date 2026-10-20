@@ -41,6 +41,7 @@ def eventbrite_credentials(**overrides):
         "EVENTBRITE_DEFAULT_START_TIME": "20:45",
         "EVENTBRITE_EVENT_DURATION_HOURS": 4.0,
         "EVENTBRITE_UNLIMITED_CAPACITY": 50,
+        "EVENTBRITE_FULL_SYNC_MINUTES": 30,
         "EVENTBRITE_BOOKING_NOTIFICATIONS": True,
         **overrides,
     }

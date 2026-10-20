@@ -1,17 +1,23 @@
 """Polls Eventbrite for booking changes and mirrors them into the shared seat pool.
 
-Budget: two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour,
-under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application.
+Each poll fetches the event (one call) and compares its `quantity_sold` with the Eventbrite seats we have stored. The
+orders (needed for the attendees' names) are fetched only when they differ, plus a full check every
+EVENTBRITE_FULL_SYNC_MINUTES as a safety net (e.g. one person cancels while another books between two polls).
+
+Budget: about one call per tracked event per poll. With 10 events every 2 minutes that is about 300 calls per hour (plus
+the periodic full checks), under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application.
 """
 import asyncio
 import html
 import logging
+import time
 from datetime import datetime
 from types import SimpleNamespace
 
 from core import config
 from core.db import (
     apply_eventbrite_order,
+    eventbrite_seat_count,
     get_event,
     get_eventbrite_reservations,
     get_eventbrite_tracked_events,
@@ -27,9 +33,28 @@ logger = logging.getLogger(__name__)
 
 RATE_LIMIT_ERROR = "HIT_RATE_LIMIT"
 
+# Bot event id -> _now() of its last full orders fetch (in memory: a restart simply triggers one full fetch)
+_last_full_fetch = {}
+# Bot event ids whose quantity_sold still disagreed with the orders after a full fetch (logged once)
+_mismatch_logged = set()
 
-def _fetch(eb_id):
-    return get_eventbrite_event(eb_id), fetch_active_orders(eb_id)
+
+def _now():
+    return time.monotonic()
+
+
+def _sold_quantity(eb_event):
+    """Total tickets sold across the ticket classes, or None when the response carries no ticket classes."""
+    classes = eb_event.get('ticket_classes')
+    if not classes:
+        return None
+    return sum(int(tc.get('quantity_sold') or 0) for tc in classes)
+
+
+def _full_sync_due(event_id, now):
+    minutes = config.EVENTBRITE_FULL_SYNC_MINUTES
+    last = _last_full_fetch.get(event_id)
+    return minutes <= 0 or last is None or now - last >= minutes * 60
 
 
 def _seats_label(count):
@@ -88,11 +113,28 @@ async def _announce(ctx, event, changes):
 
 
 async def _poll_event(ctx, event):
-    event_id = event['id']
-    eb_event, orders = await asyncio.to_thread(_fetch, event['eventbrite_event_id'])
+    event_id, eb_id = event['id'], event['eventbrite_event_id']
+    eb_event = await asyncio.to_thread(get_eventbrite_event, eb_id)
     await _check_cancellation(ctx, event, eb_event)
 
-    changes = _diff_orders(event_id, orders)
+    # Same number sold as the seats we hold: nobody booked or cancelled, so the orders call would be wasted
+    sold = _sold_quantity(eb_event)
+    stored = eventbrite_seat_count(event_id)
+    now = _now()
+    orders = None
+    changes = []
+    if sold is None or sold != stored or _full_sync_due(event_id, now):
+        orders = await asyncio.to_thread(fetch_active_orders, eb_id)
+        _last_full_fetch[event_id] = now
+        changes = _diff_orders(event_id, orders)
+        if sold is not None and eventbrite_seat_count(event_id) != sold:
+            if event_id not in _mismatch_logged:
+                _mismatch_logged.add(event_id)
+                logger.warning(f"Eventbrite event #{event_id}: quantity_sold {sold} still differs from the active orders "
+                               f"({eventbrite_seat_count(event_id)} seats); fetching orders on every poll until they agree.")
+        else:
+            _mismatch_logged.discard(event_id)
+
     if changes:
         await update_event_messages(ctx, event_id)
         current = get_event(event_id) or event
@@ -109,7 +151,8 @@ async def _poll_event(ctx, event):
             )
     # Every order was cancelled from the dashboard: the cancel API now works, so finish the job
     current = get_event(event_id) or event
-    if not orders and current.get('eventbrite_status') == 'closed':
+    no_orders = (not orders) if orders is not None else (sold == 0 and stored == 0)
+    if no_orders and current.get('eventbrite_status') == 'closed':
         await finish_eventbrite_cancellation(ctx, current, config.ADMIN_CHAT_ID, from_poller=True)
     set_eventbrite_info(event_id, eventbrite_synced_at=datetime.now().isoformat(timespec='seconds'))
 

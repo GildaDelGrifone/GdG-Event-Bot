@@ -3,6 +3,7 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 import core.db as db
+import bot.service.eventbrite_poll as poller
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
 from core.eventbrite import EventbriteError
 from tests.support.config import as_admin_chat, eventbrite_credentials, patched_config
@@ -22,13 +23,21 @@ class PollCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.bot = make_bot()
         self.orders = {}
         self.eb_status = "live"
-        self.get_event_mock = patch("bot.service.eventbrite_poll.get_eventbrite_event",
-                                    side_effect=lambda eb_id: {"id": eb_id, "status": self.eb_status}).start()
+        self.sold = None  # None: the Eventbrite response carries no ticket classes (the poller then always fetches orders)
+        poller._last_full_fetch.clear()
+        poller._mismatch_logged.clear()
+        self.get_event_mock = patch("bot.service.eventbrite_poll.get_eventbrite_event", side_effect=self.eb_event).start()
         self.orders_mock = patch("bot.service.eventbrite_poll.fetch_active_orders",
                                  side_effect=lambda eb_id: dict(self.orders)).start()
         self.update_messages = patch("bot.service.eventbrite_poll.update_event_messages", new_callable=AsyncMock).start()
         self.finish = patch("bot.service.eventbrite_poll.finish_eventbrite_cancellation", new_callable=AsyncMock).start()
         self.addCleanup(patch.stopall)
+
+    def eb_event(self, eb_id):
+        event = {"id": eb_id, "status": self.eb_status}
+        if self.sold is not None:
+            event["ticket_classes"] = [{"name": "Posto", "quantity_total": 4, "quantity_sold": self.sold}]
+        return event
 
     def make_event(self, status="approved", date="06-11-2099", eb_id="eb1", **overrides):
         fields = dict(title="Avventura <D&D>", date=f"Venerdì {date} 21:00", normalized_date=date, max_seats=4,
@@ -284,6 +293,165 @@ class TestEventbriteOnlyCancellation(PollCase):
         await poll_eventbrite_bookings(self.bot)
         self.assertEqual(self.admin_texts(),
                          [f"✅ Evento #{event_id} annullato su Eventbrite (iscritti avvisati da Eventbrite)"])
+
+
+class TestQuantitySoldShortcut(PollCase):
+    """The orders call is skipped while quantity_sold equals the Eventbrite seats we hold."""
+
+    def setUp(self):
+        super().setUp()
+        self.clock = 1000.0
+        patch("bot.service.eventbrite_poll._now", side_effect=lambda: self.clock).start()
+
+    async def poll(self, advance_minutes=0):
+        self.clock += advance_minutes * 60
+        await poll_eventbrite_bookings(self.bot)
+
+    async def test_unchanged_totals_skip_the_orders_call(self):
+        event_id = self.make_event()
+        self.sold = 0
+        await self.poll()  # first poll of an event is always a full check
+        self.assertEqual(self.orders_mock.call_count, 1)
+
+        for _ in range(3):
+            await self.poll(advance_minutes=2)
+
+        self.assertEqual(self.orders_mock.call_count, 1)  # three more polls, one call each: the event only
+        self.assertEqual(self.get_event_mock.call_count, 4)
+        self.update_messages.assert_not_awaited()
+        self.assertIsNotNone(db.get_event(event_id)["eventbrite_synced_at"])
+
+    async def test_a_new_booking_is_detected_through_quantity_sold(self):
+        event_id = self.make_event()
+        self.sold = 0
+        await self.poll()
+        self.orders_mock.reset_mock()
+
+        self.sold, self.orders = 2, {"o1": ("Mario R.", 2)}
+        await self.poll(advance_minutes=2)
+
+        self.orders_mock.assert_called_once()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)
+        (call,) = self.discussion_calls()
+        self.assertIn("Mario R. ha prenotato 2 posti tramite Eventbrite", call.kwargs["text"])
+
+        self.orders_mock.reset_mock()
+        await self.poll(advance_minutes=2)  # totals agree again
+        self.orders_mock.assert_not_called()
+
+    async def test_a_cancellation_is_detected_through_a_lower_quantity_sold(self):
+        event_id = self.make_event()
+        self.sold, self.orders = 2, {"o1": ("Mario R.", 2)}
+        await self.poll()
+        self.orders_mock.reset_mock()
+        self.bot.send_message.reset_mock()
+
+        self.sold, self.orders = 0, {}
+        await self.poll(advance_minutes=2)
+
+        self.orders_mock.assert_called_once()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
+        (call,) = self.discussion_calls()
+        self.assertIn("ha liberato 2 posti (Eventbrite)", call.kwargs["text"])
+
+    async def test_a_swap_with_the_same_total_is_only_caught_by_the_full_check(self):
+        event_id = self.make_event()
+        self.sold, self.orders = 1, {"o1": ("Mario R.", 1)}
+        await self.poll()
+        self.orders_mock.reset_mock()
+
+        self.orders = {"o2": ("Anna B.", 1)}  # Mario cancelled and Anna booked: quantity_sold is still 1
+        await self.poll(advance_minutes=2)
+        await self.poll(advance_minutes=20)
+        self.orders_mock.assert_not_called()
+        self.assertEqual([r["full_name"] for r in db.get_eventbrite_reservations(event_id)], ["Mario R."])
+
+        await self.poll(advance_minutes=10)  # 32 minutes after the last full check
+        self.orders_mock.assert_called_once()
+        self.assertEqual([r["full_name"] for r in db.get_eventbrite_reservations(event_id)], ["Anna B."])
+
+    async def test_the_full_check_interval_is_configurable_and_zero_means_every_poll(self):
+        self.make_event()
+        self.sold = 0
+        with patched_config(EVENTBRITE_FULL_SYNC_MINUTES=5):
+            await self.poll()
+            await self.poll(advance_minutes=4)
+            self.assertEqual(self.orders_mock.call_count, 1)
+            await self.poll(advance_minutes=2)
+            self.assertEqual(self.orders_mock.call_count, 2)
+
+        self.orders_mock.reset_mock()
+        with patched_config(EVENTBRITE_FULL_SYNC_MINUTES=0):
+            await self.poll(advance_minutes=1)
+            await self.poll(advance_minutes=1)
+        self.assertEqual(self.orders_mock.call_count, 2)
+
+    async def test_without_ticket_classes_every_poll_fetches_the_orders(self):
+        self.make_event()
+        self.sold = None
+        for _ in range(3):
+            await self.poll(advance_minutes=2)
+        self.assertEqual(self.orders_mock.call_count, 3)
+
+    async def test_events_are_tracked_independently(self):
+        first, second = self.make_event(eb_id="eb1"), self.make_event(eb_id="eb2")
+        self.sold = 0
+        await self.poll()
+        self.orders_mock.reset_mock()
+        await self.poll(advance_minutes=2)
+        self.orders_mock.assert_not_called()
+        self.assertEqual({first, second}, set(poller._last_full_fetch))
+
+    async def test_a_persistent_mismatch_falls_back_to_fetching_and_is_logged_once(self):
+        self.make_event()
+        self.sold, self.orders = 3, {"o1": ("Mario R.", 2)}  # e.g. a hold that never shows up as an order
+
+        with patch("bot.service.eventbrite_poll.logger") as mock_logger:
+            for _ in range(3):
+                await self.poll(advance_minutes=2)
+
+        self.assertEqual(self.orders_mock.call_count, 3)  # fetched on every poll while they disagree
+        self.assertEqual(mock_logger.warning.call_count, 1)
+
+        self.sold = 2  # they agree again
+        await self.poll(advance_minutes=2)
+        self.orders_mock.reset_mock()
+        await self.poll(advance_minutes=2)
+        self.orders_mock.assert_not_called()
+
+    async def test_orders_lagging_behind_quantity_sold_are_retried_on_the_next_poll(self):
+        event_id = self.make_event()
+        self.sold, self.orders = 1, {}  # Eventbrite is eventually consistent: the order is not listed yet
+        await self.poll()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
+
+        self.orders = {"o1": ("Mario R.", 1)}
+        await self.poll(advance_minutes=2)
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
+
+    async def test_closed_cancellation_is_completed_without_fetching_orders(self):
+        event_id = self.make_event(status="cancelled")
+        db.set_eventbrite_info(event_id, eventbrite_status="closed")
+        self.sold = 0
+        poller._last_full_fetch[event_id] = self.clock  # a full check just happened
+
+        await self.poll(advance_minutes=2)
+
+        self.orders_mock.assert_not_called()
+        self.finish.assert_awaited_once()
+        self.assertTrue(self.finish.call_args.kwargs["from_poller"])
+
+    async def test_closed_cancellation_with_orders_left_is_not_completed(self):
+        event_id = self.make_event(status="cancelled")
+        db.set_eventbrite_info(event_id, eventbrite_status="closed")
+        self.sold, self.orders = 1, {"o1": ("Mario R.", 1)}
+        await self.poll()  # stores the seat
+        self.orders_mock.reset_mock()
+
+        await self.poll(advance_minutes=2)  # sold == stored == 1: no fetch, and orders certainly exist
+
+        self.orders_mock.assert_not_called()
+        self.finish.assert_not_awaited()
 
 
 if __name__ == "__main__":
