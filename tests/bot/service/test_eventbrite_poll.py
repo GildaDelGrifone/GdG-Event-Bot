@@ -140,8 +140,21 @@ class TestDiff(PollCase):
 
         await poll_eventbrite_bookings(self.bot)
 
-        self.assertIn(f"⚠️ Overbooking su #{event_id}: 3/2 (prenotazione Eventbrite arrivata in contemporanea)",
+        self.assertIn(f"⚠️ Overbooking su #{event_id}: 3/2 (prenotazione Eventbrite arrivata in contemporanea). Ultima prenotazione Telegram: @b.",
                       self.admin_texts())
+
+    async def test_poll_event_now_syncs_a_single_event(self):
+        event_id = self.make_event()
+        self.orders = {"o1": ("Mario R.", 2)}
+
+        await poller.poll_event_now(self.bot, event_id)
+
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)
+
+    async def test_poll_event_now_ignores_untracked_events(self):
+        event_id = self.make_event(eb_id=None)
+        await poller.poll_event_now(self.bot, event_id)
+        self.get_event_mock.assert_not_called()
 
     async def test_no_overbooking_alert_within_capacity(self):
         self.make_event()

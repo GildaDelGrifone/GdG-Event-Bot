@@ -21,6 +21,7 @@ from core.db import (
     get_event,
     get_eventbrite_reservations,
     get_eventbrite_tracked_events,
+    get_reservations_for_event,
     set_eventbrite_info,
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
@@ -145,11 +146,17 @@ async def _poll_event(ctx, event):
             await _announce(ctx, current, changes)
         if any(change[3] for change in changes):
             max_seats = current.get('max_seats')
+            telegram = [r for r in get_reservations_for_event(event_id) if r.get('source') != 'eventbrite']
+            latest = telegram[-1] if telegram else None
+            who = ""
+            if latest:
+                name = f"@{latest['username']}" if latest.get('username') else latest.get('full_name') or 'sconosciuto'
+                who = f" Ultima prenotazione Telegram: {name}."
             await notify_admin(
                 ctx,
                 config.ADMIN_CHAT_ID,
                 f"⚠️ Overbooking su #{event_id}: {current.get('booked_seats')}/{max_seats} "
-                "(prenotazione Eventbrite arrivata in contemporanea)",
+                f"(prenotazione Eventbrite arrivata in contemporanea).{who}",
                 event_id=event_id,
             )
     # Every order was cancelled from the dashboard: the cancel API now works, so finish the job
@@ -158,6 +165,17 @@ async def _poll_event(ctx, event):
     if no_orders and current.get('eventbrite_status') == 'closed':
         await finish_eventbrite_cancellation(ctx, current, config.ADMIN_CHAT_ID, from_poller=True)
     set_eventbrite_info(event_id, eventbrite_synced_at=datetime.now().isoformat(timespec='seconds'))
+
+
+async def poll_event_now(ctx, event_id):
+    """Polls one event right away (e.g. after a booking collided with Eventbrite); never raises."""
+    event = get_event(event_id)
+    if not eventbrite_enabled() or not event or event_id not in {e['id'] for e in get_eventbrite_tracked_events()}:
+        return
+    try:
+        await _poll_event(ctx, event)
+    except Exception as e:
+        logger.warning(f"Immediate Eventbrite poll failed for event #{event_id}: {e}")
 
 
 async def poll_eventbrite_bookings(bot):

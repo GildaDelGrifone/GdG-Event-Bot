@@ -281,6 +281,42 @@ def _push_capacity(event, force=False):
         set_eventbrite_info(event['id'], eventbrite_quantity_total=quantity)
 
 
+def _reserve_blocking(event):
+    """Pushes the new ticket total and reads quantity_sold from the same response: True when the seat is still ours."""
+    eb_seats, quantity = _eb_seats_and_quantity(event)
+    try:
+        response = update_ticket_quantity(event['eventbrite_event_id'], event['eventbrite_ticket_class_id'], quantity)
+    except EventbriteError as e:
+        # Eventbrite refuses a total below what it already sold: the last seat went there first
+        if e.status_code == 400 and 'quantity' in f"{e.error} {e.description}".lower():
+            return False
+        raise
+    set_eventbrite_info(event['id'], eventbrite_quantity_total=quantity)
+    sold = response.get('quantity_sold') if isinstance(response, dict) else None
+    if sold is None:
+        return True
+    telegram_booked = max(0, int(event.get('booked_seats') or 0) - eb_seats)
+    return int(sold) + telegram_booked <= int(event['max_seats'])
+
+
+async def reserve_on_eventbrite(context, event_id):
+    """Called right after a Telegram booking, before confirming it: claims the seat on Eventbrite. False only when
+    Eventbrite sold the last seat first (the caller must undo the booking); any other failure keeps the booking and
+    leaves the poller's overbooking notice as the safety net."""
+    event = get_event(event_id)
+    if (not eventbrite_enabled() or not event or not event.get('eventbrite_event_id') or event.get('max_seats') is None
+            or not event.get('eventbrite_ticket_class_id') or event.get('eventbrite_status') != 'live'):
+        return True
+    try:
+        return await asyncio.to_thread(_reserve_blocking, event)
+    except Exception as e:
+        if is_gone(e):
+            await unlink_deleted_eventbrite_event(context, event_id)
+        else:
+            logger.warning(f"Could not reserve the seat on Eventbrite for event #{event_id}: {e}")
+        return True
+
+
 def _push_content(event, include_dates=True):
     """Pushes name/summary/dates and the description page; returns a warning when the date had to be skipped."""
     eb_id, warning = event['eventbrite_event_id'], None

@@ -847,3 +847,58 @@ class TestLogoRetry(EventbriteServiceCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReserveOnEventbrite(EventbriteServiceCase):
+    """Claiming the seat on Eventbrite right after a Telegram booking."""
+
+    def booked_event(self, **link):
+        event_id = self.make_event(max_seats=4, seats="1/4", booked_seats=3)
+        self.link(event_id, **link)
+        return event_id
+
+    async def test_pushes_the_total_and_keeps_the_booking_when_the_seat_is_free(self):
+        event_id = self.booked_event()
+        self.mocks["update_ticket_quantity"].return_value = {"quantity_sold": 0}
+
+        self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
+
+        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 1)
+        self.assertEqual(db.get_event(event_id)["eventbrite_quantity_total"], 1)
+
+    async def test_refuses_when_eventbrite_already_sold_more_than_we_know(self):
+        event_id = self.booked_event()
+        self.mocks["update_ticket_quantity"].return_value = {"quantity_sold": 2}  # we hold 0 Eventbrite seats
+
+        self.assertFalse(await service.reserve_on_eventbrite(self.context, event_id))
+
+    async def test_refuses_when_eventbrite_rejects_a_total_below_what_it_sold(self):
+        event_id = self.booked_event()
+        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(
+            400, "INVALID_QUANTITY_TOTAL", "quantity_total cannot be less than quantity_sold")
+
+        self.assertFalse(await service.reserve_on_eventbrite(self.context, event_id))
+
+    async def test_other_failures_keep_the_booking(self):
+        event_id = self.booked_event()
+        self.mocks["update_ticket_quantity"].side_effect = ConnectionError("down")
+
+        self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
+
+    async def test_a_deleted_event_is_unlinked_and_the_booking_kept(self):
+        event_id = self.booked_event()
+        self.mocks["update_ticket_quantity"].side_effect = EventbriteError(404, "NOT_FOUND", "gone")
+
+        self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
+        self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
+
+    async def test_events_that_are_not_live_on_eventbrite_never_call_it(self):
+        unlinked = self.make_event()
+        closed = self.make_event()
+        self.link(closed, eventbrite_status="closed")
+        unlimited = self.make_event(max_seats=None, seats="Illimitati")
+        self.link(unlimited)
+
+        for event_id in (unlinked, closed, unlimited):
+            self.assertTrue(await service.reserve_on_eventbrite(self.context, event_id))
+        self.no_http()

@@ -6,9 +6,13 @@ from core.db import get_event, book_seat, unbook_seat, get_user_conflicting_even
 from utils.templates import format_event_title_link
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import describe_telegram_user, format_user_mention, get_user_display_name_and_username
+from bot.service.eventbrite import reserve_on_eventbrite
+from bot.service.eventbrite_poll import poll_event_now
 from bot.service.posts import update_event_messages
 
 logger = logging.getLogger(__name__)
+
+EVENTBRITE_TAKEN = "😕 L'ultimo posto è appena stato prenotato su Eventbrite: la tua prenotazione non è stata registrata."
 
 
 def format_conflict_warning_message(user, conflicting_events):
@@ -85,8 +89,15 @@ async def _warn_on_same_day_conflicts(context, event_id, event, user, notify_cha
 async def handle_seat_booking(event_id, user, query, context):
     clean_username, clean_fullname = get_user_display_name_and_username(user)
     success, msg = book_seat(event_id, user.id, username=clean_username, full_name=clean_fullname)
+    if success and not await reserve_on_eventbrite(context, event_id):
+        # Eventbrite sold the last seat between two polls: undo, then let the poll pull its orders in
+        unbook_seat(event_id, user.id, username=clean_username)
+        await poll_event_now(context, event_id)
+        success, msg = False, EVENTBRITE_TAKEN
     await _answer_and_log(query, user, "book", event_id, success, msg)
     if not success:
+        if msg == EVENTBRITE_TAKEN:
+            await update_event_messages(context, event_id, current_query=query)
         return
 
     event = get_event(event_id)
