@@ -1,5 +1,5 @@
 from core import config
-from core.eventbrite.client import eb_get, eb_post
+from core.eventbrite.client import eb_delete, eb_get, eb_post
 
 
 def create_event(payload):
@@ -28,6 +28,12 @@ def unpublish_event(eb_id):
 def cancel_event(eb_id):
     """Works only while the event has no orders, and cannot be undone; raises EventbriteError otherwise."""
     return bool(eb_post(f"/events/{eb_id}/cancel/").get("canceled"))
+
+
+def delete_eventbrite_event(eb_id):
+    """Deletes the event; like cancel it works only while the event has no orders and raises EventbriteError otherwise."""
+    eb_delete(f"/events/{eb_id}/")
+    return True
 
 
 def set_description(eb_id, modules, version):

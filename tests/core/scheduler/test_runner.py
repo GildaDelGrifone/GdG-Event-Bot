@@ -28,5 +28,23 @@ class TestAddIntervalJob(unittest.TestCase):
             runner.add_interval_job(print, 1)
 
 
+class TestAddCronJob(unittest.TestCase):
+    def test_registers_a_daily_job_at_the_given_time(self):
+        scheduler = MagicMock()
+        with patch.object(runner, "_scheduler", scheduler):
+            runner.add_cron_job(print, 23, 59, ["bot"])
+        scheduler.add_job.assert_called_once_with(print, "cron", hour=23, minute=59, args=["bot"])
+
+    def test_args_default_to_an_empty_list(self):
+        scheduler = MagicMock()
+        with patch.object(runner, "_scheduler", scheduler):
+            runner.add_cron_job(print, 1, 2)
+        self.assertEqual(scheduler.add_job.call_args.kwargs["args"], [])
+
+    def test_requires_a_started_scheduler(self):
+        with patch.object(runner, "_scheduler", None), self.assertRaises(RuntimeError):
+            runner.add_cron_job(print, 1, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

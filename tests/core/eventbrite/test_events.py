@@ -41,6 +41,19 @@ class TestEvents(unittest.TestCase):
             json={"modules": [{"type": "text"}], "publish": True, "purpose": "listing"})
 
 
+@patch("core.eventbrite.events.eb_delete")
+class TestDeleteEvent(unittest.TestCase):
+    def test_deletes_the_event(self, mock_delete):
+        self.assertTrue(events.delete_eventbrite_event("42"))
+        mock_delete.assert_called_once_with("/events/42/")
+
+    def test_a_refusal_propagates(self, mock_delete):
+        from core.eventbrite import EventbriteError
+        mock_delete.side_effect = EventbriteError(400, "CANNOT_DELETE", "has orders")
+        with self.assertRaises(EventbriteError):
+            events.delete_eventbrite_event("42")
+
+
 @patch("core.eventbrite.tickets.eb_post")
 class TestTickets(unittest.TestCase):
     def test_create_free_ticket_class(self, mock_post):

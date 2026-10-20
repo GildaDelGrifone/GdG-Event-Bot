@@ -20,6 +20,7 @@ from core.db.events import (
     set_eventbrite_info,
     clear_eventbrite_info,
     get_eventbrite_tracked_events,
+    get_eventbrite_cleanup_candidates,
 )
 from core.db.reservations import (
     get_reservations_for_event,
@@ -68,6 +69,7 @@ __all__ = [
     "set_eventbrite_info",
     "clear_eventbrite_info",
     "get_eventbrite_tracked_events",
+    "get_eventbrite_cleanup_candidates",
     "get_reservations_for_event",
     "get_reservation",
     "get_reservation_by_user",

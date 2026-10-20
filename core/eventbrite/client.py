@@ -52,6 +52,10 @@ def eb_get(path, params=None):
     return _check(requests.get(f"{API_BASE}{path}", headers=_headers(), params=params, timeout=REQUEST_TIMEOUT))
 
 
+def eb_delete(path):
+    return _check(requests.delete(f"{API_BASE}{path}", headers=_headers(), timeout=REQUEST_TIMEOUT))
+
+
 def eb_post(path, json=None):
     return _check(requests.post(f"{API_BASE}{path}", headers=_headers(), json=json, timeout=REQUEST_TIMEOUT))
 

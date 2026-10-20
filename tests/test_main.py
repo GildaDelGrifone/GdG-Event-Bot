@@ -11,6 +11,7 @@ from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import manual_trigger_command
+from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
 from tests.support.telegram import make_bot
 
@@ -125,22 +126,26 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
                 mock_app = MagicMock()
                 mock_app.bot = make_bot()
                 with patch("main.start_scheduler"), patch("main.add_interval_job") as add_job, \
+                     patch("main.add_cron_job") as add_cron, \
                      patch("main.eventbrite_enabled", return_value=enabled), \
                      patch("main.config.EVENTBRITE_POLL_MINUTES", 5), patch("main.ADMIN_CHAT_ID", None):
                     await post_init(mock_app)
 
                 self.assertEqual(add_job.call_count, expected_calls)
+                self.assertEqual(add_cron.call_count, expected_calls)
                 if enabled:
                     add_job.assert_called_once_with(poll_eventbrite_bookings, 5, [mock_app.bot])
+                    add_cron.assert_called_once_with(delete_cancelled_eventbrite_events, 23, 59, [mock_app.bot])
 
     async def test_post_init_starts_the_scheduler_before_adding_the_poller(self):
         mock_app = MagicMock()
         mock_app.bot = make_bot()
         calls = MagicMock()
         with patch("main.start_scheduler", calls.start), patch("main.add_interval_job", calls.add), \
+             patch("main.add_cron_job", calls.cron), \
              patch("main.eventbrite_enabled", return_value=True), patch("main.ADMIN_CHAT_ID", None):
             await post_init(mock_app)
-        self.assertEqual([c[0] for c in calls.mock_calls], ["start", "add"])
+        self.assertEqual([c[0] for c in calls.mock_calls], ["start", "add", "cron"])
 
     def test_publish_command_is_registered_for_text_and_caption(self):
         added = []

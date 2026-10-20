@@ -4,6 +4,7 @@ from core.eventbrite.client import EventbriteError, eventbrite_enabled
 from core.eventbrite.events import (
     cancel_event,
     create_event,
+    delete_eventbrite_event,
     get_event,
     publish_event,
     set_description,
@@ -33,6 +34,7 @@ __all__ = [
     "publish_event",
     "unpublish_event",
     "cancel_event",
+    "delete_eventbrite_event",
     "set_description",
     "create_free_ticket_class",
     "update_ticket_quantity",

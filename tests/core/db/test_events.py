@@ -82,5 +82,41 @@ class TestEventbriteInfo(TempDBMixin, unittest.TestCase):
         self.assertEqual({e["id"] for e in db.get_eventbrite_tracked_events()}, keep)
 
 
+class TestEventbriteCleanupCandidates(TempDBMixin, unittest.TestCase):
+    def make(self, delta_days, eb_status, status="approved", linked=True, dated=True):
+        today = datetime.now()
+        fields = {"title": f"E{delta_days}{eb_status}"}
+        if dated:
+            fields["normalized_date"] = (today + timedelta(days=delta_days)).strftime("%d-%m-%Y")
+        event_id = db.insert_event(fields, None, "raw")
+        db.update_event_status(event_id, status)
+        if linked:
+            db.set_eventbrite_info(event_id, eventbrite_event_id=f"eb{event_id}", eventbrite_status=eb_status)
+        return event_id
+
+    def test_candidates_are_cancelled_unpublished_or_closed_events_dated_today_or_earlier(self):
+        now = datetime.now()
+        keep = {
+            self.make(0, "canceled"), self.make(-1, "unpublished"), self.make(-30, "closed"),
+            self.make(0, "canceled", status="cancelled"),  # whatever the Telegram status
+            self.make(0, "unpublished", status="cancelled"),
+        }
+        self.make(1, "canceled")  # future: left alone until its day
+        self.make(0, "live")
+        self.make(0, "draft")
+        self.make(0, "canceled", linked=False)
+        self.make(0, "canceled", dated=False)
+        day = (now.year, now.month, now.day)
+        self.assertEqual({e["id"] for e in db.get_eventbrite_cleanup_candidates(day)}, keep)
+
+    def test_the_day_is_inclusive_and_configurable(self):
+        event_id = self.make(0, "canceled")
+        today = datetime.now()
+        day = (today.year, today.month, today.day)
+        self.assertEqual([e["id"] for e in db.get_eventbrite_cleanup_candidates(day)], [event_id])
+        yesterday = today - timedelta(days=1)
+        self.assertEqual(db.get_eventbrite_cleanup_candidates((yesterday.year, yesterday.month, yesterday.day)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

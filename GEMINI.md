@@ -277,6 +277,16 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 The Eventbrite API has **no call to cancel an order or attendee**, and the refund call (`POST /orders/{id}/refunds/`) fails on free orders (confirmed on a real account), so orders are cancelled by an admin from the dashboard: each order's page has a *Cancel order* action, and Eventbrite emails the attendee. The dashboard runs on the logged-in browser session, not the API token, so the bot only sends the links. Confirmed URL formats: event dashboard `https://www.eventbrite.com/events/{eid}/dashboard/?eid={eid}`, order page `https://www.eventbrite.com/organizations/orders/{oid}`, cancel page `https://www.eventbrite.com/order-cancel?eid={eid}&oid={oid}&aid=` (`core.eventbrite.payload.dashboard_url` / `order_url` / `order_cancel_url`). Reactivating a `closed` event does not restore orders already cancelled.
 
+**Nightly cleanup** (`bot.service.eventbrite_cleanup.delete_cancelled_eventbrite_events`, registered by `main.post_init` through `core.scheduler.runner.add_cron_job` at **23:59**, only when Eventbrite is enabled and `EVENTBRITE_DELETE_CANCELLED` is on). It deletes, **on Eventbrite only**, the Eventbrite events that are cancelled, so they are gone from the organizer account after midnight. **Telegram is not touched at all**: events, reservations, images, channel posts and discussion messages stay as they are, and nothing is posted to the discussion group. Candidates (`core.db.get_eventbrite_cleanup_candidates`) are linked events dated today or earlier (so a night with the bot offline is made up for the next one; finding them is one local SQL query, no API call) whose `eventbrite_status` is:
+
+| `eventbrite_status` | Action |
+|---|---|
+| `canceled`, `unpublished` | `DELETE /events/{id}/` (`core.eventbrite.delete_eventbrite_event`; like cancel it works only while the event has no orders), then `clear_eventbrite_info` so the poller stops polling it, and the admin card is refreshed: an approved event shows `[🎟️ Pubblica su Eventbrite]` again, a cancelled one is unchanged. A `404`/`NOT_FOUND` (already deleted by hand) counts as deleted |
+| `closed` (orders still being cancelled) | kept and listed in the admin summary |
+| refused by Eventbrite (e.g. `CANNOT_DELETE`) | kept and listed in the admin summary |
+
+Future-dated events are left alone until their day (so `[🎟️ Ricrea su Eventbrite]` stays usable), a `HIT_RATE_LIMIT` stops the run until the next night, and one failing event never blocks the others. The admins get a single plain-text summary (`🧹 Eliminati da Eventbrite N eventi annullati: …` / `⚠️ Non eliminati da Eventbrite: …`), only if something happened. Not yet verified on a real account: whether Eventbrite lets you delete an event whose orders were all cancelled; if it refuses, the event is kept and reported.
+
 **Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to that order's page on Eventbrite (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored.
 
 **Eventbrite API notes.** Eventbrite has no sandbox (test with `EVENTBRITE_LISTED=false`) and is eventually consistent, so POST response bodies are trusted instead of reading back. The description uses structured content (the legacy `description` field is deprecated); its HTML is limited to `p, b, em, ul, li, a`, so multi-line text becomes one `<p>` per line.
@@ -324,7 +334,8 @@ GdG-Event-Bot/
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
 │   │   ├── mentions.py   # User/subscriber mention formatting
 │   │   ├── eventbrite.py # Eventbrite publish, sync (capacity/content/logo), cancel, reactivate, recreate
-│   │   └── eventbrite_poll.py # Scheduler job: poll Eventbrite orders into the shared seat pool
+│   │   ├── eventbrite_poll.py # Scheduler job: poll Eventbrite orders into the shared seat pool
+│   │   └── eventbrite_cleanup.py # 23:59 job: delete cancelled events from Eventbrite (Telegram untouched)
 │   └── event_generator/  # /event_generate
 │       ├── command.py    # Telegram command handler
 │       ├── pipeline.py   # Generation pipeline, caption limit, admin preview
@@ -426,7 +437,7 @@ GdG-Event-Bot/
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
 - **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
-- **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (used for the Eventbrite poller); `core/` never imports `bot/` for it.
+- **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (the Eventbrite poller) and `runner.add_cron_job(func, hour, minute, args)` a daily one (the Eventbrite cleanup at 23:59); `core/` never imports `bot/` for them.
 - **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
 
@@ -536,6 +547,7 @@ GdG-Event-Bot/
 | `EVENTBRITE_EVENT_DURATION_HOURS` | (Optional) Event length used for the end time | `4` |
 | `EVENTBRITE_UNLIMITED_CAPACITY` | (Optional) Eventbrite capacity for events with unlimited seats (Telegram stays unlimited) | `50` |
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
+| `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
 | `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group (`true`/`false`); seats sync either way | `true` |
 

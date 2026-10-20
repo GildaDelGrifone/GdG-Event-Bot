@@ -24,6 +24,13 @@ def add_interval_job(func, minutes, args=None):
     _scheduler.add_job(func, 'interval', minutes=minutes, args=args or [], max_instances=1, coalesce=True)
 
 
+def add_cron_job(func, hour, minute, args=None):
+    """Registers a daily job at hour:minute (local time) on the running scheduler (start_scheduler must have run)."""
+    if _scheduler is None:
+        raise RuntimeError("Scheduler not started")
+    _scheduler.add_job(func, 'cron', hour=hour, minute=minute, args=args or [])
+
+
 def stop_scheduler():
     if _scheduler:
         _scheduler.shutdown()

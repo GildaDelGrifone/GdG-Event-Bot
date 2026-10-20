@@ -187,6 +187,17 @@ def get_upcoming_events(include_today=True):
 
 
 @db_safe(default=list)
+def get_eventbrite_cleanup_candidates(day):
+    """Events linked to Eventbrite whose Eventbrite event is cancelled, unpublished or closed (cancellation pending) and
+    dated `day` ((year, month, day)) or earlier. Undated events are never returned."""
+    rows = fetch_all(
+        "SELECT * FROM events WHERE eventbrite_event_id IS NOT NULL "
+        "AND eventbrite_status IN ('canceled', 'unpublished', 'closed')"
+    )
+    return [row for row in rows if (event_date_tuple(row) or (9999, 12, 31)) <= tuple(day)]
+
+
+@db_safe(default=list)
 def get_eventbrite_tracked_events():
     """Approved/cancelled events linked to Eventbrite and dated today or later (or yesterday, to catch late cancellations)."""
     yesterday = datetime.now() - timedelta(days=1)

@@ -27,8 +27,9 @@ from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_com
 from bot.handlers.story import event_regenerate_story_command
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
+from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
-from core.scheduler.runner import add_interval_job, start_scheduler, stop_scheduler
+from core.scheduler.runner import add_cron_job, add_interval_job, start_scheduler, stop_scheduler
 from core.log_utils import DailyMonthlyLogHandler
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
@@ -51,6 +52,7 @@ async def post_init(application: Application):
     start_scheduler(application.bot)
     if eventbrite_enabled():
         add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
+        add_cron_job(delete_cancelled_eventbrite_events, 23, 59, [application.bot])
 
     # Default commands for users in private chats / groups
     default_commands = [

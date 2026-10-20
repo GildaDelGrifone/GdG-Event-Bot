@@ -42,6 +42,7 @@ def eventbrite_credentials(**overrides):
         "EVENTBRITE_EVENT_DURATION_HOURS": 4.0,
         "EVENTBRITE_UNLIMITED_CAPACITY": 50,
         "EVENTBRITE_FULL_SYNC_MINUTES": 30,
+        "EVENTBRITE_DELETE_CANCELLED": True,
         "EVENTBRITE_BOOKING_NOTIFICATIONS": True,
         **overrides,
     }

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from core.eventbrite import EventbriteError, eventbrite_enabled
-from core.eventbrite.client import API_BASE, eb_get, eb_post, paginate
+from core.eventbrite.client import API_BASE, eb_delete, eb_get, eb_post, paginate
 from tests.support.config import eventbrite_credentials, patched_config
 
 
@@ -80,6 +80,22 @@ class TestPaginate(unittest.TestCase):
     def test_missing_key_and_pagination_yield_nothing(self, _get):
         with eventbrite_credentials():
             self.assertEqual(list(paginate("/x/", None, "orders")), [])
+
+
+class TestDelete(unittest.TestCase):
+    @patch("core.eventbrite.client.requests.delete", return_value=response(200, json_error=True))
+    def test_delete_sends_bearer_token_and_timeout(self, mock_delete):
+        with eventbrite_credentials():
+            self.assertEqual(eb_delete("/events/1/"), {})
+        mock_delete.assert_called_once_with(
+            f"{API_BASE}/events/1/", headers={"Authorization": "Bearer eb-token"}, timeout=30)
+
+    @patch("core.eventbrite.client.requests.delete")
+    def test_delete_errors_are_parsed(self, mock_delete):
+        mock_delete.return_value = response(400, {"error": "CANNOT_DELETE", "error_description": "has orders"})
+        with eventbrite_credentials(), self.assertRaises(EventbriteError) as ctx:
+            eb_delete("/events/1/")
+        self.assertEqual((ctx.exception.status_code, ctx.exception.error), (400, "CANNOT_DELETE"))
 
 
 if __name__ == "__main__":

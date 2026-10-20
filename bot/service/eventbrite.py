@@ -58,7 +58,7 @@ async def _notify(context, chat_id, text, reply_markup=None):
         logger.error(f"Could not send Eventbrite notice to admin chat: {e}")
 
 
-async def _refresh_admin_card(context, event_id):
+async def refresh_admin_card(context, event_id):
     """Swaps the buttons of the event's admin card (approved or cancelled) to match the current Eventbrite state."""
     event = get_event(event_id)
     admin_message_id = event.get('admin_message_id') if event else None
@@ -192,7 +192,7 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
         await _notify(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({logo_error})",
                       reply_markup=_logo_retry_keyboard(event_id))
     await _notify(context, admin_chat_id, f"✅ Evento pubblicato su Eventbrite: {result['url']}")
-    await _refresh_admin_card(context, event_id)
+    await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
     from bot.service.posts import update_event_messages
     await update_event_messages(context, event_id)
@@ -401,7 +401,7 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
     if cancelled:
         await _notify(context, admin_chat_id,
                       f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite")
-        await _refresh_admin_card(context, event_id)
+        await refresh_admin_card(context, event_id)
     elif not from_poller:
         url = dashboard_url(eb_id)
         await _notify(context, admin_chat_id,
@@ -425,7 +425,7 @@ async def cancel_only_on_eventbrite(context, event, admin_chat_id):
     else:
         text, keyboard = _orders_cancel_message(event_id, event['eventbrite_event_id'], orders)
         await _notify(context, admin_chat_id, f"{text} L'evento resta attivo su Telegram.", reply_markup=keyboard)
-    await _refresh_admin_card(context, event_id)
+    await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
     from bot.service.posts import update_event_messages
     await update_event_messages(context, event_id)  # removes the Eventbrite link from the discussion reply
