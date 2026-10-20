@@ -1,4 +1,4 @@
-from core.eventbrite.client import paginate
+from core.eventbrite.client import eb_post, paginate
 from core.eventbrite.payload import attendee_display_name
 
 
@@ -14,3 +14,8 @@ def fetch_active_orders(eb_id):
         profile = active[0].get("profile") or order
         orders[str(order["id"])] = (attendee_display_name(profile), len(active))
     return orders
+
+
+def refund_order(order_id):
+    """Fully refunds an order (Eventbrite has no cancel-order call) and emails the attendee. Raises EventbriteError on refusal."""
+    return eb_post(f"/orders/{order_id}/refunds/", json={"send_refund_email": True})

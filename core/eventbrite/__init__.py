@@ -11,7 +11,7 @@ from core.eventbrite.events import (
     update_event,
 )
 from core.eventbrite.media import upload_logo
-from core.eventbrite.orders import fetch_active_orders
+from core.eventbrite.orders import fetch_active_orders, refund_order
 from core.eventbrite.payload import (
     attendee_display_name,
     attendees_dashboard_url,
@@ -37,6 +37,7 @@ __all__ = [
     "update_ticket_quantity",
     "upload_logo",
     "fetch_active_orders",
+    "refund_order",
     "event_payload",
     "event_start_end",
     "description_modules",

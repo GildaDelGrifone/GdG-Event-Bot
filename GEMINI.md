@@ -108,7 +108,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - Then, the parsed event is sent to `ADMIN_CHAT_ID` with inline keyboard buttons: `[Publish]`, `[Discard]`, `[Cancel]`, and `[👥 Gestisci Iscritti]`.
 - For privacy, the `Master/Host` field is omitted from generated Instagram Story images, but is displayed in the admin review message and the public channel post.
 - **[Discard]:** Deletes the local event image, permanently deletes the event and all associated reservations from SQLite database, updates message to `❌ SCARTATO` and removes inline action buttons.
-- **[Cancel]:** Updates DB status to `cancelled`, updates message to `⚠️ ANNULLATO`, switches keyboard to `[♻️ Riattiva Evento]` and `[👥 Gestisci Iscritti]`, and posts a notice to `DISCUSSION_GROUP_ID` tagging all subscribers.
+- **[Cancel]:** (after the confirmation step of §2.6) Updates DB status to `cancelled`, updates message to `⚠️ ANNULLATO`, switches keyboard to `[♻️ Riattiva Evento]` and `[👥 Gestisci Iscritti]`, and posts a notice to `DISCUSSION_GROUP_ID` tagging all subscribers.
 - **[Publish]:**
   1. Generates 1080x1920 Instagram Story image using `utils/image_utils.create_story_image()` and saves it in `[DATA_DIR]/YYYY/MM/DD/`.
   2. Sends the generated story image to `ADMIN_CHAT_ID` for review *(Meta Graph API publishing is currently commented out for testing; see section 6)*.
@@ -157,7 +157,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 
 ### 2.6. Cancellation & Reactivation System
 - **Cancellation (`[Cancel]` / `[❌ Annulla Evento]`):**
-  - Admins can click Cancel on any event.
+  - Admins can click Cancel on any event. The button only asks for confirmation: it swaps the card buttons for `[✅ Conferma annullamento]` (`cancel_confirm_<id>`, labelled `✅ Conferma + rimborsa Eventbrite` when the event has Eventbrite bookings) and `[↩️ Indietro]` (`cancel_abort_<id>`), and shows a popup with the booked seats and, if any, the Eventbrite refunds that will follow. Nothing changes until the confirmation; a repeated confirmation is ignored.
   - Status set to `cancelled` in DB.
   - Live public post is updated with `❌ [ANNULLATO]` and `🪑 Posti: 0/<max_seats> [ANNULLATO]`, and booking buttons are removed.
   - A notification is sent to the public discussion group (`DISCUSSION_GROUP_ID`) where all subscribed Telegram users are tagged and informed of the cancellation with the bold event title (hyperlinked to the event post if available, `disable_web_page_preview=True`). If no subscribers, sends a general cancellation notice.
@@ -260,16 +260,18 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
 - **Rate budget:** two Eventbrite calls per tracked event per poll. With 10 events every 2 minutes that is about 600 calls per hour, under Eventbrite's 2000-per-hour limit per token.
 
-**Cancel / reactivate matrix** (Telegram `[❌ Annulla Evento]` / `[♻️ Riattiva Evento]`; `eventbrite_status` is our view: `draft|live|unpublished|closed|canceled`):
+**Cancel / reactivate matrix** (Telegram `[❌ Annulla Evento]` after the admin confirmed, see §2.6 / `[♻️ Riattiva Evento]`; `eventbrite_status` is our view: `draft|live|unpublished|closed|canceled`):
 
 | Telegram action | Eventbrite state | What happens | New `eventbrite_status` |
 |---|---|---|---|
 | Cancel | no orders | `unpublish` (reversible); if refused, falls through to the row below | `unpublished` |
-| Cancel | has orders | quantity set to the number sold, event renamed `[ANNULLATO] …`, cancel API tried | `canceled` if accepted |
-| Cancel | has orders, cancel refused | admins get the dashboard link + `[🎟️ Apri dashboard Eventbrite]`; Eventbrite emails the attendees when they cancel there; the poller confirms it | `closed` → `canceled` once confirmed |
+| Cancel | has orders | quantity set to the number sold, event renamed `[ANNULLATO] …`, **every active order refunded** (`POST /orders/{id}/refunds/`, with the refund email to the attendee), then the cancel API tried | `canceled` if accepted |
+| Cancel | has orders, a refund or the cancel refused | cancel is skipped if any refund failed; admins get the counts (refunded / not refundable), the dashboard link and `[🎟️ Apri dashboard Eventbrite]`; the poller confirms a later manual cancel | `closed` → `canceled` once confirmed |
 | Reactivate | `unpublished` | publish again, push content and capacity | `live` |
 | Reactivate | `closed` | restore the name and force a capacity push | `live` |
 | Reactivate | `canceled` | cannot be revived: admins get `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`), which clears the Eventbrite info and publishes a new event | — |
+
+The Eventbrite API has **no cancel/delete call for an order or attendee**; a full refund is the only per-order action, and refunds cannot be undone, which is why cancelling always needs the admin confirmation described in §2.6. Unverified against a real account: whether a *free* order can be refunded (our tickets are free), whether the cancel call is accepted once every order is refunded, and the undocumented refund body field `send_refund_email`. Any refusal falls back to `closed` plus the dashboard link. Reactivating a `closed` event does not undo refunds already made.
 
 **Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to the Eventbrite attendee dashboard (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored.
 

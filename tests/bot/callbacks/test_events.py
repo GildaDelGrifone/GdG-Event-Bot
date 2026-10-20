@@ -32,7 +32,7 @@ class TestAdminCallbackAuditLogging(TempDBMixin, unittest.IsolatedAsyncioTestCas
 
         ev_id2 = create_event(**AUDIT_EVENT)
 
-        query.data = f"cancel_event_{ev_id2}"
+        query.data = f"cancel_confirm_{ev_id2}"
         with patch("bot.callbacks.events.logger") as mock_logger, \
              patch("bot.callbacks.events.send_cancellation_notice", AsyncMock()), \
              patch("bot.callbacks.events.update_event_messages", AsyncMock()):
@@ -73,7 +73,7 @@ class TestDiscardEventCallback(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 class TestCancelReactivateCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def test_cancel_and_reactivate_callback_flow(self):
         event_id = create_subscribed_event()
-        update, query = callback_update(f"cancel_event_{event_id}", text=None, caption="Post evento", photo=True)
+        update, query = callback_update(f"cancel_confirm_{event_id}", text=None, caption="Post evento", photo=True)
         context = make_context()
 
         def keyboard_callbacks():
@@ -149,7 +149,7 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         unlinked = create_event(status="approved")
 
         for event_id in (linked, unlinked):
-            update, _ = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
+            update, _ = callback_update(f"cancel_confirm_{event_id}", text=None, caption="Card", photo=True)
             await handle_callback_query(update, self.context)
         self.cancel.assert_awaited_once()
         cancelled_event = self.cancel.call_args.args[1]
@@ -173,6 +173,103 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         keyboard = query.edit_message_caption.call_args.kwargs["reply_markup"]
         urls = [b.url for row in keyboard.inline_keyboard for b in row if b.url]
         self.assertEqual(urls, ["https://www.eventbrite.com/myevent?eid=eb1"])
+
+
+class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.context = make_context()
+        self.cancel_eb = patch("bot.callbacks.events.cancel_on_eventbrite", new_callable=AsyncMock).start()
+        self.update_messages = patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock).start()
+        self.notice = patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
+        self.addCleanup(patch.stopall)
+
+    def buttons(self, query):
+        keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        return [(b.text, b.callback_data) for row in keyboard.inline_keyboard for b in row]
+
+    async def test_cancel_button_only_asks_for_confirmation(self):
+        event_id = create_subscribed_event()  # 2 Telegram seats booked
+        update, query = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
+
+        await handle_callback_query(update, self.context)
+
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.assertEqual(self.buttons(query), [("✅ Conferma annullamento", f"cancel_confirm_{event_id}"),
+                                              ("↩️ Indietro", f"cancel_abort_{event_id}")])
+        alert, kwargs = query.answer.call_args.args[0], query.answer.call_args.kwargs
+        self.assertTrue(kwargs["show_alert"])
+        self.assertIn("2 posti su Telegram", alert)
+        self.assertNotIn("Eventbrite", alert)
+        self.assertLessEqual(len(alert), 200)  # Telegram's popup limit
+        query.edit_message_caption.assert_not_called()
+        self.cancel_eb.assert_not_awaited()
+        self.update_messages.assert_not_awaited()
+        self.notice.assert_not_awaited()
+
+    async def test_the_warning_and_button_mention_the_eventbrite_refunds(self):
+        event_id = create_subscribed_event()
+        db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
+        update, query = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
+
+        await handle_callback_query(update, self.context)
+
+        self.assertEqual(self.buttons(query)[0][0], "✅ Conferma + rimborsa Eventbrite")
+        alert = query.answer.call_args.args[0]
+        self.assertIn("2 posti Eventbrite saranno RIMBORSATI", alert)
+        self.assertIn("2 posti su Telegram", alert)
+        self.assertLessEqual(len(alert), 200)
+
+    async def test_unknown_event(self):
+        update, query = callback_update("cancel_event_999", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, self.context)
+        query.answer.assert_awaited_with("Evento non trovato.", show_alert=True)
+        query.edit_message_reply_markup.assert_not_called()
+
+    async def test_abort_restores_the_card_buttons_and_changes_nothing(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"cancel_abort_{event_id}", text=None, caption="Card", photo=True)
+
+        await handle_callback_query(update, self.context)
+
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        callbacks = [data for _, data in self.buttons(query)]
+        self.assertIn(f"cancel_event_{event_id}", callbacks)
+        self.assertNotIn(f"cancel_confirm_{event_id}", callbacks)
+        self.cancel_eb.assert_not_awaited()
+
+    async def test_confirm_cancels_and_a_repeated_confirm_does_nothing(self):
+        event_id = create_subscribed_event()
+        update, query = callback_update(f"cancel_confirm_{event_id}", text=None, caption="Card", photo=True)
+
+        with patched_config(DISCUSSION_GROUP_ID="-100123456"):
+            await handle_callback_query(update, self.context)
+            self.assertEqual(db.get_event(event_id)["status"], "cancelled")
+            self.notice.assert_awaited_once()
+            self.update_messages.assert_awaited_once()
+
+            query.answer.reset_mock()
+            await handle_callback_query(update, self.context)
+
+        query.answer.assert_awaited_with("Evento già annullato.")
+        self.notice.assert_awaited_once()  # no second notice to the subscribers
+
+    async def test_confirm_mirrors_on_eventbrite_only_for_linked_events(self):
+        linked = create_event(status="approved")
+        db.set_eventbrite_info(linked, eventbrite_event_id="eb1", eventbrite_status="live")
+        plain = create_event(status="approved")
+        for event_id in (linked, plain):
+            update, _ = callback_update(f"cancel_confirm_{event_id}", text=None, caption="Card", photo=True)
+            await handle_callback_query(update, self.context)
+        self.cancel_eb.assert_awaited_once()
+        self.assertEqual(self.cancel_eb.call_args.args[1]["id"], linked)
+
+    async def test_the_confirm_prompt_is_only_one_press_away_from_the_old_behaviour(self):
+        from bot.keyboards import get_approved_event_keyboard
+        event_id = create_event(status="approved")
+        callbacks = [b.callback_data for row in get_approved_event_keyboard(event_id).inline_keyboard for b in row]
+        self.assertIn(f"cancel_event_{event_id}", callbacks)
+        self.assertNotIn(f"cancel_confirm_{event_id}", callbacks)  # the approved card never cancels directly
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from core.eventbrite.orders import fetch_active_orders
+from core.eventbrite.orders import fetch_active_orders, refund_order
+from tests.support.config import eventbrite_credentials
 
 
 def attendee(first, last, **flags):
@@ -31,6 +32,22 @@ class TestFetchActiveOrders(unittest.TestCase):
         orders = fetch_active_orders("eb1")
         self.assertEqual(orders, {"7": ("Carla R.", 1)})
         self.assertNotIn("secret", repr(orders))
+
+
+class TestRefundOrder(unittest.TestCase):
+    @patch("core.eventbrite.orders.eb_post", return_value={"id": "r1"})
+    def test_refunds_the_whole_order_and_emails_the_attendee(self, mock_post):
+        self.assertEqual(refund_order("o7"), {"id": "r1"})
+        mock_post.assert_called_once_with("/orders/o7/refunds/", json={"send_refund_email": True})
+
+    @patch("core.eventbrite.client.requests.post")
+    def test_a_refusal_raises_eventbrite_error(self, mock_requests_post):
+        from unittest.mock import MagicMock
+        from core.eventbrite import EventbriteError
+        mock_requests_post.return_value = MagicMock(status_code=400, json=lambda: {"error": "REFUND_ERROR"})
+        with eventbrite_credentials(), self.assertRaises(EventbriteError) as ctx:
+            refund_order("o7")
+        self.assertEqual(ctx.exception.error, "REFUND_ERROR")
 
 
 if __name__ == "__main__":

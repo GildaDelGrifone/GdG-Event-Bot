@@ -4,6 +4,7 @@ import core.db as db
 from bot.keyboards import (
     get_approval_keyboard,
     get_approved_event_keyboard,
+    get_cancel_confirmation_keyboard,
     get_cancelled_event_keyboard,
     get_event_booking_keyboard,
     get_schedule_repost_keyboard,
@@ -158,6 +159,21 @@ class TestEventbriteKeyboards(unittest.TestCase):
         reservations = [{"id": 2, "full_name": "Mario R.", "seats_booked": 2, "source": "eventbrite"}]
         rows = self.rows(get_subscribers_management_keyboard(5, reservations))
         self.assertEqual(len(rows), 2)  # only "Aggiungi" and "Aggiorna/Chiudi"
+
+
+class TestCancelConfirmationKeyboard(TempDBMixin, unittest.TestCase):
+    def rows(self, event_id):
+        return [[(b.text, b.callback_data) for b in row] for row in get_cancel_confirmation_keyboard(event_id).inline_keyboard]
+
+    def test_plain_event(self):
+        event_id = create_subscribed_event()
+        self.assertEqual(self.rows(event_id), [[("✅ Conferma annullamento", f"cancel_confirm_{event_id}"),
+                                                ("↩️ Indietro", f"cancel_abort_{event_id}")]])
+
+    def test_event_with_eventbrite_bookings_mentions_the_refunds(self):
+        event_id = create_subscribed_event()
+        db.apply_eventbrite_order(event_id, "o1", "Mario R.", 1)
+        self.assertEqual(self.rows(event_id)[0][0], ("✅ Conferma + rimborsa Eventbrite", f"cancel_confirm_{event_id}"))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from core import config
-from core.db import get_event
+from core.db import eventbrite_seat_count, get_event
 from core.eventbrite import attendees_dashboard_url, dashboard_url, eventbrite_enabled
 from utils.templates import EVENTBRITE_ROW_PREFIX, format_reservation_subscriber_display
 
@@ -44,6 +44,15 @@ def get_approved_event_keyboard(event_id, event=None):
         else:
             rows.append([InlineKeyboardButton("🎟️ Pubblica su Eventbrite", callback_data=f"eb_publish_{event_id}")])
     return InlineKeyboardMarkup(rows)
+
+
+def get_cancel_confirmation_keyboard(event_id):
+    """Shown in place of the approved-card buttons after [❌ Annulla Evento], so a misclick cannot cancel an event."""
+    confirm = "✅ Conferma + rimborsa Eventbrite" if eventbrite_seat_count(event_id) > 0 else "✅ Conferma annullamento"
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(confirm, callback_data=f"cancel_confirm_{event_id}"),
+        InlineKeyboardButton("↩️ Indietro", callback_data=f"cancel_abort_{event_id}"),
+    ]])
 
 
 def get_cancelled_event_keyboard(event_id):

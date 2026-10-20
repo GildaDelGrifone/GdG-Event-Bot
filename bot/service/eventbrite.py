@@ -23,6 +23,7 @@ from core.eventbrite import (
     eventbrite_enabled,
     fetch_active_orders,
     publish_event,
+    refund_order,
     set_description,
     ticket_quantity,
     unpublish_event,
@@ -36,6 +37,7 @@ from bot.keyboards import get_approved_event_keyboard
 logger = logging.getLogger(__name__)
 
 NOT_CONFIGURED = "❌ Eventbrite non configurato"
+RATE_LIMIT_ERROR = "HIT_RATE_LIMIT"
 DATE_NOT_UPDATED = "⚠️ Evento #{id}: data non aggiornata su Eventbrite ({reason})."
 
 
@@ -240,7 +242,7 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
 # ---------------------------------------------------------------- cancel / reactivate
 
 def _cancel_blocking(event):
-    """Returns (outcome, order_count) where outcome is 'unpublished', 'canceled' or 'closed'."""
+    """Returns (outcome, refunded, failed): outcome is 'unpublished', 'canceled' or 'closed'; the counts are orders."""
     event_id, eb_id = event['id'], event['eventbrite_event_id']
     orders = fetch_active_orders(eb_id)
     eb_seats = sum(seats for _, seats in orders.values())
@@ -249,28 +251,45 @@ def _cancel_blocking(event):
         try:
             unpublish_event(eb_id)
             set_eventbrite_info(event_id, eventbrite_status='unpublished')
-            return 'unpublished', 0
+            return 'unpublished', 0, 0
         except EventbriteError as e:
             logger.warning(f"Eventbrite refused to unpublish event #{event_id} ({e.error}); trying to cancel it.")
 
-    # Close sales at the number sold, flag the title, then try the cancel API
+    # Close sales at the number sold and flag the title
     cancelled = {**event, 'status': 'cancelled'}
     if event.get('eventbrite_ticket_class_id'):
         update_ticket_quantity(eb_id, event['eventbrite_ticket_class_id'], eb_seats)
         set_eventbrite_info(event_id, eventbrite_quantity_total=eb_seats)
     update_event(eb_id, event_payload(cancelled, include_dates=False))
-    try:
-        cancel_event(eb_id)
-    except EventbriteError as e:
-        logger.warning(f"Eventbrite refused to cancel event #{event_id} ({e.error}); dashboard action needed.")
-        set_eventbrite_info(event_id, eventbrite_status='closed')
-        return 'closed', len(orders)
-    set_eventbrite_info(event_id, eventbrite_status='canceled')
-    return 'canceled', len(orders)
+
+    # The API cannot cancel an event with orders, so refund every order first (the admins confirmed this)
+    refunded, failed = 0, 0
+    pending = list(orders)
+    for position, order_id in enumerate(pending):
+        try:
+            refund_order(order_id)
+            refunded += 1
+        except EventbriteError as e:
+            logger.warning(f"Eventbrite refused to refund order {order_id} of event #{event_id} ({e.error}).")
+            failed += 1
+            if e.error == RATE_LIMIT_ERROR:
+                failed += len(pending) - position - 1  # the rest was not attempted
+                break
+
+    if not failed:
+        try:
+            cancel_event(eb_id)
+            set_eventbrite_info(event_id, eventbrite_status='canceled')
+            return 'canceled', refunded, 0
+        except EventbriteError as e:
+            logger.warning(f"Eventbrite refused to cancel event #{event_id} ({e.error}); dashboard action needed.")
+    set_eventbrite_info(event_id, eventbrite_status='closed')
+    return 'closed', refunded, failed
 
 
 async def cancel_on_eventbrite(context, event):
-    """Mirrors a Telegram cancellation: unpublish when nobody booked, otherwise close sales, rename and try to cancel."""
+    """Mirrors a (confirmed) Telegram cancellation: unpublish when nobody booked, otherwise close sales, rename, refund
+    every order and cancel."""
     if not eventbrite_enabled() or not event or not event.get('eventbrite_event_id'):
         return
     if event.get('eventbrite_status') in ('canceled', 'draft', 'unpublished', 'closed'):
@@ -278,7 +297,7 @@ async def cancel_on_eventbrite(context, event):
 
     event_id = event['id']
     try:
-        outcome, order_count = await asyncio.to_thread(_cancel_blocking, event)
+        outcome, refunded, failed = await asyncio.to_thread(_cancel_blocking, event)
     except Exception as e:
         logger.error(f"Eventbrite cancellation failed for event #{event_id}: {e}")
         await _notify(context, config.ADMIN_CHAT_ID, f"⚠️ Annullamento su Eventbrite fallito per #{event_id}: {e}")
@@ -287,13 +306,18 @@ async def cancel_on_eventbrite(context, event):
     if outcome == 'unpublished':
         await _notify(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} messo offline su Eventbrite (nessuna prenotazione).")
     elif outcome == 'canceled':
-        await _notify(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} annullato anche su Eventbrite")
+        refunds = f" ({refunded} prenotazioni rimborsate, i partecipanti sono stati avvisati via email)" if refunded else ""
+        await _notify(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} annullato anche su Eventbrite{refunds}")
     else:
         url = dashboard_url(event['eventbrite_event_id'])
+        if failed:
+            text = (f"⚠️ Evento #{event_id}: {refunded} prenotazioni Eventbrite rimborsate, {failed} non rimborsabili via API. "
+                    f"Gestiscile e annulla l'evento dalla dashboard (Eventbrite avviserà gli iscritti via email): {url}")
+        else:
+            text = (f"⚠️ Evento #{event_id}: {refunded} prenotazioni Eventbrite rimborsate, ma Eventbrite non permette di "
+                    f"annullare l'evento via API. Annullalo dalla dashboard: {url}")
         await _notify(
-            context, config.ADMIN_CHAT_ID,
-            f"⚠️ L'evento ha {order_count} prenotazioni Eventbrite: l'API non può annullarlo. "
-            f"Annullalo dalla dashboard (Eventbrite avviserà gli iscritti via email): {url}",
+            context, config.ADMIN_CHAT_ID, text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Apri dashboard Eventbrite", url=url)]]),
         )
 

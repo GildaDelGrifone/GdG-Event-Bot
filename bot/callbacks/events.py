@@ -1,13 +1,17 @@
 import logging
 
 from core import config
-from core.db import update_event_status, delete_event, get_event, update_telegram_message_info
+from core.db import (
+    delete_event, eventbrite_seat_count, get_event, update_event_status, update_telegram_message_info,
+)
 from utils.image_utils import create_story_image, delete_local_image
 from utils.templates import format_public_event_message
 from bot.callbacks.notices import send_cancellation_notice, send_reactivation_notice
 from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback
-from bot.keyboards import get_event_booking_keyboard, get_approved_event_keyboard, get_cancelled_event_keyboard
+from bot.keyboards import (
+    get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
+)
 from bot.service.eventbrite import (
     cancel_on_eventbrite, publish_event_to_eventbrite, reactivate_on_eventbrite, recreate_on_eventbrite,
 )
@@ -150,8 +154,46 @@ async def _change_published_state(query, context, event_id, status, suffix, keyb
 
 
 async def handle_cancel_event(query, context, payload):
-    await query.answer()
+    """[❌ Annulla Evento] only asks for confirmation; nothing changes until [✅ Conferma …]."""
     event_id = int(payload)
+    event = get_event(event_id)
+    if not event:
+        await query.answer("Evento non trovato.", show_alert=True)
+        return
+
+    eb_seats = eventbrite_seat_count(event_id)
+    telegram_seats = max(0, int(event.get('booked_seats') or 0) - eb_seats)
+    warning = f"Annullare l'evento? Gli iscritti verranno avvisati ({telegram_seats} posti su Telegram)."
+    if eb_seats:
+        warning += f" I {eb_seats} posti Eventbrite saranno RIMBORSATI (email ai partecipanti): non si può annullare."
+    logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} (confirmation requested).")
+    await query.answer(warning, show_alert=True)
+    try:
+        await query.edit_message_reply_markup(reply_markup=get_cancel_confirmation_keyboard(event_id))
+    except Exception as e:
+        logger.error(f"Could not show the cancel confirmation for event #{event_id}: {e}")
+
+
+async def handle_cancel_abort(query, context, payload):
+    await query.answer("Annullamento interrotto.")
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} aborted the cancellation of event #{event_id}.")
+    try:
+        await query.edit_message_reply_markup(reply_markup=get_approved_event_keyboard(event_id, get_event(event_id)))
+    except Exception as e:
+        logger.error(f"Could not restore the card buttons of event #{event_id}: {e}")
+
+
+async def handle_cancel_confirm(query, context, payload):
+    event_id = int(payload)
+    event = get_event(event_id)
+    if not event:
+        await query.answer("Evento non trovato.", show_alert=True)
+        return
+    if event.get('status') == 'cancelled':
+        await query.answer("Evento già annullato.")
+        return
+    await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id}.")
     await _change_published_state(
         query, context, event_id, "cancelled", CANCELLED_SUFFIX, get_cancelled_event_keyboard(event_id), "cancel",

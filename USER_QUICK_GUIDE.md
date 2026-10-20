@@ -48,7 +48,7 @@ Sotto l'anteprima dell'evento troverai i pulsanti:
 - **[Discard Event]**: Scarta l'evento eliminandolo dal database.
 
 Se un evento già pubblicato viene cancellato dal Master:
-- Usa il pulsante **[❌ Annulla Evento]**. L'evento verrà segnato come `[ANNULLATO]` nel canale pubblico, i posti scenderanno a zero e verrà ignorato nei recap.
+- Usa il pulsante **[❌ Annulla Evento]**: il bot ti chiede conferma (**[✅ Conferma annullamento]** oppure **[↩️ Indietro]**) e non cambia nulla finché non confermi. Dopo la conferma l'evento verrà segnato come `[ANNULLATO]` nel canale pubblico, i posti scenderanno a zero e verrà ignorato nei recap.
 
 ### 4. Pubblicare un Evento anche su Eventbrite
 *(Disponibile solo se l'integrazione Eventbrite è configurata sul bot; altrimenti i pulsanti qui sotto non compaiono.)*
@@ -60,7 +60,7 @@ Se un evento già pubblicato viene cancellato dal Master:
 - **Modifiche:** titolo, data, sistema, host, note, descrizione, tipo, posti e immagine modificati con i comandi `/event_edit_*` vengono riportati anche su Eventbrite. Non si può ridurre `/event_edit_booked` o `/event_edit_seats` sotto il numero di posti già prenotati su Eventbrite.
 - **Annullare un evento:** con **[❌ Annulla Evento]** il bot annulla anche su Eventbrite.
   - *Nessuna prenotazione su Eventbrite:* l'evento viene messo offline; **[♻️ Riattiva Evento]** lo ripubblica.
-  - *Con prenotazioni:* le vendite vengono chiuse e l'evento rinominato `[ANNULLATO] …`; il bot prova ad annullarlo. Se Eventbrite non lo permette, ti invia il link alla dashboard con il pulsante **[🎟️ Apri dashboard Eventbrite]**: premi *Annulla evento* lì (Eventbrite avviserà i partecipanti via email). Quando l'annullamento è fatto, il bot lo conferma da solo.
+  - *Con prenotazioni:* il pulsante di conferma diventa **[✅ Conferma + rimborsa Eventbrite]**, perché i rimborsi non si possono annullare. Dopo la conferma le vendite vengono chiuse, l'evento rinominato `[ANNULLATO] …`, **ogni prenotazione Eventbrite viene rimborsata** (Eventbrite avvisa i partecipanti via email) e il bot annulla l'evento. Se Eventbrite rifiuta qualche rimborso o l'annullamento, ti dice quanti ordini sono stati rimborsati e ti invia il link alla dashboard con il pulsante **[🎟️ Apri dashboard Eventbrite]**: completa lì l'operazione. Quando l'annullamento è fatto, il bot lo conferma da solo.
   - Un evento annullato su Eventbrite non può essere riattivato: dopo **[♻️ Riattiva Evento]** il bot propone **[🎟️ Ricrea su Eventbrite]**.
 
 ### 5. Gestione Manuale degli Iscritti

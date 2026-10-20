@@ -11,6 +11,8 @@ CALLBACK_ROUTES = (
     ("eb_recreate_", events.handle_eventbrite_recreate),
     ("discard_event_", events.handle_discard_event),
     ("cancel_event_", events.handle_cancel_event),
+    ("cancel_confirm_", events.handle_cancel_confirm),
+    ("cancel_abort_", events.handle_cancel_abort),
     ("reactivate_event_", events.handle_reactivate_event),
     ("publish_recap_", recap.handle_publish_recap),
     ("discard_recap_", recap.handle_discard_recap),

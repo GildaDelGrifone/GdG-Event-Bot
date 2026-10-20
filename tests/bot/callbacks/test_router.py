@@ -28,10 +28,13 @@ class TestEventbriteRoutes(unittest.TestCase):
         self.assertIs(routes["publish_eb_event_"], events.handle_publish_event_with_eventbrite)
         self.assertIs(routes["eb_publish_"], events.handle_eventbrite_publish)
         self.assertIs(routes["eb_recreate_"], events.handle_eventbrite_recreate)
+        self.assertIs(routes["cancel_event_"], events.handle_cancel_event)
+        self.assertIs(routes["cancel_confirm_"], events.handle_cancel_confirm)
+        self.assertIs(routes["cancel_abort_"], events.handle_cancel_abort)
 
     def test_each_callback_data_resolves_to_exactly_one_route(self):
         prefixes = [p for p, _ in router.CALLBACK_ROUTES]
-        for data in ("publish_event_1", "publish_eb_event_1", "eb_publish_1", "eb_recreate_1", "book_1", "unbook_1"):
+        for data in ("publish_event_1", "publish_eb_event_1", "eb_publish_1", "eb_recreate_1", "cancel_event_1", "cancel_confirm_1", "cancel_abort_1", "book_1", "unbook_1"):
             with self.subTest(data=data):
                 self.assertEqual(len([p for p in prefixes if data.startswith(p)]), 1)
 
