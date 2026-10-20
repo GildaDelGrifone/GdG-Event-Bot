@@ -9,6 +9,9 @@ Usage Examples:
     # List the venues of the organization (EVENTBRITE_ORGANIZATION_ID, or --org):
     python3 scripts/eventbrite_setup.py --venues
 
+    # Create a collection (e.g. "Giochi di ruolo") and print the id to put in .env:
+    python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo"
+
     # Create the venue once and print the EVENTBRITE_VENUE_ID to put in .env:
     python3 scripts/eventbrite_setup.py --create-venue --name "Gilda del Grifone" \\
         --address "Via Ada Negri 8/A" --city Torino --postal-code 10135 --country IT
@@ -23,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from core import config
 from core.eventbrite.client import EventbriteError, eb_get, eb_post, paginate
+from core.eventbrite.collections import create_collection
 
 
 def check_token():
@@ -62,6 +66,17 @@ def create_venue(organization_id, args):
     print(f"EVENTBRITE_VENUE_ID={venue.get('id')}")
 
 
+def create_collection_for_org(organization_id, name):
+    organizers = list(paginate(f"/organizations/{organization_id}/organizers/", {}, "organizers"))
+    if not organizers:
+        raise EventbriteError(404, "NO_ORGANIZER", "L'organizzazione non ha organizzatori")
+    organizer_id = config.EVENTBRITE_ORGANIZER_ID or organizers[0]["id"]
+    collection = create_collection(name, organizer_id)
+    print(f"✅ Collezione creata: {collection.get('name')} ({collection.get('absolute_url')})")
+    print("Per renderla visibile pubblicala dalla dashboard Eventbrite (l'API la crea in bozza).")
+    print(f"ID collezione: {collection.get('id')}  → EVENTBRITE_COLLECTION_ROLEPLAY o EVENTBRITE_COLLECTION_BOARDGAMES")
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Configurazione dell'integrazione Eventbrite della Gilda del Grifone.",
@@ -71,6 +86,7 @@ def parse_args(argv=None):
     parser.add_argument("--orgs", action="store_true", help="Elenca gli ID delle organizzazioni accessibili.")
     parser.add_argument("--venues", action="store_true", help="Elenca i venue dell'organizzazione.")
     parser.add_argument("--create-venue", action="store_true", help="Crea un venue e stampa il suo ID.")
+    parser.add_argument("--create-collection", metavar="NOME", help="Crea una collezione e stampa il suo ID.")
     parser.add_argument("--org", help="ID organizzazione (default: EVENTBRITE_ORGANIZATION_ID).")
     parser.add_argument("--name", help="Nome del venue (con --create-venue).")
     parser.add_argument("--address", help="Indirizzo del venue (con --create-venue).")
@@ -78,8 +94,8 @@ def parse_args(argv=None):
     parser.add_argument("--postal-code", help="CAP del venue (con --create-venue).")
     parser.add_argument("--country", default="IT", help="Codice paese ISO a 2 lettere (default: IT).")
     args = parser.parse_args(argv)
-    if not (args.check or args.orgs or args.venues or args.create_venue):
-        parser.error("specifica almeno una azione: --check, --orgs, --venues o --create-venue")
+    if not (args.check or args.orgs or args.venues or args.create_venue or args.create_collection):
+        parser.error("specifica almeno una azione: --check, --orgs, --venues, --create-venue o --create-collection")
     if args.create_venue and not (args.name and args.address):
         parser.error("--create-venue richiede --name e --address")
     return args
@@ -92,7 +108,7 @@ def main(argv=None):
         return 1
 
     organization_id = args.org or config.EVENTBRITE_ORGANIZATION_ID
-    if (args.venues or args.create_venue) and not organization_id:
+    if (args.venues or args.create_venue or args.create_collection) and not organization_id:
         print("❌ Serve l'ID organizzazione: usa --orgs per trovarlo, poi --org o EVENTBRITE_ORGANIZATION_ID.")
         return 1
 
@@ -105,6 +121,8 @@ def main(argv=None):
             list_venues(organization_id)
         if args.create_venue:
             create_venue(organization_id, args)
+        if args.create_collection:
+            create_collection_for_org(organization_id, args.create_collection)
     except EventbriteError as e:
         print(f"❌ Errore Eventbrite: {e}")
         return 1

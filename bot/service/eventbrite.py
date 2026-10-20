@@ -13,6 +13,7 @@ from core import config
 from core.db import clear_eventbrite_info, eventbrite_seat_count, get_event, set_eventbrite_info
 from core.eventbrite import (
     EventbriteError,
+    add_event_to_collection,
     cancel_event,
     create_event,
     create_free_ticket_class,
@@ -24,6 +25,7 @@ from core.eventbrite import (
     fetch_active_orders,
     order_cancel_url,
     publish_event,
+    remove_event_from_collection,
     set_description,
     ticket_quantity,
     unpublish_event,
@@ -122,9 +124,35 @@ def _is_full(event):
 
 # ---------------------------------------------------------------- publish
 
+def _collections_for(event):
+    """(collection to join, the other one) for the event's type; either may be None when not configured."""
+    roleplay, boardgames = config.EVENTBRITE_COLLECTION_ROLEPLAY, config.EVENTBRITE_COLLECTION_BOARDGAMES
+    return (roleplay, boardgames) if event.get('is_roleplay') else (boardgames, roleplay)
+
+
+def _assign_collection(event, leave_other=False):
+    """Puts the Eventbrite event in the Collection of its type (roleplay / board games). Returns a warning or None:
+    collections are cosmetic and not in the public API docs, so a failure never blocks anything."""
+    target, other = _collections_for(event)
+    if not target:
+        return None
+    eb_id = event['eventbrite_event_id']
+    try:
+        if leave_other and other:
+            try:
+                remove_event_from_collection(other, eb_id)
+            except EventbriteError:
+                pass  # was not in it
+        add_event_to_collection(target, eb_id)
+    except Exception as e:
+        logger.warning(f"Could not add Eventbrite event of #{event['id']} to collection {target}: {e}")
+        return f"⚠️ Evento #{event['id']} non aggiunto alla collezione Eventbrite ({_failure_reason(e)})"
+    return None
+
+
 def _publish_blocking(event, start_end):
     """Runs the publish steps in order, storing ids after each one so a failure can resume from the draft.
-    Returns (eventbrite event JSON-ish dict with id/url, logo failure reason or None)."""
+    Returns (eventbrite event JSON-ish dict with id/url, logo failure reason or None, collection warning or None)."""
     event_id = event['id']
     logo_error = None
     eb_id, url = event.get('eventbrite_event_id'), event.get('eventbrite_url')
@@ -154,7 +182,8 @@ def _publish_blocking(event, start_end):
 
     publish_event(eb_id)
     set_eventbrite_info(event_id, eventbrite_status='live', eventbrite_url=url, eventbrite_quantity_total=quantity)
-    return {"id": eb_id, "url": url}, logo_error
+    collection_warning = _assign_collection({**event, 'eventbrite_event_id': eb_id})
+    return {"id": eb_id, "url": url}, logo_error, collection_warning
 
 
 async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
@@ -191,7 +220,7 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
         return
 
     try:
-        result, logo_error = await asyncio.to_thread(_publish_blocking, event, start_end)
+        result, logo_error, collection_warning = await asyncio.to_thread(_publish_blocking, event, start_end)
     except Exception as e:
         logger.error(f"Eventbrite publish failed for event #{event_id}: {e}")
         await notify_admin(context, admin_chat_id,
@@ -202,6 +231,8 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
     if logo_error:
         await notify_admin(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({logo_error})",
                            reply_markup=_logo_retry_keyboard(event_id), event_id=event_id)
+    if collection_warning:
+        await notify_admin(context, admin_chat_id, collection_warning, event_id=event_id)
     await notify_admin(context, admin_chat_id, f"✅ Evento pubblicato su Eventbrite: {result['url']}", event_id=event_id)
     await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
@@ -243,6 +274,10 @@ def _sync_blocking(event, content_changed, image_changed):
         _push_capacity(event)
     if content_changed:
         warning = _push_content(event)
+        if warning:
+            warnings.append(warning)
+        # content_changed also covers a roleplay <-> board game switch: move the event to the right collection
+        warning = _assign_collection(event, leave_other=True)
         if warning:
             warnings.append(warning)
     image_path = event.get('image_path')

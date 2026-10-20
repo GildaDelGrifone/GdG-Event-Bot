@@ -261,6 +261,8 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
 - **Rate budget:** about one Eventbrite call per tracked event per poll (the orders call only on a change or at the periodic full check). With 10 events every 2 minutes that is about 300 calls per hour plus ~20 for the full checks, under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application (event creation/copy and publishing: 200/hour each).
 
+**Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited. A failure is only a warning to the admins. Already published events are not backfilled.
+
 **Admin notices:** every Eventbrite notice about one event is sent as a reply to that event's admin card (`notify_admin(..., event_id=)`; plain message if the card is gone). The nightly cleanup summary covers several events, so it is a plain message.
 
 **Approved card, second row** (when linked): `[🎟️ Eventbrite]` (dashboard) plus the Eventbrite-only action for the state: `[🚫 Annulla su Eventbrite]` (`eb_cancel_ask_<id>` → confirm `eb_cancel_do_<id>` / back `cancel_abort_<id>`) when `live`/`unpublished`, `[🔁 Completa annullamento]` (`eb_cancel_retry_<id>`) when `closed`, `[🎟️ Ricrea su Eventbrite]` (`eb_recreate_<id>`) when `canceled`. `sync_eventbrite` skips `closed` events so a cancellation in progress is never reopened or renamed back.
@@ -551,6 +553,7 @@ GdG-Event-Bot/
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
+| `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` | (Optional) Eventbrite Collection ids: published events join the roleplay one when `is_roleplay`, the board games one otherwise; both empty = off. Create one with `scripts/eventbrite_setup.py --create-collection "NAME"` (the API creates it as a draft; publish it from the dashboard) | none |
 | `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group (`true`/`false`); seats sync either way | `true` |
 
 ---

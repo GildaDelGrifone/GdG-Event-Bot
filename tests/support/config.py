@@ -43,6 +43,8 @@ def eventbrite_credentials(**overrides):
         "EVENTBRITE_UNLIMITED_CAPACITY": 50,
         "EVENTBRITE_FULL_SYNC_MINUTES": 30,
         "EVENTBRITE_DELETE_CANCELLED": True,
+        "EVENTBRITE_COLLECTION_ROLEPLAY": None,
+        "EVENTBRITE_COLLECTION_BOARDGAMES": None,
         "EVENTBRITE_BOOKING_NOTIFICATIONS": True,
         **overrides,
     }

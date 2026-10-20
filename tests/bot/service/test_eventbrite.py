@@ -14,6 +14,7 @@ from tests.support.telegram import ADMIN_CHAT_ID, make_context
 PATCHED = (
     "create_event", "update_event", "publish_event", "unpublish_event", "cancel_event", "set_description",
     "create_free_ticket_class", "update_ticket_quantity", "upload_logo", "fetch_active_orders",
+    "add_event_to_collection", "remove_event_from_collection",
 )
 ADMIN = int(ADMIN_CHAT_ID)
 
@@ -570,6 +571,55 @@ class TestFinishCancellation(EventbriteServiceCase):
         self.context.bot.send_message.assert_not_called()
         await self.finish(event_id)
         self.assertIn("non completato", self.texts()[-1])
+
+
+class TestCollections(EventbriteServiceCase):
+    def collections(self, **extra):
+        return eventbrite_credentials(EVENTBRITE_COLLECTION_ROLEPLAY="gdr", EVENTBRITE_COLLECTION_BOARDGAMES="tavolo", **extra)
+
+    async def publish(self, **fields):
+        event_id = self.make_event(**fields)
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        return event_id
+
+    async def test_roleplay_events_join_the_roleplay_collection(self):
+        with self.collections():
+            await self.publish(is_roleplay=1)
+        self.mocks["add_event_to_collection"].assert_called_once_with("gdr", "eb1")
+
+    async def test_other_events_join_the_board_games_collection(self):
+        with self.collections():
+            await self.publish(is_roleplay=0)
+        self.mocks["add_event_to_collection"].assert_called_once_with("tavolo", "eb1")
+
+    async def test_nothing_happens_without_configured_collections(self):
+        await self.publish()
+        self.mocks["add_event_to_collection"].assert_not_called()
+
+    async def test_a_failure_is_a_warning_and_the_event_is_still_published(self):
+        self.mocks["add_event_to_collection"].side_effect = EventbriteError(404, "NOT_FOUND", "no such collection")
+        with self.collections():
+            event_id = await self.publish()
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
+        self.assertTrue(any("non aggiunto alla collezione" in t for t in self.texts()))
+
+    async def test_changing_the_type_moves_the_event(self):
+        event_id = self.make_event(is_roleplay=0)
+        self.link(event_id)
+        db.update_event_field(event_id, "is_roleplay", 1)
+        with self.collections():
+            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+        self.mocks["remove_event_from_collection"].assert_called_once_with("tavolo", "eb1")
+        self.mocks["add_event_to_collection"].assert_called_once_with("gdr", "eb1")
+
+    async def test_not_being_in_the_old_collection_is_fine(self):
+        event_id = self.make_event(is_roleplay=1)
+        self.link(event_id)
+        self.mocks["remove_event_from_collection"].side_effect = EventbriteError(400, "NOT_IN", "")
+        with self.collections():
+            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+        self.mocks["add_event_to_collection"].assert_called_once_with("gdr", "eb1")
+        self.assertEqual(self.texts(), [])
 
 
 class TestNoticesReplyToTheAdminCard(EventbriteServiceCase):

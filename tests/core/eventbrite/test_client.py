@@ -90,6 +90,12 @@ class TestDelete(unittest.TestCase):
         mock_delete.assert_called_once_with(
             f"{API_BASE}/events/1/", headers={"Authorization": "Bearer eb-token"}, timeout=30)
 
+    @patch("core.eventbrite.client.requests.delete", return_value=response(200, json_error=True))
+    def test_delete_can_send_a_json_body(self, mock_delete):
+        with eventbrite_credentials():
+            eb_delete("/collections/1/events/", json={"event_ids": "2"})
+        self.assertEqual(mock_delete.call_args.kwargs["json"], {"event_ids": "2"})
+
     @patch("core.eventbrite.client.requests.delete")
     def test_delete_errors_are_parsed(self, mock_delete):
         mock_delete.return_value = response(400, {"error": "CANNOT_DELETE", "error_description": "has orders"})

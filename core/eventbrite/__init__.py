@@ -1,6 +1,7 @@
 """Eventbrite REST API: import from core.eventbrite. HTTP goes through core.eventbrite.client (patch its `requests`);
 all calls are synchronous, so async callers wrap them in asyncio.to_thread."""
 from core.eventbrite.client import EventbriteError, eventbrite_enabled
+from core.eventbrite.collections import add_event_to_collection, create_collection, remove_event_from_collection
 from core.eventbrite.events import (
     cancel_event,
     create_event,
@@ -36,6 +37,9 @@ __all__ = [
     "cancel_event",
     "delete_eventbrite_event",
     "set_description",
+    "create_collection",
+    "add_event_to_collection",
+    "remove_event_from_collection",
     "create_free_ticket_class",
     "update_ticket_quantity",
     "upload_logo",

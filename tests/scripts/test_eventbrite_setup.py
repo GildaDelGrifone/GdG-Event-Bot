@@ -50,6 +50,16 @@ class TestEventbriteSetupScript(unittest.TestCase):
         self.assertIn("v1\tSede\tVia X", out)
         self.assertEqual(mock_paginate.call_args.args[0], "/organizations/org1/venues/")
 
+    @patch("scripts.eventbrite_setup.create_collection", return_value={"id": "55", "name": "Giochi di ruolo", "absolute_url": "https://eb/cc/x"})
+    @patch("scripts.eventbrite_setup.paginate")
+    def test_create_collection_prints_its_id(self, mock_paginate, mock_create):
+        mock_paginate.return_value = iter([{"id": "o1", "name": "Gilda"}])
+        with eventbrite_credentials():
+            code, out = run("--create-collection", "Giochi di ruolo")
+        self.assertEqual(code, 0)
+        mock_create.assert_called_once_with("Giochi di ruolo", "o1")
+        self.assertIn("ID collezione: 55", out)
+
     def test_venues_without_organization_fails(self):
         with eventbrite_credentials(EVENTBRITE_ORGANIZATION_ID=None):
             code, out = run("--venues")
