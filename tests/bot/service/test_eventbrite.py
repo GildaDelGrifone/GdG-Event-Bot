@@ -592,6 +592,7 @@ class TestCancelOnlyOnEventbrite(EventbriteServiceCase):
         self.assertEqual(self.texts(), [f"✅ Evento #{event_id} annullato su Eventbrite (resta attivo su Telegram)"])
         self.assertEqual(self.discussion_or_channel_messages(), [])
         self.update_messages.assert_awaited_once_with(self.context, event_id)  # drops the link from the reply
+        self.mocks["update_ticket_quantity"].assert_not_called()  # Eventbrite rejects quantity_total=0
 
         edit = self.context.bot.edit_message_reply_markup.call_args.kwargs
         self.assertEqual(edit["message_id"], 500)

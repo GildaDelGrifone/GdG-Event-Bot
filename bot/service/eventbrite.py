@@ -310,7 +310,8 @@ def _cancel_blocking(event, unpublish_if_empty=True):
 
     # Close sales at the number sold and flag the title, then try the cancel API (refused while orders exist)
     cancelled = {**event, 'status': 'cancelled'}
-    if event.get('eventbrite_ticket_class_id'):
+    # Eventbrite rejects a quantity of 0 (NO_QUANTITY_TOTAL), and with no orders there is nothing to close anyway
+    if event.get('eventbrite_ticket_class_id') and eb_seats:
         update_ticket_quantity(eb_id, event['eventbrite_ticket_class_id'], eb_seats)
         set_eventbrite_info(event_id, eventbrite_quantity_total=eb_seats)
     update_event(eb_id, event_payload(cancelled, include_dates=False))
