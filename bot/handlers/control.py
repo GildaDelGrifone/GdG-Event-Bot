@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.common.auth import admin_only, describe_user
+from core.eventbrite import eventbrite_enabled
 from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
@@ -24,15 +25,18 @@ async def bot_resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 @admin_only()
-async def bot_silent_telegram_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    runtime_state.telegram_silent = not runtime_state.telegram_silent
-    state = "ON" if runtime_state.telegram_silent else "OFF"
-    logger.info(f"{describe_user(update.effective_user)} turned Telegram silent mode {state}.")
-    if runtime_state.telegram_silent:
-        text = ("🔇 Modalità silenziosa ATTIVA: gli eventi approvati non vengono pubblicati su Telegram "
-                "(usa Eventbrite per pubblicarli). Gli eventi già pubblicati continuano a funzionare.")
+async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not eventbrite_enabled():
+        await update.message.reply_text("❌ Eventbrite non è configurato: la modalità solo Eventbrite non è disponibile.")
+        return
+    runtime_state.eventbrite_only = not runtime_state.eventbrite_only
+    state = "ON" if runtime_state.eventbrite_only else "OFF"
+    logger.info(f"{describe_user(update.effective_user)} turned Eventbrite-only mode {state}.")
+    if runtime_state.eventbrite_only:
+        text = ("🎟️ Modalità solo Eventbrite ATTIVA: la scheda dei nuovi eventi mostra solo i pulsanti Eventbrite "
+                "e la storia Instagram non viene generata.")
     else:
-        text = "🔔 Modalità silenziosa DISATTIVATA: gli eventi approvati vengono di nuovo pubblicati su Telegram."
+        text = "📣 Modalità solo Eventbrite DISATTIVATA: pulsanti Telegram e storia Instagram di nuovo attivi."
     await update.message.reply_text(text)
 
 
@@ -40,5 +44,5 @@ async def bot_silent_telegram_toggle_command(update: Update, context: ContextTyp
 async def bot_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"{describe_user(update.effective_user)} requested bot status.")
     status = "🔴 IN PAUSA (monitoraggio canale eventi disattivato)" if runtime_state.is_paused else "🟢 ATTIVO (monitoraggio canale eventi funzionante)"
-    silent = "🔇 SILENZIOSA (gli eventi approvati non vanno su Telegram)" if runtime_state.telegram_silent else "🔔 normale"
-    await update.message.reply_text(f"Stato del bot: {status}\nPubblicazione su Telegram: {silent}")
+    mode = "🎟️ SOLO EVENTBRITE (nessun pulsante Telegram, niente storia Instagram)" if runtime_state.eventbrite_only else "📣 normale"
+    await update.message.reply_text(f"Stato del bot: {status}\nModalità pubblicazione: {mode}")

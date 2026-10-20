@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import core.db as db
 from bot.keyboards import (
@@ -10,6 +11,7 @@ from bot.keyboards import (
     get_schedule_repost_keyboard,
     get_subscribers_management_keyboard,
 )
+from bot.state import runtime_state
 from tests.support.config import eventbrite_credentials, patched_config
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event, create_subscribed_event
 
@@ -124,12 +126,27 @@ class TestEventbriteKeyboards(unittest.TestCase):
             self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 1)
             self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 1)
 
-    def test_pending_card_offers_both_eventbrite_publications(self):
-        with eventbrite_credentials():
+    def test_pending_card_offers_publish_plus_eventbrite_by_default(self):
+        with eventbrite_credentials(), patch.object(runtime_state, "eventbrite_only", False):
             rows = self.rows(get_approval_keyboard(5))
+        self.assertEqual([b[0] for b in rows[0]], ["Publish", "Discard"])
+        self.assertEqual(rows[1], [("🚀 Publish + Eventbrite", "publish_eb_event_5", None)])
+        self.assertEqual(rows[2][0][1], "manage_subs_5")
+
+    def test_eventbrite_only_mode_hides_the_telegram_publish_buttons(self):
+        with eventbrite_credentials(), patch.object(runtime_state, "eventbrite_only", True):
+            rows = self.rows(get_approval_keyboard(5))
+        self.assertEqual(rows[0], [("Discard", "discard_event_5", None)])
         self.assertEqual(rows[1], [("🚀 Telegram + EB", "publish_eb_event_5", None),
                                    ("🎟️ Solo Eventbrite", "publish_eb_only_5", None)])
         self.assertEqual(rows[2][0][1], "manage_subs_5")
+
+    def test_eventbrite_only_mode_changes_nothing_without_eventbrite(self):
+        with patched_config(EVENTBRITE_TOKEN=None, EVENTBRITE_ORGANIZATION_ID=None, EVENTBRITE_VENUE_ID=None), \
+                patch.object(runtime_state, "eventbrite_only", True):
+            rows = self.rows(get_approval_keyboard(5))
+        self.assertEqual([b[0] for b in rows[0]], ["Publish", "Discard"])
+        self.assertEqual(len(rows), 2)
 
     def test_approved_card_offers_to_publish_until_the_event_is_linked(self):
         with eventbrite_credentials():

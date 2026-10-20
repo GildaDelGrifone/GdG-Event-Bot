@@ -3,6 +3,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from core import config
 from core.db import get_event
 from core.eventbrite import dashboard_url, eventbrite_enabled, order_url
+from bot.state import runtime_state
 from utils.templates import EVENTBRITE_ROW_PREFIX, format_reservation_subscriber_display
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
@@ -21,17 +22,17 @@ def _manage_subs_button(event_id):
 
 
 def get_approval_keyboard(event_id):
-    rows = [
-        [
-            InlineKeyboardButton("Publish", callback_data=f"publish_event_{event_id}"),
-            InlineKeyboardButton("Discard", callback_data=f"discard_event_{event_id}"),
-        ],
-    ]
-    if eventbrite_enabled():
+    publish = InlineKeyboardButton("Publish", callback_data=f"publish_event_{event_id}")
+    discard = InlineKeyboardButton("Discard", callback_data=f"discard_event_{event_id}")
+    eventbrite_only = eventbrite_enabled() and runtime_state.eventbrite_only  # /bot_eventbrite_only_toggle
+    rows = [[discard] if eventbrite_only else [publish, discard]]
+    if eventbrite_only:
         rows.append([
             InlineKeyboardButton("🚀 Telegram + EB", callback_data=f"publish_eb_event_{event_id}"),
             InlineKeyboardButton("🎟️ Solo Eventbrite", callback_data=f"publish_eb_only_{event_id}"),
         ])
+    elif eventbrite_enabled():
+        rows.append([InlineKeyboardButton("🚀 Publish + Eventbrite", callback_data=f"publish_eb_event_{event_id}")])
     rows.append([_manage_subs_button(event_id)])
     return InlineKeyboardMarkup(rows)
 

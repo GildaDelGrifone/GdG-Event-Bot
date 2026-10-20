@@ -52,8 +52,8 @@ Se un evento già pubblicato viene cancellato dal Master:
 
 ### 4. Pubblicare un Evento anche su Eventbrite
 *(Disponibile solo se l'integrazione Eventbrite è configurata sul bot; altrimenti i pulsanti qui sotto non compaiono.)*
-- **Subito, in fase di approvazione:** sull'anteprima usa **[🚀 Telegram + EB]** al posto di *Publish*. L'evento viene pubblicato su Telegram e poi su Eventbrite; il bot risponde con il link Eventbrite.
-- **Solo su Eventbrite:** sull'anteprima usa **[🎟️ Solo Eventbrite]**: l'evento viene approvato ma **non** pubblicato nel canale Telegram (niente post, niente messaggi nel gruppo discussione, nemmeno in caso di annullamento). Per pubblicare così più eventi di fila puoi attivare `/bot_silent_telegram_toggle`: finché è attivo, anche *Publish* e *Telegram + EB* non pubblicano su Telegram; rimandalo per disattivarlo (si disattiva anche riavviando il bot). Gli eventi già pubblicati su Telegram continuano a funzionare. Un evento solo Eventbrite non si può prenotare da Telegram.
+- **Subito, in fase di approvazione:** sull'anteprima usa **[🚀 Publish + Eventbrite]** al posto di *Publish*. L'evento viene pubblicato su Telegram e poi su Eventbrite; il bot risponde con il link Eventbrite.
+- **Solo su Eventbrite:** attiva `/bot_eventbrite_only_toggle` (modalità solo Eventbrite). Le anteprime create da quel momento mostrano solo **[Discard]**, **[🚀 Telegram + EB]** e **[🎟️ Solo Eventbrite]**: niente *Publish*, e la storia Instagram non viene generata. **[🎟️ Solo Eventbrite]** approva l'evento ma **non** lo pubblica nel canale Telegram (niente post, niente messaggi nel gruppo discussione, nemmeno in caso di annullamento); **[🚀 Telegram + EB]** lo pubblica anche su Telegram. Rimanda il comando per tornare alle schede normali (si torna anche riavviando il bot, salvo `EVENTBRITE_ONLY_MODE=true`). Le schede già inviate non cambiano. Un evento solo Eventbrite non si può prenotare da Telegram.
 - **Più tardi, su un evento già pubblicato:** usa il pulsante **[🎟️ Pubblica su Eventbrite]** sotto la scheda, oppure il comando `/event_publish_eventbrite` *(rispondendo alla scheda dell'evento, oppure `/event_publish_eventbrite <id>`)*. Fanno esattamente la stessa cosa. Una volta pubblicato, il pulsante diventa **[🎟️ Eventbrite]** e apre la dashboard dell'evento.
 - **Cosa serve:** l'evento deve essere approvato, avere una data futura e almeno un posto libero (un evento `0/0 Completo` o già pieno viene rifiutato: aggiorna i posti con `/event_edit_seats` e riprova). Gli eventi senza limite di posti usano la capienza impostata sul bot (`EVENTBRITE_UNLIMITED_CAPACITY`). Se qualcosa si interrompe a metà, rilancia lo stesso pulsante: riprende dal punto in cui si era fermato.
 - **Locandina:** il bot la carica come immagine dell'evento su Eventbrite, riprovando da solo in caso di blocchi temporanei. Se non ci riesce, l'evento viene comunque pubblicato e ricevi un avviso con il pulsante **[🖼️ Riprova caricamento logo]**: premilo per ritentare (oppure rimanda l'immagine con `/event_edit_image`).
@@ -83,8 +83,8 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 ### 7. Controlli Generali del Bot
 - `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale).
 - `/bot_resume`: Riattiva il bot.
-- `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa) e se la pubblicazione su Telegram è silenziosa.
-- `/bot_silent_telegram_toggle`: Attiva/disattiva la modalità silenziosa: gli eventi approvati non vengono pubblicati su Telegram (per pubblicare solo su Eventbrite).
+- `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa) e la modalità solo Eventbrite.
+- `/bot_eventbrite_only_toggle`: Attiva/disattiva la modalità solo Eventbrite: le nuove anteprime non hanno i pulsanti per pubblicare solo su Telegram e la storia Instagram non viene generata.
 - `/event_next`: Mostra la lista di tutti gli eventi di oggi e futuri in ordine cronologico con data e link rapidi. Questo comando è **accessibile anche pubblicamente agli utenti** sia in chat privata col bot che nel gruppo discussione (disattivabile nel gruppo discussione tramite variabile d'ambiente `ALLOW_GROUP_EVENT_NEXT=false` per prevenire spam).
 
 ---

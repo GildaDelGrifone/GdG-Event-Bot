@@ -107,7 +107,7 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.update_messages = patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock).start()
         patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
         patch("bot.callbacks.events.send_reactivation_notice", new_callable=AsyncMock).start()
-        patch("bot.callbacks.events._send_story_preview", new_callable=AsyncMock).start()
+        self.story = patch("bot.callbacks.events._send_story_preview", new_callable=AsyncMock).start()
         self.addCleanup(patch.stopall)
 
     async def test_publish_with_eventbrite_publishes_on_telegram_then_on_eventbrite(self):
@@ -137,16 +137,23 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn("senza pubblicazione su Telegram", self.context.bot.send_message.call_args.kwargs["text"])
         self.publish.assert_awaited_once_with(self.context, event_id, 999)
 
-    async def test_silent_mode_stops_the_channel_post_of_the_normal_buttons(self):
+    async def test_eventbrite_only_mode_still_posts_telegram_plus_eb_but_makes_no_story(self):
         event_id = create_event()
         update, _ = callback_update(f"publish_eb_event_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
-        with patched_config(PUBLIC_CHANNEL_ID="-100500"), patch.object(runtime_state, "telegram_silent", True):
+        with patched_config(PUBLIC_CHANNEL_ID="-100500"), patch.object(runtime_state, "eventbrite_only", True), \
+                patch("bot.callbacks.events._publish_to_channel", new_callable=AsyncMock) as post:
             await handle_callback_query(update, self.context)
 
-        self.assertEqual(db.get_event(event_id)["status"], "approved")
-        self.assertIsNone(db.get_event(event_id)["telegram_message_id"])
-        self.context.bot.send_photo.assert_not_called()
+        post.assert_awaited_once()
+        self.story.assert_not_awaited()
         self.publish.assert_awaited_once()
+
+    async def test_story_is_generated_outside_eventbrite_only_mode(self):
+        event_id = create_event()
+        update, _ = callback_update(f"publish_event_{event_id}", chat_id=999, text=None, caption="Card", photo=True)
+        with patched_config(PUBLIC_CHANNEL_ID=None), patch.object(runtime_state, "eventbrite_only", False):
+            await handle_callback_query(update, self.context)
+        self.story.assert_awaited_once()
 
     async def test_plain_publish_never_touches_eventbrite(self):
         event_id = create_event()

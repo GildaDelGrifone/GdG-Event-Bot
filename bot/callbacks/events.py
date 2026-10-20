@@ -93,14 +93,14 @@ async def _send_story_preview(context, chat_id, event):
 
 
 async def _publish(query, context, event_id, telegram=True):
-    """Approves the event; the channel post is skipped for Eventbrite-only publishing (button or silent mode)."""
+    """Approves the event; the channel post is skipped for Eventbrite-only publishing (the Solo Eventbrite button)."""
     update_event_status(event_id, "approved")
     event = get_event(event_id)
     await _mark_admin_card(
         query, APPROVED_SUFFIX, "publish", keyboard=get_approved_event_keyboard(event_id, event), use_html=True
     )
     if event:
-        if telegram and not runtime_state.telegram_silent:
+        if telegram:
             await _publish_to_channel(context, query, event_id, event)
         else:
             logger.info(f"Event #{event_id} approved without a Telegram post.")
@@ -108,7 +108,8 @@ async def _publish(query, context, event_id, telegram=True):
                 chat_id=query.message.chat_id, reply_to_message_id=query.message.message_id,
                 text=f"🔇 Evento #{event_id} approvato senza pubblicazione su Telegram.",
             )
-        await _send_story_preview(context, query.message.chat_id, event)
+        if not runtime_state.eventbrite_only:  # Eventbrite-only mode: no automatic Instagram story
+            await _send_story_preview(context, query.message.chat_id, event)
 
 
 async def handle_publish_event(query, context, payload):

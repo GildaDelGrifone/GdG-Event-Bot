@@ -1,10 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from core import config
 
 
 @dataclass
 class BotRuntimeState:
     is_paused: bool = False
-    telegram_silent: bool = False  # newly approved events are not posted to the channel (Eventbrite only)
+    # Eventbrite-only mode: pending cards hide the Telegram publish buttons and no Instagram story is generated
+    eventbrite_only: bool = field(default_factory=lambda: config.EVENTBRITE_ONLY_MODE)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
 
