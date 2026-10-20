@@ -137,29 +137,28 @@ class TestEventbriteKeyboards(unittest.TestCase):
             self.assertEqual(self.rows(get_approved_event_keyboard(5, {"eventbrite_event_id": None}))[1],
                              [("🎟️ Pubblica su Eventbrite", "eb_publish_5", None)])
             self.assertEqual(self.rows(get_approved_event_keyboard(5, EB_EVENT))[1],
-                             [("🎟️ Eventbrite", None, "https://www.eventbrite.com/myevent?eid=eb1")])
+                             [("🎟️ Eventbrite", None, "https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1")])
 
-    def test_eventbrite_rows_become_a_single_dashboard_url_button(self):
+    def test_eventbrite_rows_become_a_single_button_opening_their_order(self):
         reservations = [
             {"id": 1, "username": "mario", "user_id": 7, "seats_booked": 1, "source": "telegram"},
-            {"id": 2, "username": None, "user_id": None, "full_name": "Mario R.", "seats_booked": 2, "source": "eventbrite"},
+            {"id": 2, "username": None, "user_id": None, "full_name": "Mario R.", "seats_booked": 2, "source": "eventbrite",
+             "eventbrite_order_id": "111"},
             {"id": 3, "username": None, "user_id": None, "full_name": "Alessandro Montanari", "seats_booked": 1,
-             "source": "eventbrite"},
+             "source": "eventbrite", "eventbrite_order_id": "222"},
         ]
         rows = self.rows(get_subscribers_management_keyboard(5, reservations, event=EB_EVENT))
         self.assertEqual([b[1] for b in rows[0]], ["sub_dec_5_1", "sub_inc_5_1"])
-        url = "https://www.eventbrite.com/attendees-manage?eid=eb1"
-        self.assertEqual(rows[1], [("🎟️ Mario R. (2)", None, url)])
-        self.assertEqual(rows[2], [("🎟️ Alessandro … (1)", None, url)])
+        self.assertEqual(rows[1], [("🎟️ Mario R. (2)", None, "https://www.eventbrite.com/organizations/orders/111")])
+        self.assertEqual(rows[2], [("🎟️ Alessandro … (1)", None, "https://www.eventbrite.com/organizations/orders/222")])
         flat = [b for row in rows for b in row]
         self.assertFalse(any(b[1] and b[1].startswith(("sub_inc_5_2", "sub_dec_5_2", "sub_inc_5_3")) for b in flat))
         self.assertEqual(rows[-2][0][1], "sub_addnew_5")
 
-    def test_eventbrite_rows_without_a_linked_event_get_no_buttons(self):
+    def test_eventbrite_rows_without_an_order_id_get_no_buttons(self):
         reservations = [{"id": 2, "full_name": "Mario R.", "seats_booked": 2, "source": "eventbrite"}]
         rows = self.rows(get_subscribers_management_keyboard(5, reservations))
         self.assertEqual(len(rows), 2)  # only "Aggiungi" and "Aggiorna/Chiudi"
-
 
 class TestCancelConfirmationKeyboard(TempDBMixin, unittest.TestCase):
     def rows(self, event_id):
@@ -170,10 +169,10 @@ class TestCancelConfirmationKeyboard(TempDBMixin, unittest.TestCase):
         self.assertEqual(self.rows(event_id), [[("✅ Conferma annullamento", f"cancel_confirm_{event_id}"),
                                                 ("↩️ Indietro", f"cancel_abort_{event_id}")]])
 
-    def test_event_with_eventbrite_bookings_mentions_the_refunds(self):
+    def test_same_label_with_eventbrite_bookings(self):
         event_id = create_subscribed_event()
         db.apply_eventbrite_order(event_id, "o1", "Mario R.", 1)
-        self.assertEqual(self.rows(event_id)[0][0], ("✅ Conferma + rimborsa Eventbrite", f"cancel_confirm_{event_id}"))
+        self.assertEqual(self.rows(event_id)[0][0], ("✅ Conferma annullamento", f"cancel_confirm_{event_id}"))
 
 
 if __name__ == "__main__":

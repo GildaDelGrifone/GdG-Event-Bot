@@ -13,7 +13,8 @@ from bot.keyboards import (
     get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
 )
 from bot.service.eventbrite import (
-    cancel_on_eventbrite, publish_event_to_eventbrite, reactivate_on_eventbrite, recreate_on_eventbrite,
+    cancel_on_eventbrite, finish_eventbrite_cancellation, publish_event_to_eventbrite, reactivate_on_eventbrite,
+    recreate_on_eventbrite,
 )
 from bot.service.posts import update_event_messages
 
@@ -133,6 +134,17 @@ async def handle_eventbrite_recreate(query, context, payload):
     await recreate_on_eventbrite(context, event_id, query.message.chat_id)
 
 
+async def handle_eventbrite_cancel_retry(query, context, payload):
+    await query.answer()
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} asked to complete the Eventbrite cancellation of event #{event_id}.")
+    event = get_event(event_id)
+    if not event:
+        await query.answer("Evento non trovato.", show_alert=True)
+        return
+    await finish_eventbrite_cancellation(context, event, query.message.chat_id)
+
+
 async def handle_discard_event(query, context, payload):
     await query.answer()
     event_id = int(payload)
@@ -165,7 +177,7 @@ async def handle_cancel_event(query, context, payload):
     telegram_seats = max(0, int(event.get('booked_seats') or 0) - eb_seats)
     warning = f"Annullare l'evento? Gli iscritti verranno avvisati ({telegram_seats} posti su Telegram)."
     if eb_seats:
-        warning += f" I {eb_seats} posti Eventbrite saranno RIMBORSATI (email ai partecipanti): non si può annullare."
+        warning += f" {eb_seats} posti Eventbrite: dopo la conferma riceverai i link per annullare ogni ordine."
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} (confirmation requested).")
     await query.answer(warning, show_alert=True)
     try:

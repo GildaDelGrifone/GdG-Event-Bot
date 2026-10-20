@@ -60,12 +60,12 @@ Se un evento già pubblicato viene cancellato dal Master:
 - **Modifiche:** titolo, data, sistema, host, note, descrizione, tipo, posti e immagine modificati con i comandi `/event_edit_*` vengono riportati anche su Eventbrite. Non si può ridurre `/event_edit_booked` o `/event_edit_seats` sotto il numero di posti già prenotati su Eventbrite.
 - **Annullare un evento:** con **[❌ Annulla Evento]** il bot annulla anche su Eventbrite.
   - *Nessuna prenotazione su Eventbrite:* l'evento viene messo offline; **[♻️ Riattiva Evento]** lo ripubblica.
-  - *Con prenotazioni:* il pulsante di conferma diventa **[✅ Conferma + rimborsa Eventbrite]**, perché i rimborsi non si possono annullare. Dopo la conferma le vendite vengono chiuse, l'evento rinominato `[ANNULLATO] …`, **ogni prenotazione Eventbrite viene rimborsata** (Eventbrite avvisa i partecipanti via email) e il bot annulla l'evento. Se Eventbrite rifiuta qualche rimborso o l'annullamento, ti dice quanti ordini sono stati rimborsati e ti invia il link alla dashboard con il pulsante **[🎟️ Apri dashboard Eventbrite]**: completa lì l'operazione. Quando l'annullamento è fatto, il bot lo conferma da solo.
+  - *Con prenotazioni:* dopo la conferma le vendite vengono chiuse e l'evento rinominato `[ANNULLATO] …`. Eventbrite non permette al bot di annullare le prenotazioni, quindi ricevi **un pulsante per ogni ordine** (es. **[❌ Mario R. (2)]**): aprilo e premi *Cancel order* (Eventbrite avvisa il partecipante via email). Quando tutti gli ordini sono annullati il bot annulla l'evento su Eventbrite da solo entro pochi minuti, oppure subito con **[🔁 Ho annullato tutto, completa]** (se restano ordini attivi, ti rimanda i loro link).
   - Un evento annullato su Eventbrite non può essere riattivato: dopo **[♻️ Riattiva Evento]** il bot propone **[🎟️ Ricrea su Eventbrite]**.
 
 ### 5. Gestione Manuale degli Iscritti
 Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se non hanno Telegram o hanno problemi tecnici):
-1. Clicca su **[👥 Gestisci Iscritti]** sotto l'evento per vedere la lista completa dei giocatori e usare i pulsanti `➕` e `➖`. Le prenotazioni Eventbrite sono segnate con `🎟️` e non hanno `➕`/`➖`: sono un unico pulsante che apre la dashboard degli iscritti su Eventbrite, dove vanno gestite.
+1. Clicca su **[👥 Gestisci Iscritti]** sotto l'evento per vedere la lista completa dei giocatori e usare i pulsanti `➕` e `➖`. Le prenotazioni Eventbrite sono segnate con `🎟️` e non hanno `➕`/`➖`: sono un unico pulsante che apre la pagina dell'ordine su Eventbrite, dove vanno gestite.
 2. Oppure usa i comandi (rispondendo al messaggio dell'evento o specificando l'ID):
    - `/event_sub_add @username [numero_posti]` *(es. `/event_sub_add @mario 2`)*
    - `/event_sub_remove @username [numero_posti]`

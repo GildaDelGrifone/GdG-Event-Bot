@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 
 from core.eventbrite.payload import (
     attendee_display_name,
-    attendees_dashboard_url,
     dashboard_url,
     description_modules,
     event_name,
     event_payload,
     event_start_end,
+    order_cancel_url,
+    order_url,
     ticket_quantity,
 )
 from tests.support.config import eventbrite_credentials
@@ -159,8 +160,12 @@ class TestMisc(unittest.TestCase):
                 self.assertEqual(attendee_display_name(profile), expected)
 
     def test_dashboard_urls(self):
-        self.assertEqual(dashboard_url("42"), "https://www.eventbrite.com/myevent?eid=42")
-        self.assertEqual(attendees_dashboard_url("42"), "https://www.eventbrite.com/attendees-manage?eid=42")
+        # Formats confirmed from the live organizer dashboard
+        self.assertEqual(dashboard_url("2003659307927"),
+                         "https://www.eventbrite.com/events/2003659307927/dashboard/?eid=2003659307927")
+        self.assertEqual(order_url("15944085263"), "https://www.eventbrite.com/organizations/orders/15944085263")
+        self.assertEqual(order_cancel_url("2003659307927", "15944085263"),
+                         "https://www.eventbrite.com/order-cancel?eid=2003659307927&oid=15944085263&aid=")
 
 
 if __name__ == "__main__":

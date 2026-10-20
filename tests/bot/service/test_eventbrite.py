@@ -13,7 +13,7 @@ from tests.support.telegram import ADMIN_CHAT_ID, make_context
 
 PATCHED = (
     "create_event", "update_event", "publish_event", "unpublish_event", "cancel_event", "set_description",
-    "create_free_ticket_class", "update_ticket_quantity", "upload_logo", "fetch_active_orders", "refund_order",
+    "create_free_ticket_class", "update_ticket_quantity", "upload_logo", "fetch_active_orders",
 )
 ADMIN = int(ADMIN_CHAT_ID)
 
@@ -99,7 +99,7 @@ class TestPublish(EventbriteServiceCase):
         edit.assert_awaited_once()
         self.assertEqual((edit.call_args.kwargs["chat_id"], edit.call_args.kwargs["message_id"]), (ADMIN_CHAT_ID, 500))
         buttons = [b for row in edit.call_args.kwargs["reply_markup"].inline_keyboard for b in row]
-        self.assertIn("https://www.eventbrite.com/myevent?eid=eb1", [b.url for b in buttons])
+        self.assertIn("https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1", [b.url for b in buttons])
 
     async def test_logo_failure_is_only_a_warning(self):
         image = image_file(self.temp_dir.name, "poster.jpg", 400, 300)
@@ -357,72 +357,53 @@ class TestCancel(EventbriteServiceCase):
         self.mocks["cancel_event"].assert_called_once_with("eb1")
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
 
-    async def test_with_orders_every_order_is_refunded_then_the_event_is_cancelled(self):
+    def link_buttons(self):
+        markup = self.context.bot.send_message.call_args.kwargs["reply_markup"]
+        return [(b.text, b.url, b.callback_data) for row in markup.inline_keyboard for b in row]
+
+    async def test_with_orders_sales_close_the_event_is_renamed_and_each_order_gets_a_cancel_link(self):
         event_id = self.linked_event()
         self.mocks["fetch_active_orders"].return_value = {"o1": ("Mario R.", 2), "o2": ("Anna B.", 1)}
+        self.mocks["cancel_event"].side_effect = EventbriteError(400, "CANNOT_CANCEL", "has orders")
         manager = MagicMock()
-        for name in ("update_ticket_quantity", "update_event", "refund_order", "cancel_event"):
+        for name in ("update_ticket_quantity", "update_event", "cancel_event"):
             manager.attach_mock(self.mocks[name], name)
 
         await self.cancel(event_id)
 
-        self.assertEqual([c[0] for c in manager.mock_calls],
-                         ["update_ticket_quantity", "update_event", "refund_order", "refund_order", "cancel_event"])
-        self.assertEqual([c.args for c in self.mocks["refund_order"].call_args_list], [("o1",), ("o2",)])
-        self.mocks["unpublish_event"].assert_not_called()
+        self.assertEqual([c[0] for c in manager.mock_calls], ["update_ticket_quantity", "update_event", "cancel_event"])
         self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 3)
-        eb_id, payload = self.mocks["update_event"].call_args.args
-        self.assertEqual(payload["name"], {"html": "[ANNULLATO] Avventura"})
-        self.assertNotIn("start", payload)
-        self.mocks["cancel_event"].assert_called_once_with("eb1")
+        self.assertEqual(self.mocks["update_event"].call_args.args[1]["name"], {"html": "[ANNULLATO] Avventura"})
+        self.mocks["unpublish_event"].assert_not_called()
         event = db.get_event(event_id)
-        self.assertEqual((event["eventbrite_status"], event["eventbrite_quantity_total"]), ("canceled", 3))
-        self.assertIn(f"✅ Evento #{event_id} annullato anche su Eventbrite (2 prenotazioni rimborsate, "
-                      "i partecipanti sono stati avvisati via email)", self.texts())
+        self.assertEqual((event["eventbrite_status"], event["eventbrite_quantity_total"]), ("closed", 3))
 
-    async def test_cancel_refused_after_the_refunds_sends_the_dashboard_link_and_marks_the_event_closed(self):
+        text = self.context.bot.send_message.call_args.kwargs["text"]
+        self.assertIn(f"Evento #{event_id}: 2 prenotazioni Eventbrite da annullare dalla dashboard", text)
+        self.assertEqual(self.link_buttons(), [
+            ("❌ Mario R. (2)", "https://www.eventbrite.com/order-cancel?eid=eb1&oid=o1&aid=", None),
+            ("❌ Anna B. (1)", "https://www.eventbrite.com/order-cancel?eid=eb1&oid=o2&aid=", None),
+            ("🎟️ Apri dashboard Eventbrite", "https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1", None),
+            ("🔁 Ho annullato tutto, completa", None, f"eb_cancel_retry_{event_id}"),
+        ])
+
+    async def test_cancel_accepted_despite_orders(self):
         event_id = self.linked_event()
         self.mocks["fetch_active_orders"].return_value = {"o1": ("Mario R.", 2)}
-        self.mocks["cancel_event"].side_effect = EventbriteError(400, "CANNOT_CANCEL", "has orders")
-
         await self.cancel(event_id)
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
+        self.assertIn(f"✅ Evento #{event_id} annullato anche su Eventbrite", self.texts())
 
-        self.mocks["refund_order"].assert_called_once_with("o1")
-        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "closed")
-        call = self.context.bot.send_message.call_args
-        self.assertIn("1 prenotazioni Eventbrite rimborsate, ma Eventbrite non permette di annullare", call.kwargs["text"])
-        self.assertIn("https://www.eventbrite.com/myevent?eid=eb1", call.kwargs["text"])
-        button = call.kwargs["reply_markup"].inline_keyboard[0][0]
-        self.assertEqual((button.text, button.url), ("🎟️ Apri dashboard Eventbrite", "https://www.eventbrite.com/myevent?eid=eb1"))
-
-    async def test_a_failed_refund_skips_the_cancel_and_reports_the_counts(self):
+    async def test_order_links_are_capped(self):
         event_id = self.linked_event()
-        self.mocks["fetch_active_orders"].return_value = {"o1": ("A", 1), "o2": ("B", 1), "o3": ("C", 1)}
-        self.mocks["refund_order"].side_effect = [None, EventbriteError(400, "REFUND_ERROR", "free order"), None]
+        self.mocks["fetch_active_orders"].return_value = {f"o{i}": (f"P{i}", 1) for i in range(45)}
+        self.mocks["cancel_event"].side_effect = EventbriteError(400, "CANNOT_CANCEL", "")
 
         await self.cancel(event_id)
 
-        self.assertEqual(self.mocks["refund_order"].call_count, 3)  # keeps going after a failure
-        self.mocks["cancel_event"].assert_not_called()
-        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "closed")
-        call = self.context.bot.send_message.call_args
-        self.assertIn("2 prenotazioni Eventbrite rimborsate, 1 non rimborsabili via API", call.kwargs["text"])
-        self.assertEqual(call.kwargs["reply_markup"].inline_keyboard[0][0].text, "🎟️ Apri dashboard Eventbrite")
-
-    async def test_rate_limit_stops_the_refunds_and_counts_the_rest_as_failed(self):
-        event_id = self.linked_event()
-        self.mocks["fetch_active_orders"].return_value = {"o1": ("A", 1), "o2": ("B", 1), "o3": ("C", 1), "o4": ("D", 1)}
-        self.mocks["refund_order"].side_effect = [None, EventbriteError(429, "HIT_RATE_LIMIT", "slow"), None, None]
-
-        await self.cancel(event_id)
-
-        self.assertEqual(self.mocks["refund_order"].call_count, 2)
-        self.mocks["cancel_event"].assert_not_called()
-        self.assertIn("1 prenotazioni Eventbrite rimborsate, 3 non rimborsabili via API", self.texts()[-1])
-
-    async def test_no_orders_means_no_refunds(self):
-        await self.cancel(self.linked_event())
-        self.mocks["refund_order"].assert_not_called()
+        order_buttons = [b for b in self.link_buttons() if b[0].startswith("❌")]
+        self.assertEqual(len(order_buttons), 40)
+        self.assertIn("(… altri 5 ordini nella dashboard)", self.texts()[-1])
 
     async def test_nothing_to_do_for_unlinked_or_already_handled_events(self):
         unlinked = self.make_event(status="cancelled")
@@ -490,6 +471,74 @@ class TestReactivate(EventbriteServiceCase):
         await self.reactivate(event_id)
         self.assertTrue(any("Riattivazione su Eventbrite fallita" in t for t in self.texts()))
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "unpublished")
+
+
+class TestFinishCancellation(EventbriteServiceCase):
+    def closed_event(self):
+        event_id = self.make_event(status="cancelled")
+        self.link(event_id, eventbrite_status="closed")
+        return event_id
+
+    async def finish(self, event_id, from_poller=False):
+        await service.finish_eventbrite_cancellation(self.context, db.get_event(event_id), ADMIN, from_poller=from_poller)
+
+    async def test_no_orders_left_cancels_the_event(self):
+        event_id = self.closed_event()
+        await self.finish(event_id)
+        self.mocks["cancel_event"].assert_called_once_with("eb1")
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
+        self.assertEqual(self.texts(),
+                         [f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite"])
+
+    async def test_button_resends_only_the_remaining_orders(self):
+        event_id = self.closed_event()
+        self.mocks["fetch_active_orders"].return_value = {"o2": ("Anna B.", 1)}
+
+        await self.finish(event_id)
+
+        self.mocks["cancel_event"].assert_not_called()
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "closed")
+        call = self.context.bot.send_message.call_args.kwargs
+        self.assertTrue(call["text"].startswith("ℹ️ Restano ancora ordini attivi."))
+        urls = [b.url for row in call["reply_markup"].inline_keyboard for b in row if b.text.startswith("❌")]
+        self.assertEqual(urls, ["https://www.eventbrite.com/order-cancel?eid=eb1&oid=o2&aid="])
+
+    async def test_poller_stays_quiet_while_orders_remain(self):
+        event_id = self.closed_event()
+        self.mocks["fetch_active_orders"].return_value = {"o2": ("Anna B.", 1)}
+        await self.finish(event_id, from_poller=True)
+        self.context.bot.send_message.assert_not_called()
+        self.mocks["cancel_event"].assert_not_called()
+
+    async def test_cancel_still_refused(self):
+        event_id = self.closed_event()
+        self.mocks["cancel_event"].side_effect = EventbriteError(400, "CANNOT_CANCEL", "")
+
+        await self.finish(event_id, from_poller=True)
+        self.context.bot.send_message.assert_not_called()
+
+        await self.finish(event_id)
+        self.assertIn("non permette ancora di annullare", self.texts()[-1])
+        self.assertEqual(db.get_event(event_id)["eventbrite_status"], "closed")
+
+    async def test_only_closed_events_are_finished(self):
+        event_id = self.make_event(status="cancelled")
+        self.link(event_id, eventbrite_status="canceled")
+        await self.finish(event_id, from_poller=True)
+        self.no_http()
+        self.context.bot.send_message.assert_not_called()
+
+        await self.finish(event_id)
+        self.assertEqual(self.texts(), [f"✅ Evento #{event_id} già annullato su Eventbrite"])
+        self.no_http()
+
+    async def test_api_errors_are_reported_from_the_button_only(self):
+        event_id = self.closed_event()
+        self.mocks["fetch_active_orders"].side_effect = EventbriteError(500, "SERVER_ERROR", "boom")
+        await self.finish(event_id, from_poller=True)
+        self.context.bot.send_message.assert_not_called()
+        await self.finish(event_id)
+        self.assertIn("non completato", self.texts()[-1])
 
 
 if __name__ == "__main__":

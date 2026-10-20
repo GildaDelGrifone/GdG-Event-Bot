@@ -172,7 +172,7 @@ class TestEventbriteCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
         keyboard = query.edit_message_caption.call_args.kwargs["reply_markup"]
         urls = [b.url for row in keyboard.inline_keyboard for b in row if b.url]
-        self.assertEqual(urls, ["https://www.eventbrite.com/myevent?eid=eb1"])
+        self.assertEqual(urls, ["https://www.eventbrite.com/events/eb1/dashboard/?eid=eb1"])
 
 
 class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -207,16 +207,16 @@ class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.update_messages.assert_not_awaited()
         self.notice.assert_not_awaited()
 
-    async def test_the_warning_and_button_mention_the_eventbrite_refunds(self):
+    async def test_the_warning_mentions_the_eventbrite_orders(self):
         event_id = create_subscribed_event()
         db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
         update, query = callback_update(f"cancel_event_{event_id}", text=None, caption="Card", photo=True)
 
         await handle_callback_query(update, self.context)
 
-        self.assertEqual(self.buttons(query)[0][0], "✅ Conferma + rimborsa Eventbrite")
+        self.assertEqual(self.buttons(query)[0][0], "✅ Conferma annullamento")
         alert = query.answer.call_args.args[0]
-        self.assertIn("2 posti Eventbrite saranno RIMBORSATI", alert)
+        self.assertIn("2 posti Eventbrite: dopo la conferma riceverai i link per annullare ogni ordine", alert)
         self.assertIn("2 posti su Telegram", alert)
         self.assertLessEqual(len(alert), 200)
 
@@ -270,6 +270,25 @@ class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         callbacks = [b.callback_data for row in get_approved_event_keyboard(event_id).inline_keyboard for b in row]
         self.assertIn(f"cancel_event_{event_id}", callbacks)
         self.assertNotIn(f"cancel_confirm_{event_id}", callbacks)  # the approved card never cancels directly
+
+
+class TestEventbriteCancelRetry(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def test_retry_button_completes_the_cancellation(self):
+        event_id = create_event(status="cancelled")
+        context = make_context()
+        update, query = callback_update(f"eb_cancel_retry_{event_id}", chat_id=999)
+        with patch("bot.callbacks.events.finish_eventbrite_cancellation", new_callable=AsyncMock) as finish:
+            await handle_callback_query(update, context)
+        finish.assert_awaited_once()
+        self.assertEqual(finish.call_args.args[1]["id"], event_id)
+        self.assertEqual(finish.call_args.args[2], 999)
+
+    async def test_unknown_event(self):
+        update, query = callback_update("eb_cancel_retry_999", chat_id=999)
+        with patch("bot.callbacks.events.finish_eventbrite_cancellation", new_callable=AsyncMock) as finish:
+            await handle_callback_query(update, make_context())
+        finish.assert_not_awaited()
+        query.answer.assert_awaited_with("Evento non trovato.", show_alert=True)
 
 
 if __name__ == "__main__":

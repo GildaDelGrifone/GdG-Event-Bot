@@ -1,6 +1,6 @@
 import unittest
 from contextlib import ExitStack
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import core.db as db
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
@@ -27,6 +27,7 @@ class PollCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.orders_mock = patch("bot.service.eventbrite_poll.fetch_active_orders",
                                  side_effect=lambda eb_id: dict(self.orders)).start()
         self.update_messages = patch("bot.service.eventbrite_poll.update_event_messages", new_callable=AsyncMock).start()
+        self.finish = patch("bot.service.eventbrite_poll.finish_eventbrite_cancellation", new_callable=AsyncMock).start()
         self.addCleanup(patch.stopall)
 
     def make_event(self, status="approved", date="06-11-2099", eb_id="eb1", **overrides):
@@ -220,6 +221,39 @@ class TestCycle(PollCase):
         await poll_eventbrite_bookings(self.bot)
         ctx = self.update_messages.call_args.args[0]
         self.assertIs(ctx.bot, self.bot)
+
+
+class TestAutoCompleteCancellation(PollCase):
+    def closed_event(self, status="cancelled"):
+        event_id = self.make_event(status=status)
+        db.set_eventbrite_info(event_id, eventbrite_status="closed")
+        return event_id
+
+    async def test_closed_event_without_orders_is_completed(self):
+        event_id = self.closed_event()
+        await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_awaited_once()
+        ctx, event, chat = self.finish.call_args.args
+        self.assertIs(ctx.bot, self.bot)
+        self.assertEqual((event["id"], chat), (event_id, ADMIN_CHAT_ID))
+        self.assertTrue(self.finish.call_args.kwargs["from_poller"])
+
+    async def test_last_order_cancelled_from_the_dashboard_triggers_completion(self):
+        event_id = self.closed_event()
+        self.orders = {"o1": ("Mario R.", 1)}
+        await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_not_awaited()
+
+        self.orders = {}
+        await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_awaited_once()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
+
+    async def test_not_triggered_for_other_states(self):
+        self.make_event(status="cancelled")  # eventbrite_status 'live'
+        self.closed_event(status="approved")  # reactivated on Telegram meanwhile
+        await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_not_awaited()
 
 
 if __name__ == "__main__":

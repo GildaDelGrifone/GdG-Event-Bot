@@ -119,8 +119,14 @@ def attendee_display_name(profile):
 
 
 def dashboard_url(eb_event_id):
-    return f"https://www.eventbrite.com/myevent?eid={eb_event_id}"
+    return f"https://www.eventbrite.com/events/{eb_event_id}/dashboard/?eid={eb_event_id}"
 
 
-def attendees_dashboard_url(eb_event_id):
-    return f"https://www.eventbrite.com/attendees-manage?eid={eb_event_id}"
+def order_url(order_id):
+    """The organizer's page for one order (details, plus the "Cancel order" action)."""
+    return f"https://www.eventbrite.com/organizations/orders/{order_id}"
+
+
+def order_cancel_url(eb_event_id, order_id):
+    """Eventbrite's "Cancel order" confirmation page; the API has no call to cancel an order."""
+    return f"https://www.eventbrite.com/order-cancel?eid={eb_event_id}&oid={order_id}&aid="

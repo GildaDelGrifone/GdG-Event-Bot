@@ -19,6 +19,7 @@ from core.db import (
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
 from utils.templates import format_event_title_link
+from bot.service.eventbrite import finish_eventbrite_cancellation
 from bot.service.notices import send_discussion_notice
 from bot.service.posts import update_event_messages
 
@@ -105,6 +106,10 @@ async def _poll_event(ctx, event):
                 f"⚠️ Overbooking su #{event_id}: {current.get('booked_seats')}/{max_seats} "
                 "(prenotazione Eventbrite arrivata in contemporanea)",
             )
+    # Every order was cancelled from the dashboard: the cancel API now works, so finish the job
+    current = get_event(event_id) or event
+    if not orders and current.get('status') == 'cancelled' and current.get('eventbrite_status') == 'closed':
+        await finish_eventbrite_cancellation(ctx, current, config.ADMIN_CHAT_ID, from_poller=True)
     set_eventbrite_info(event_id, eventbrite_synced_at=datetime.now().isoformat(timespec='seconds'))
 
 

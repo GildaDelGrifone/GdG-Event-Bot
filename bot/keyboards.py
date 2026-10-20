@@ -1,8 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from core import config
-from core.db import eventbrite_seat_count, get_event
-from core.eventbrite import attendees_dashboard_url, dashboard_url, eventbrite_enabled
+from core.db import get_event
+from core.eventbrite import dashboard_url, eventbrite_enabled, order_url
 from utils.templates import EVENTBRITE_ROW_PREFIX, format_reservation_subscriber_display
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
@@ -48,9 +48,8 @@ def get_approved_event_keyboard(event_id, event=None):
 
 def get_cancel_confirmation_keyboard(event_id):
     """Shown in place of the approved-card buttons after [❌ Annulla Evento], so a misclick cannot cancel an event."""
-    confirm = "✅ Conferma + rimborsa Eventbrite" if eventbrite_seat_count(event_id) > 0 else "✅ Conferma annullamento"
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(confirm, callback_data=f"cancel_confirm_{event_id}"),
+        InlineKeyboardButton("✅ Conferma annullamento", callback_data=f"cancel_confirm_{event_id}"),
         InlineKeyboardButton("↩️ Indietro", callback_data=f"cancel_abort_{event_id}"),
     ]])
 
@@ -66,13 +65,12 @@ def get_subscribers_management_keyboard(event_id, reservations, event=None):
     keyboard = []
     for res in reservations:
         if res.get('source') == 'eventbrite':
-            # Managed on Eventbrite: a single button that opens the attendee dashboard instead of ± seats
+            # Managed on Eventbrite: a single button that opens the order's page instead of ± seats
             name = (res.get('full_name') or '').strip() or "Partecipante"
             name = name if len(name) <= 12 else name[:11] + "…"
-            eb_event_id = (event or {}).get('eventbrite_event_id')
-            if eb_event_id:
+            if res.get('eventbrite_order_id'):
                 keyboard.append([InlineKeyboardButton(
-                    f"{EVENTBRITE_ROW_PREFIX}{name} ({res.get('seats_booked', 1)})", url=attendees_dashboard_url(eb_event_id)
+                    f"{EVENTBRITE_ROW_PREFIX}{name} ({res.get('seats_booked', 1)})", url=order_url(res['eventbrite_order_id'])
                 )])
             continue
         label = format_reservation_subscriber_display(res, as_html=False)
