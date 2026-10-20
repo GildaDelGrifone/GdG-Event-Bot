@@ -30,6 +30,7 @@ from core.eventbrite import (
     update_event,
     upload_logo,
 )
+from core.eventbrite.media import short_reason
 from core.eventbrite.tickets import update_ticket_quantity
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
@@ -78,6 +79,15 @@ async def _refresh_admin_card(context, event_id):
             logger.warning(f"Could not refresh admin card of event #{event_id}: {e}")
 
 
+def _logo_retry_keyboard(event_id):
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🖼️ Riprova caricamento logo", callback_data=f"eb_logo_{event_id}")]])
+
+
+def _failure_reason(error):
+    """Short, single-line reason for an admin message (EventbriteError descriptions are already short)."""
+    return short_reason(getattr(error, 'description', None) or str(error)) or type(error).__name__
+
+
 def _recreate_keyboard(event_id):
     return InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Ricrea su Eventbrite", callback_data=f"eb_recreate_{event_id}")]])
 
@@ -103,9 +113,9 @@ def _is_full(event):
 
 def _publish_blocking(event, start_end):
     """Runs the publish steps in order, storing ids after each one so a failure can resume from the draft.
-    Returns (eventbrite event JSON-ish dict with id/url, warnings)."""
+    Returns (eventbrite event JSON-ish dict with id/url, logo failure reason or None)."""
     event_id = event['id']
-    warnings = []
+    logo_error = None
     eb_id, url = event.get('eventbrite_event_id'), event.get('eventbrite_url')
 
     if not eb_id:
@@ -126,14 +136,14 @@ def _publish_blocking(event, start_end):
             update_event(eb_id, {"logo_id": upload_logo(image_path)})
         except Exception as e:
             logger.warning(f"Eventbrite logo upload failed for event #{event_id}: {e}")
-            warnings.append(f"⚠️ Logo non caricato su Eventbrite: {e}")
+            logo_error = _failure_reason(e)
 
     version = int(event.get('eventbrite_content_version') or 0) + 1
     set_eventbrite_info(event_id, eventbrite_content_version=set_description(eb_id, description_modules(event), version))
 
     publish_event(eb_id)
     set_eventbrite_info(event_id, eventbrite_status='live', eventbrite_url=url, eventbrite_quantity_total=quantity)
-    return {"id": eb_id, "url": url}, warnings
+    return {"id": eb_id, "url": url}, logo_error
 
 
 async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
@@ -170,7 +180,7 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
         return
 
     try:
-        result, warnings = await asyncio.to_thread(_publish_blocking, event, start_end)
+        result, logo_error = await asyncio.to_thread(_publish_blocking, event, start_end)
     except Exception as e:
         logger.error(f"Eventbrite publish failed for event #{event_id}: {e}")
         await _notify(context, admin_chat_id,
@@ -178,8 +188,9 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
                       "Riprova con [🎟️ Pubblica su Eventbrite]: riprenderà dal punto in cui si è interrotta.")
         return
 
-    for warning in warnings:
-        await _notify(context, admin_chat_id, warning)
+    if logo_error:
+        await _notify(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({logo_error})",
+                      reply_markup=_logo_retry_keyboard(event_id))
     await _notify(context, admin_chat_id, f"✅ Evento pubblicato su Eventbrite: {result['url']}")
     await _refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
@@ -224,9 +235,14 @@ def _sync_blocking(event, content_changed, image_changed):
         if warning:
             warnings.append(warning)
     image_path = event.get('image_path')
+    logo_error = None
     if image_changed and image_path and os.path.exists(image_path):
-        update_event(event['eventbrite_event_id'], {"logo_id": upload_logo(image_path)})
-    return warnings
+        try:
+            update_event(event['eventbrite_event_id'], {"logo_id": upload_logo(image_path)})
+        except Exception as e:
+            logger.warning(f"Eventbrite logo upload failed for event #{event['id']}: {e}")
+            logo_error = _failure_reason(e)
+    return warnings, logo_error
 
 
 async def sync_eventbrite(context, event, content_changed=False, image_changed=False):
@@ -237,12 +253,42 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
     if event.get('eventbrite_status') in ('canceled', 'draft', 'closed'):
         return
     try:
-        warnings = await asyncio.to_thread(_sync_blocking, event, content_changed, image_changed)
+        warnings, logo_error = await asyncio.to_thread(_sync_blocking, event, content_changed, image_changed)
         for warning in warnings:
             await _notify(context, config.ADMIN_CHAT_ID, warning)
+        if logo_error:
+            await _notify(context, config.ADMIN_CHAT_ID, f"⚠️ Logo non aggiornato su Eventbrite per #{event['id']} ({logo_error})",
+                          reply_markup=_logo_retry_keyboard(event['id']))
     except Exception as e:
         logger.error(f"Eventbrite sync failed for event #{event.get('id')}: {e}")
         await _notify(context, config.ADMIN_CHAT_ID, f"⚠️ Sync Eventbrite fallita per #{event.get('id')}: {e}")
+
+
+def _retry_logo_blocking(event):
+    update_event(event['eventbrite_event_id'], {"logo_id": upload_logo(event['image_path'])})
+
+
+async def retry_logo_on_eventbrite(context, event_id, admin_chat_id):
+    """Uploads the event's poster as the Eventbrite logo again (button after a failed upload)."""
+    if not eventbrite_enabled():
+        await _notify(context, admin_chat_id, NOT_CONFIGURED)
+        return
+    event = get_event(event_id)
+    if not event or not event.get('eventbrite_event_id') or event.get('eventbrite_status') == 'canceled':
+        await _notify(context, admin_chat_id, f"❌ Evento #{event_id} non è attivo su Eventbrite")
+        return
+    image_path = event.get('image_path')
+    if not (image_path and os.path.exists(image_path)):
+        await _notify(context, admin_chat_id, f"❌ Evento #{event_id}: nessuna immagine da caricare. Aggiungila con /event_edit_image")
+        return
+    try:
+        await asyncio.to_thread(_retry_logo_blocking, event)
+    except Exception as e:
+        logger.warning(f"Eventbrite logo retry failed for event #{event_id}: {e}")
+        await _notify(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({_failure_reason(e)})",
+                      reply_markup=_logo_retry_keyboard(event_id))
+        return
+    await _notify(context, admin_chat_id, f"✅ Logo caricato su Eventbrite per l'evento #{event_id}")
 
 
 # ---------------------------------------------------------------- cancel / reactivate

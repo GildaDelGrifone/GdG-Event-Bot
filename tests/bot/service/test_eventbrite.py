@@ -111,6 +111,11 @@ class TestPublish(EventbriteServiceCase):
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "live")
         self.assertTrue(any(t.startswith("⚠️ Logo non caricato") for t in self.texts()))
         self.mocks["publish_event"].assert_called_once()
+        logo_call = next(c for c in self.context.bot.send_message.call_args_list
+                         if c.kwargs["text"].startswith("⚠️ Logo non caricato"))
+        self.assertEqual(logo_call.kwargs["text"], "⚠️ Logo non caricato su Eventbrite (nope)")
+        button = logo_call.kwargs["reply_markup"].inline_keyboard[0][0]
+        self.assertEqual((button.text, button.callback_data), ("🖼️ Riprova caricamento logo", f"eb_logo_{event_id}"))
 
     async def test_no_logo_call_without_an_image_file(self):
         event_id = self.make_event(image_path=os.path.join(self.temp_dir.name, "missing.jpg"))
@@ -612,6 +617,70 @@ class TestCancelOnlyOnEventbrite(EventbriteServiceCase):
         await service.finish_eventbrite_cancellation(self.context, db.get_event(cancelled), ADMIN)
         keyboard = self.context.bot.edit_message_reply_markup.call_args.kwargs["reply_markup"]
         self.assertEqual(keyboard.inline_keyboard[0][0].callback_data, f"reactivate_event_{cancelled}")
+
+
+class TestLogoRetry(EventbriteServiceCase):
+    def event_with_image(self, **info):
+        image = image_file(self.temp_dir.name, "poster.jpg", 400, 300)
+        event_id = self.make_event(image_path=image)
+        self.link(event_id, **info)
+        return event_id, image
+
+    def logo_button(self):
+        markup = self.context.bot.send_message.call_args.kwargs.get("reply_markup")
+        return markup.inline_keyboard[0][0].callback_data if markup else None
+
+    async def test_retry_uploads_the_logo_and_confirms(self):
+        event_id, image = self.event_with_image()
+
+        await service.retry_logo_on_eventbrite(self.context, event_id, ADMIN)
+
+        self.mocks["upload_logo"].assert_called_once_with(image)
+        self.mocks["update_event"].assert_called_once_with("eb1", {"logo_id": "media1"})
+        self.assertEqual(self.texts(), [f"✅ Logo caricato su Eventbrite per l'evento #{event_id}"])
+
+    async def test_a_failed_retry_reports_a_short_reason_and_offers_the_button_again(self):
+        event_id, _ = self.event_with_image()
+        self.mocks["upload_logo"].side_effect = EventbriteError(429, "UPLOAD_FAILED", "Whoops!")
+
+        await service.retry_logo_on_eventbrite(self.context, event_id, ADMIN)
+
+        self.assertEqual(self.texts(), ["⚠️ Logo non caricato su Eventbrite (Whoops!)"])
+        self.assertEqual(self.logo_button(), f"eb_logo_{event_id}")
+        self.mocks["update_event"].assert_not_called()
+
+    async def test_unusable_events_get_a_message_and_no_api_calls(self):
+        unlinked = self.make_event(image_path=image_file(self.temp_dir.name, "a.jpg", 400, 300))
+        no_image, _ = self.event_with_image()
+        db.update_event_field(no_image, "image_path", os.path.join(self.temp_dir.name, "gone.jpg"))
+        canceled, _ = self.event_with_image(eventbrite_status="canceled")
+
+        for event_id in (unlinked, no_image, canceled, 999):
+            await service.retry_logo_on_eventbrite(self.context, event_id, ADMIN)
+
+        self.no_http()
+        texts = self.texts()
+        self.assertEqual(texts[0], f"❌ Evento #{unlinked} non è attivo su Eventbrite")
+        self.assertIn("nessuna immagine da caricare", texts[1])
+        self.assertEqual(texts[2], f"❌ Evento #{canceled} non è attivo su Eventbrite")
+        self.assertEqual(texts[3], "❌ Evento #999 non è attivo su Eventbrite")
+
+    async def test_not_configured(self):
+        event_id, _ = self.event_with_image()
+        with eventbrite_credentials(EVENTBRITE_TOKEN=None):
+            await service.retry_logo_on_eventbrite(self.context, event_id, ADMIN)
+        self.assertEqual(self.texts(), ["❌ Eventbrite non configurato"])
+
+    async def test_a_failed_logo_in_sync_offers_the_retry_button_and_does_not_block_other_updates(self):
+        event_id, _ = self.event_with_image(eventbrite_quantity_total=4)
+        db.book_seat(event_id, 1, username="a")  # capacity change, pushed before the logo
+        self.mocks["upload_logo"].side_effect = EventbriteError(429, "UPLOAD_FAILED", "Whoops!")
+
+        await service.sync_eventbrite(self.context, db.get_event(event_id), image_changed=True)
+
+        self.mocks["update_ticket_quantity"].assert_called_once_with("eb1", "tc1", 3)
+        self.assertEqual(self.texts(), [f"⚠️ Logo non aggiornato su Eventbrite per #{event_id} (Whoops!)"])
+        self.assertEqual(self.logo_button(), f"eb_logo_{event_id}")
 
 
 if __name__ == "__main__":

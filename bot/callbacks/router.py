@@ -10,6 +10,7 @@ CALLBACK_ROUTES = (
     ("eb_publish_", events.handle_eventbrite_publish),
     ("eb_recreate_", events.handle_eventbrite_recreate),
     ("eb_cancel_retry_", events.handle_eventbrite_cancel_retry),
+    ("eb_logo_", events.handle_eventbrite_logo_retry),
     ("eb_cancel_ask_", events.handle_eventbrite_cancel_ask),
     ("eb_cancel_do_", events.handle_eventbrite_cancel_do),
     ("discard_event_", events.handle_discard_event),

@@ -15,7 +15,7 @@ from bot.keyboards import (
 )
 from bot.service.eventbrite import (
     cancel_on_eventbrite, cancel_only_on_eventbrite, finish_eventbrite_cancellation, publish_event_to_eventbrite, reactivate_on_eventbrite,
-    recreate_on_eventbrite,
+    recreate_on_eventbrite, retry_logo_on_eventbrite,
 )
 from bot.service.posts import update_event_messages
 
@@ -168,6 +168,13 @@ async def handle_eventbrite_cancel_do(query, context, payload):
     await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id} on Eventbrite only.")
     await cancel_only_on_eventbrite(context, event, query.message.chat_id)
+
+
+async def handle_eventbrite_logo_retry(query, context, payload):
+    await query.answer("Carico il logo…")
+    event_id = int(payload)
+    logger.info(f"{describe_user(query.from_user)} retried the Eventbrite logo upload of event #{event_id}.")
+    await retry_logo_on_eventbrite(context, event_id, query.message.chat_id)
 
 
 async def handle_eventbrite_cancel_retry(query, context, payload):

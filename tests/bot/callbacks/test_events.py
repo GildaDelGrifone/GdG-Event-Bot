@@ -355,5 +355,16 @@ class TestEventbriteOnlyCancelCallbacks(TempDBMixin, unittest.IsolatedAsyncioTes
         self.assertIn(f"eb_cancel_ask_{event_id}", [b.callback_data for row in keyboard.inline_keyboard for b in row])
 
 
+class TestEventbriteLogoRetryCallback(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def test_button_retries_the_logo_upload(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"eb_logo_{event_id}", chat_id=999)
+        with patch("bot.callbacks.events.retry_logo_on_eventbrite", new_callable=AsyncMock) as retry:
+            await handle_callback_query(update, make_context())
+        query.answer.assert_awaited()
+        retry.assert_awaited_once()
+        self.assertEqual(retry.call_args.args[1:], (event_id, 999))
+
+
 if __name__ == "__main__":
     unittest.main()
