@@ -195,7 +195,7 @@ class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         await handle_callback_query(update, self.context)
 
         self.assertEqual(db.get_event(event_id)["status"], "approved")
-        self.assertEqual(self.buttons(query), [("✅ Conferma annullamento", f"cancel_confirm_{event_id}"),
+        self.assertEqual(self.buttons(query), [("✅ Sì, annulla", f"cancel_confirm_{event_id}"),
                                               ("↩️ Indietro", f"cancel_abort_{event_id}")])
         alert, kwargs = query.answer.call_args.args[0], query.answer.call_args.kwargs
         self.assertTrue(kwargs["show_alert"])
@@ -214,7 +214,7 @@ class TestCancelConfirmation(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
         await handle_callback_query(update, self.context)
 
-        self.assertEqual(self.buttons(query)[0][0], "✅ Conferma annullamento")
+        self.assertEqual(self.buttons(query)[0][0], "✅ Sì, annulla")
         alert = query.answer.call_args.args[0]
         self.assertIn("2 posti Eventbrite: dopo la conferma riceverai i link per annullare ogni ordine", alert)
         self.assertIn("2 posti su Telegram", alert)
@@ -332,7 +332,7 @@ class TestEventbriteOnlyCancelCallbacks(TempDBMixin, unittest.IsolatedAsyncioTes
         self.assertLessEqual(len(alert), 200)
         keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
         self.assertEqual([(b.text, b.callback_data) for b in keyboard.inline_keyboard[0]], [
-            ("✅ Conferma annullamento Eventbrite", f"eb_cancel_do_{event_id}"),
+            ("✅ Sì, annulla su EB", f"eb_cancel_do_{event_id}"),
             ("↩️ Indietro", f"cancel_abort_{event_id}"),
         ])
         self.cancel_only.assert_not_awaited()

@@ -184,13 +184,13 @@ class TestCancelConfirmationKeyboard(TempDBMixin, unittest.TestCase):
 
     def test_plain_event(self):
         event_id = create_subscribed_event()
-        self.assertEqual(self.rows(event_id), [[("✅ Conferma annullamento", f"cancel_confirm_{event_id}"),
+        self.assertEqual(self.rows(event_id), [[("✅ Sì, annulla", f"cancel_confirm_{event_id}"),
                                                 ("↩️ Indietro", f"cancel_abort_{event_id}")]])
 
     def test_same_label_with_eventbrite_bookings(self):
         event_id = create_subscribed_event()
         db.apply_eventbrite_order(event_id, "o1", "Mario R.", 1)
-        self.assertEqual(self.rows(event_id)[0][0], ("✅ Conferma annullamento", f"cancel_confirm_{event_id}"))
+        self.assertEqual(self.rows(event_id)[0][0], ("✅ Sì, annulla", f"cancel_confirm_{event_id}"))
 
 
 if __name__ == "__main__":

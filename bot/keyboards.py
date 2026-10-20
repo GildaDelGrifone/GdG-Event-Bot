@@ -62,7 +62,7 @@ def _eventbrite_row(event_id, event):
 def get_eventbrite_cancel_confirmation_keyboard(event_id):
     """Confirmation for [🚫 Annulla su Eventbrite]: cancels only the Eventbrite event, Telegram stays active."""
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Conferma annullamento Eventbrite", callback_data=f"eb_cancel_do_{event_id}"),
+        InlineKeyboardButton("✅ Sì, annulla su EB", callback_data=f"eb_cancel_do_{event_id}"),
         InlineKeyboardButton("↩️ Indietro", callback_data=f"cancel_abort_{event_id}"),
     ]])
 
@@ -70,7 +70,7 @@ def get_eventbrite_cancel_confirmation_keyboard(event_id):
 def get_cancel_confirmation_keyboard(event_id):
     """Shown in place of the approved-card buttons after [❌ Annulla Evento], so a misclick cannot cancel an event."""
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Conferma annullamento", callback_data=f"cancel_confirm_{event_id}"),
+        InlineKeyboardButton("✅ Sì, annulla", callback_data=f"cancel_confirm_{event_id}"),
         InlineKeyboardButton("↩️ Indietro", callback_data=f"cancel_abort_{event_id}"),
     ]])
 
