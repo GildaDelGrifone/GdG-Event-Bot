@@ -13,7 +13,7 @@ from core.config import (
 from core.db import init_db
 from core.eventbrite import eventbrite_enabled
 from bot.handlers.albums import cache_admin_media_group
-from bot.handlers.control import bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_status_command
+from bot.handlers.control import bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
@@ -71,6 +71,7 @@ async def post_init(application: Application):
         BotCommand("bot_pause", "Mette in pausa l'intercettazione automatica"),
         BotCommand("bot_resume", "Riattiva l'intercettazione automatica"),
         BotCommand("bot_status", "Mostra lo stato operativo del bot"),
+        BotCommand("bot_eventbrite_venue", "Scegli la sede Eventbrite per i nuovi eventi"),
         BotCommand("bot_eventbrite_only_toggle", "Attiva/disattiva la modalità solo Eventbrite"),
         BotCommand("event_edit_title", "<Titolo> Modifica il titolo dell'evento"),
         BotCommand("event_edit_date", "<DD-MM-YYYY HH:MM> Modifica data e ora"),
@@ -148,6 +149,7 @@ def main():
     application.add_handler(CommandHandler("bot_resume", bot_resume_command))
     application.add_handler(CommandHandler("bot_status", bot_status_command))
     application.add_handler(CommandHandler("bot_eventbrite_only_toggle", bot_eventbrite_only_toggle_command))
+    application.add_handler(CommandHandler("bot_eventbrite_venue", bot_eventbrite_venue_command))
     
     edit_cmds = [
         "event_edit_title", "event_edit_date",

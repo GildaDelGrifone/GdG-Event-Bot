@@ -66,6 +66,11 @@ class TestEventPayload(unittest.TestCase):
         self.assertEqual(payload["start"], {"timezone": "Europe/Rome", "utc": "2099-11-06T20:00:00Z"})
         self.assertEqual(payload["end"]["utc"], "2099-11-07T00:00:00Z")
 
+    def test_the_events_own_venue_wins_over_the_default(self):
+        with eventbrite_credentials():
+            self.assertEqual(event_payload(event(eventbrite_venue_id="venue2"), include_dates=False)["venue_id"], "venue2")
+            self.assertEqual(event_payload(event(eventbrite_venue_id=None), include_dates=False)["venue_id"], "venue1")
+
     def test_without_dates_or_organizer(self):
         with eventbrite_credentials():
             payload = event_payload(event(date="Venerdì 06-11-2020 21:00", normalized_date="06-11-2020"),

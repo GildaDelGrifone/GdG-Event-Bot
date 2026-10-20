@@ -8,6 +8,9 @@ class BotRuntimeState:
     is_paused: bool = False
     # Eventbrite-only mode: pending cards hide the Telegram publish buttons and no Instagram story is generated
     eventbrite_only: bool = field(default_factory=lambda: config.EVENTBRITE_ONLY_MODE)
+    # Venue picked with /bot_eventbrite_venue for new Eventbrite events (None = the default venue)
+    eventbrite_venue: str | None = None
+    venue_names: dict = field(default_factory=dict)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
 

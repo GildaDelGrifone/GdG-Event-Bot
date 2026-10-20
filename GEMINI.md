@@ -267,6 +267,8 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
 
+**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (in memory, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` uses the event's venue and falls back to the default for older events. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
+
 **Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited. A failure is only a warning to the admins. Already published events are not backfilled.
 
 **Admin notices:** every Eventbrite notice about one event is sent as a reply to that event's admin card (`notify_admin(..., event_id=)`; plain message if the card is gone). The nightly cleanup summary covers several events, so it is a plain message.
@@ -318,7 +320,7 @@ GdG-Event-Bot/
 │   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
-│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_eventbrite_only_toggle
+│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_eventbrite_only_toggle, /bot_eventbrite_venue
 │   │   ├── public.py     # /start, /event_next, /event_subs
 │   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
 │   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads
@@ -559,6 +561,7 @@ GdG-Event-Bot/
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
+| `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (in memory) | `2345678,3456789` |
 | `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (in memory) | `false` |
 | `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` | (Optional) Eventbrite Collection ids: published events join the roleplay one when `is_roleplay`, the board games one otherwise; both empty = off. Create one with `scripts/eventbrite_setup.py --create-collection "NAME"` (the API creates it as a draft; publish it from the dashboard) | none |
 | `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group (`true`/`false`); seats sync either way | `true` |

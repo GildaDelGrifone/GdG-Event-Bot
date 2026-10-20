@@ -13,7 +13,7 @@ _MESSAGE_ID_COLUMNS = frozenset({'telegram_message_id', 'discussion_message_id',
 # Written only by the Eventbrite service, never through /event_edit_*
 EVENTBRITE_FIELDS = frozenset({
     'eventbrite_event_id', 'eventbrite_url', 'eventbrite_ticket_class_id', 'eventbrite_status',
-    'eventbrite_quantity_total', 'eventbrite_content_version', 'eventbrite_synced_at',
+    'eventbrite_quantity_total', 'eventbrite_content_version', 'eventbrite_synced_at', 'eventbrite_venue_id',
 })
 _TRUTHY_ROLEPLAY = (True, 1, '1', 'true', 'True')
 

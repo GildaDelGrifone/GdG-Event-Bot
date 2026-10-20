@@ -849,6 +849,48 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TestPublishVenue(EventbriteServiceCase):
+    def setUp(self):
+        super().setUp()
+        for patcher in (patch.object(service.runtime_state, "eventbrite_venue", None),
+                        patch.object(service.runtime_state, "venue_names", {"venue1": "Gilda", "v2": "To Play"})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        config_patch = eventbrite_credentials(EVENTBRITE_VENUE_ID_ALTERNATIVES=["v2"])
+        config_patch.__enter__()
+        self.addCleanup(config_patch.__exit__, None, None, None)
+
+    def created_venue(self):
+        return self.mocks["create_event"].call_args.args[0]["venue_id"]
+
+    async def test_default_venue_is_stored_and_used_when_nothing_was_picked(self):
+        event_id = self.make_event()
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        self.assertEqual(self.created_venue(), "venue1")
+        self.assertEqual(db.get_event(event_id)["eventbrite_venue_id"], "venue1")
+
+    async def test_the_picked_venue_is_stored_and_used_and_named_in_the_notice(self):
+        service.runtime_state.eventbrite_venue = "v2"
+        event_id = self.make_event()
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        self.assertEqual(self.created_venue(), "v2")
+        self.assertEqual(db.get_event(event_id)["eventbrite_venue_id"], "v2")
+        self.assertTrue(any("📍 Sede: To Play" in text for text in self.texts()))
+
+    async def test_a_stored_venue_survives_a_later_pick(self):
+        event_id = self.make_event()
+        db.set_eventbrite_info(event_id, eventbrite_venue_id="venue1")
+        service.runtime_state.eventbrite_venue = "v2"
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        self.assertEqual(self.created_venue(), "venue1")
+
+    async def test_a_pick_that_is_no_longer_configured_falls_back_to_the_default(self):
+        service.runtime_state.eventbrite_venue = "gone"
+        event_id = self.make_event()
+        await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
+        self.assertEqual(self.created_venue(), "venue1")
+
+
 class TestReserveOnEventbrite(EventbriteServiceCase):
     """Claiming the seat on Eventbrite right after a Telegram booking."""
 

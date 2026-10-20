@@ -102,7 +102,8 @@ IG_ACCOUNT_ID=178414...
 # Eventbrite Integration (Optional): enabled only when token, organization ID and venue ID are all set
 # EVENTBRITE_TOKEN=your_private_oauth_token
 # EVENTBRITE_ORGANIZATION_ID=
-# EVENTBRITE_VENUE_ID=                   # created once with scripts/eventbrite_setup.py
+# EVENTBRITE_VENUE_ID=                   # default venue, created once with scripts/eventbrite_setup.py
+# EVENTBRITE_VENUE_ID_ALTERNATIVES=      # optional: more venues, comma-separated (choose with /bot_eventbrite_venue)
 # EVENTBRITE_ORGANIZER_ID=               # optional
 # EVENTBRITE_TIMEZONE=Europe/Rome
 # EVENTBRITE_CURRENCY=EUR
@@ -223,6 +224,7 @@ In `ADMIN_CHAT_ID` only:
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
+- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own). In memory: a restart returns to the default.
 - `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. In memory: a restart returns to the env value.
 
 ---
@@ -324,13 +326,17 @@ All maintenance utilities are located in the `scripts/` directory:
   python3 scripts/eventbrite_setup.py --create-venue --name "Gilda del Grifone" \
       --address "Via Ada Negri 8/A" --city Torino --postal-code 10135 --country IT
 
+  # Edit an existing venue (omitted fields keep their value; the API cannot delete venues):
+  python3 scripts/eventbrite_setup.py --update-venue <id> --name "TO PLAY TORINO" --address "Via Borgaro, 2" \
+      --postal-code 10149 --region TO
+
   # Optional: create the two collections and print their ids
   python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo"
   python3 scripts/eventbrite_setup.py --create-collection "Giochi da tavolo"
   ```
   Setup order:
   1. Put `EVENTBRITE_TOKEN` in `.env`, then run `--check --orgs` and set `EVENTBRITE_ORGANIZATION_ID`.
-  2. Run `--create-venue` (or `--venues` to find an existing one) and set `EVENTBRITE_VENUE_ID`. These three values enable the integration.
+  2. Run `--create-venue` (or `--venues` to find an existing one) and set `EVENTBRITE_VENUE_ID` (the default venue). These three values enable the integration. More places can be listed in `EVENTBRITE_VENUE_ID_ALTERNATIVES`; the repo skill `.claude/skills/eventbrite-venues` walks through creating/editing venues.
   3. Optional, for collections: run `--create-collection` once per collection and set `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` to the printed ids. For collections already made in the dashboard, the id is the number at the end of their URL (`/cc/name-<id>`).
   4. The API creates collections as **drafts** and cannot publish them: publish each one from the Eventbrite dashboard.
   5. Restart the bot.

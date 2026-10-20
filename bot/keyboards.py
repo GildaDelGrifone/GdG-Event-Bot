@@ -21,6 +21,15 @@ def _manage_subs_button(event_id):
     return InlineKeyboardButton("👥 Gestisci Iscritti", callback_data=f"manage_subs_{event_id}")
 
 
+def get_venue_keyboard(venues, current_id, default_id):
+    """One button per venue; `venues` is [(id, name)], the venue in use is marked ✅ and the default tagged."""
+    rows = []
+    for venue_id, name in venues:
+        label = ("✅ " if venue_id == current_id else "") + name + (" (predefinito)" if venue_id == default_id else "")
+        rows.append([InlineKeyboardButton(label, callback_data=f"ebvenue_{venue_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
 def get_approval_keyboard(event_id):
     publish = InlineKeyboardButton("Publish", callback_data=f"publish_event_{event_id}")
     discard = InlineKeyboardButton("Discard", callback_data=f"discard_event_{event_id}")

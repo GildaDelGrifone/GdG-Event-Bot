@@ -34,6 +34,7 @@ def eventbrite_credentials(**overrides):
         "EVENTBRITE_TOKEN": "eb-token",
         "EVENTBRITE_ORGANIZATION_ID": "org1",
         "EVENTBRITE_VENUE_ID": "venue1",
+        "EVENTBRITE_VENUE_ID_ALTERNATIVES": [],
         "EVENTBRITE_ORGANIZER_ID": None,
         "EVENTBRITE_TIMEZONE": "Europe/Rome",
         "EVENTBRITE_CURRENCY": "EUR",

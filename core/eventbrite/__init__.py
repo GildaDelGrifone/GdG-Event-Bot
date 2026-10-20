@@ -25,6 +25,7 @@ from core.eventbrite.payload import (
     ticket_quantity,
 )
 from core.eventbrite.tickets import create_free_ticket_class, update_ticket_quantity
+from core.eventbrite.venues import eventbrite_venue_ids, get_venue
 
 __all__ = [
     "EventbriteError",
@@ -42,6 +43,8 @@ __all__ = [
     "remove_event_from_collection",
     "create_free_ticket_class",
     "update_ticket_quantity",
+    "get_venue",
+    "eventbrite_venue_ids",
     "upload_logo",
     "fetch_active_orders",
     "event_payload",

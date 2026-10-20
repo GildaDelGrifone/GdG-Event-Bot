@@ -22,7 +22,9 @@ from core.eventbrite import (
     event_payload,
     event_start_end,
     eventbrite_enabled,
+    eventbrite_venue_ids,
     fetch_active_orders,
+    get_venue,
     order_cancel_url,
     publish_event,
     remove_event_from_collection,
@@ -36,6 +38,7 @@ from core.eventbrite.media import short_reason
 from core.eventbrite.tickets import update_ticket_quantity
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
+from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +104,18 @@ def _failure_reason(error):
     return short_reason(getattr(error, 'description', None) or str(error)) or type(error).__name__
 
 
+def venue_name(venue_id):
+    """Eventbrite's name for a venue (blocking; cached until restart, the id itself if the lookup fails)."""
+    names = runtime_state.venue_names
+    if venue_id not in names:
+        try:
+            names[venue_id] = get_venue(venue_id).get('name') or venue_id
+        except Exception as e:
+            logger.warning(f"Could not read Eventbrite venue {venue_id}: {e}")
+            return venue_id
+    return names[venue_id]
+
+
 def _recreate_keyboard(event_id):
     return InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Ricrea su Eventbrite", callback_data=f"eb_recreate_{event_id}")]])
 
@@ -158,6 +173,10 @@ def _publish_blocking(event, start_end):
     eb_id, url = event.get('eventbrite_event_id'), event.get('eventbrite_url')
 
     if not eb_id:
+        if not event.get('eventbrite_venue_id'):  # fixed now, so syncs and a resumed draft keep this venue
+            venue_id = runtime_state.eventbrite_venue if runtime_state.eventbrite_venue in eventbrite_venue_ids() else config.EVENTBRITE_VENUE_ID
+            set_eventbrite_info(event_id, eventbrite_venue_id=venue_id)
+            event = {**event, 'eventbrite_venue_id': venue_id}
         created = create_event(event_payload(event))
         eb_id, url = created['id'], created.get('url')
         set_eventbrite_info(event_id, eventbrite_event_id=eb_id, eventbrite_url=url,
@@ -261,7 +280,12 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
                            reply_markup=_logo_retry_keyboard(event_id), event_id=event_id)
     if collection_warning:
         await notify_admin(context, admin_chat_id, collection_warning, event_id=event_id)
-    await notify_admin(context, admin_chat_id, f"✅ Evento pubblicato su Eventbrite: {result['url']}", event_id=event_id)
+    text = f"✅ Evento pubblicato su Eventbrite: {result['url']}"
+    if len(eventbrite_venue_ids()) > 1:
+        venue_id = (get_event(event_id) or {}).get('eventbrite_venue_id')
+        if venue_id:
+            text += f"\n📍 Sede: {await asyncio.to_thread(venue_name, venue_id)}"
+    await notify_admin(context, admin_chat_id, text, event_id=event_id)
     await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
     from bot.service.posts import update_event_messages

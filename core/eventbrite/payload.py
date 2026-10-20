@@ -57,7 +57,7 @@ def event_payload(event, include_dates=True):
         "name": {"html": html.escape(event_name(event))},
         "summary": event_summary(event),
         "currency": config.EVENTBRITE_CURRENCY,
-        "venue_id": config.EVENTBRITE_VENUE_ID,
+        "venue_id": event.get("eventbrite_venue_id") or config.EVENTBRITE_VENUE_ID,
         "listed": bool(config.EVENTBRITE_LISTED),
         "shareable": True,
         "show_remaining": True,

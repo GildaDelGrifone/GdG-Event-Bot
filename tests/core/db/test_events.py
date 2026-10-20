@@ -54,6 +54,13 @@ class TestEventbriteInfo(TempDBMixin, unittest.TestCase):
         self.assertIsNone(ev["eventbrite_status"])
         self.assertEqual(ev["eventbrite_content_version"], 0)
 
+    def test_the_venue_is_stored_and_forgotten_with_the_rest(self):
+        event_id = db.insert_event({"title": "T"}, None, "raw")
+        db.set_eventbrite_info(event_id, eventbrite_venue_id="v2")
+        self.assertEqual(db.get_event(event_id)["eventbrite_venue_id"], "v2")
+        db.clear_eventbrite_info(event_id)
+        self.assertIsNone(db.get_event(event_id)["eventbrite_venue_id"])
+
     def test_set_eventbrite_info_rejects_other_columns(self):
         event_id = db.insert_event({"title": "T"}, None, "raw")
         self.assertFalse(db.set_eventbrite_info(event_id, title="hack"))

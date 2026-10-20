@@ -77,6 +77,38 @@ class TestEventbriteSetupScript(unittest.TestCase):
         self.assertEqual(mock_post.call_args.kwargs["json"]["venue"]["address"], {
             "address_1": "Via Ada Negri 8/A", "city": "Torino", "postal_code": "10135", "country": "IT"})
 
+    @patch("scripts.eventbrite_setup.eb_post")
+    @patch("scripts.eventbrite_setup.eb_get")
+    def test_update_venue_merges_over_the_current_address(self, mock_get, mock_post):
+        mock_get.return_value = {"name": "Old", "address": {
+            "address_1": "8 Via Ada Negri", "address_2": "", "city": "Torino", "region": "Piemonte",
+            "postal_code": "10136", "country": "IT"}}
+        mock_post.return_value = {"name": "TO PLAY", "address": {
+            "localized_address_display": "Via Borgaro, 2, 10149 Torino", "latitude": "45.09", "longitude": "7.66"}}
+        with eventbrite_credentials():
+            code, out = run("--update-venue", "v1", "--name", "TO PLAY", "--address", "Via Borgaro, 2",
+                            "--postal-code", "10149", "--region", "TO")
+        self.assertEqual(code, 0)
+        self.assertEqual(mock_post.call_args.args[0], "/venues/v1/")
+        self.assertEqual(mock_post.call_args.kwargs["json"], {"venue": {"name": "TO PLAY", "address": {
+            "address_1": "Via Borgaro, 2", "city": "Torino", "region": "TO", "postal_code": "10149", "country": "IT"}}})
+        self.assertIn("Via Borgaro, 2, 10149 Torino", out)
+
+    @patch("scripts.eventbrite_setup.eb_post")
+    @patch("scripts.eventbrite_setup.eb_get")
+    def test_update_venue_can_change_only_the_name(self, mock_get, mock_post):
+        mock_get.return_value = {"name": "Old", "address": {"address_1": "Via A", "city": "Torino", "country": "IT"}}
+        mock_post.return_value = {"name": "New"}
+        with eventbrite_credentials():
+            code, _ = run("--update-venue", "v1", "--name", "New")
+        self.assertEqual(code, 0)
+        self.assertEqual(mock_post.call_args.kwargs["json"]["venue"], {
+            "name": "New", "address": {"address_1": "Via A", "city": "Torino", "country": "IT"}})
+
+    def test_update_venue_requires_a_field(self):
+        with eventbrite_credentials(), self.assertRaises(SystemExit):
+            run("--update-venue", "v1")
+
     @patch("scripts.eventbrite_setup.eb_get", side_effect=EventbriteError(401, "INVALID_AUTH", "bad token"))
     def test_api_errors_exit_non_zero(self, _get):
         with eventbrite_credentials():

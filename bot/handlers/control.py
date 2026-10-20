@@ -1,10 +1,14 @@
+import asyncio
 import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.common.auth import admin_only, describe_user
-from core.eventbrite import eventbrite_enabled
+from core import config
+from core.eventbrite import eventbrite_enabled, eventbrite_venue_ids
+from bot.keyboards import get_venue_keyboard
+from bot.service.eventbrite import venue_name
 from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
@@ -40,9 +44,34 @@ async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTyp
     await update.message.reply_text(text)
 
 
+def current_venue_id():
+    """The venue new Eventbrite events get: the /bot_eventbrite_venue pick, else the default."""
+    picked = runtime_state.eventbrite_venue
+    return picked if picked in eventbrite_venue_ids() else config.EVENTBRITE_VENUE_ID
+
+
+@admin_only()
+async def bot_eventbrite_venue_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not eventbrite_enabled():
+        await update.message.reply_text("❌ Eventbrite non è configurato.")
+        return
+    venue_ids = eventbrite_venue_ids()
+    if len(venue_ids) < 2:
+        await update.message.reply_text("ℹ️ C'è una sola sede configurata. Aggiungi le altre con EVENTBRITE_VENUE_ID_ALTERNATIVES.")
+        return
+    venues = [(venue_id, await asyncio.to_thread(venue_name, venue_id)) for venue_id in venue_ids]
+    await update.message.reply_text(
+        "📍 Scegli la sede Eventbrite per i nuovi eventi:",
+        reply_markup=get_venue_keyboard(venues, current_venue_id(), config.EVENTBRITE_VENUE_ID),
+    )
+
+
 @admin_only()
 async def bot_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"{describe_user(update.effective_user)} requested bot status.")
     status = "🔴 IN PAUSA (monitoraggio canale eventi disattivato)" if runtime_state.is_paused else "🟢 ATTIVO (monitoraggio canale eventi funzionante)"
     mode = "🎟️ SOLO EVENTBRITE (nessun pulsante Telegram, niente storia Instagram)" if runtime_state.eventbrite_only else "📣 normale"
-    await update.message.reply_text(f"Stato del bot: {status}\nModalità pubblicazione: {mode}")
+    text = f"Stato del bot: {status}\nModalità pubblicazione: {mode}"
+    if eventbrite_enabled() and len(eventbrite_venue_ids()) > 1:
+        text += f"\nSede Eventbrite: {await asyncio.to_thread(venue_name, current_venue_id())}"
+    await update.message.reply_text(text)

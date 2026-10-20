@@ -32,7 +32,8 @@ TABLES = (
         eventbrite_status TEXT,
         eventbrite_quantity_total INTEGER,
         eventbrite_content_version INTEGER DEFAULT 0,
-        eventbrite_synced_at TEXT
+        eventbrite_synced_at TEXT,
+        eventbrite_venue_id TEXT
     )
     ''',
     '''
@@ -75,6 +76,7 @@ COLUMN_MIGRATIONS = {
         "eventbrite_quantity_total": "INTEGER",
         "eventbrite_content_version": "INTEGER DEFAULT 0",
         "eventbrite_synced_at": "TEXT",
+        "eventbrite_venue_id": "TEXT",
     },
     "reservations": {
         "full_name": "TEXT",
