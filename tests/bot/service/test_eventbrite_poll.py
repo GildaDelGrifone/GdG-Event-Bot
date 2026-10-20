@@ -177,6 +177,14 @@ class TestCancellationDetection(PollCase):
         self.assertEqual(self.admin_texts(), [f"⚠️ Evento #{event_id} annullato su Eventbrite ma attivo su Telegram"])
         self.assertEqual(db.get_event(event_id)["eventbrite_status"], "canceled")
 
+    async def test_admin_notices_reply_to_the_admin_card(self):
+        event_id = self.make_event()
+        db.update_event_field(event_id, "admin_message_id", 777)
+        self.eb_status = "canceled"
+        await poll_eventbrite_bookings(self.bot)
+        admin_calls = [c for c in self.bot.send_message.call_args_list if c.kwargs["chat_id"] == ADMIN_CHAT_ID]
+        self.assertEqual([c.kwargs.get("reply_to_message_id") for c in admin_calls], [777])
+
 
 class TestCycle(PollCase):
     async def test_only_tracked_events_are_polled(self):

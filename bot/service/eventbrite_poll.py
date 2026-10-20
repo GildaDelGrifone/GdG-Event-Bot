@@ -25,7 +25,7 @@ from core.db import (
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
 from utils.templates import format_event_title_link
-from bot.service.eventbrite import finish_eventbrite_cancellation
+from bot.service.eventbrite import finish_eventbrite_cancellation, notify_admin
 from bot.service.notices import send_discussion_notice
 from bot.service.posts import update_event_messages
 
@@ -80,23 +80,16 @@ def _diff_orders(event_id, orders):
     return changes
 
 
-async def _notify_admins(ctx, text):
-    if not config.ADMIN_CHAT_ID:
-        return
-    try:
-        await ctx.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=text)
-    except Exception as e:
-        logger.error(f"Could not send Eventbrite poll notice to admin chat: {e}")
-
-
 async def _check_cancellation(ctx, event, eb_event):
     if eb_event.get('status') != 'canceled' or event.get('eventbrite_status') == 'canceled':
         return
     set_eventbrite_info(event['id'], eventbrite_status='canceled')
     if event['status'] == 'cancelled' or event.get('eventbrite_status') == 'closed':  # a cancellation we started
-        await _notify_admins(ctx, f"✅ Evento #{event['id']} annullato su Eventbrite (iscritti avvisati da Eventbrite)")
+        await notify_admin(ctx, config.ADMIN_CHAT_ID,
+                           f"✅ Evento #{event['id']} annullato su Eventbrite (iscritti avvisati da Eventbrite)", event_id=event['id'])
     else:
-        await _notify_admins(ctx, f"⚠️ Evento #{event['id']} annullato su Eventbrite ma attivo su Telegram")
+        await notify_admin(ctx, config.ADMIN_CHAT_ID,
+                           f"⚠️ Evento #{event['id']} annullato su Eventbrite ma attivo su Telegram", event_id=event['id'])
 
 
 async def _announce(ctx, event, changes):
@@ -144,10 +137,12 @@ async def _poll_event(ctx, event):
             await _announce(ctx, current, changes)
         if any(change[3] for change in changes):
             max_seats = current.get('max_seats')
-            await _notify_admins(
+            await notify_admin(
                 ctx,
+                config.ADMIN_CHAT_ID,
                 f"⚠️ Overbooking su #{event_id}: {current.get('booked_seats')}/{max_seats} "
                 "(prenotazione Eventbrite arrivata in contemporanea)",
+                event_id=event_id,
             )
     # Every order was cancelled from the dashboard: the cancel API now works, so finish the job
     current = get_event(event_id) or event

@@ -572,6 +572,42 @@ class TestFinishCancellation(EventbriteServiceCase):
         self.assertIn("non completato", self.texts()[-1])
 
 
+class TestNoticesReplyToTheAdminCard(EventbriteServiceCase):
+    def replies(self):
+        return [call.kwargs.get("reply_to_message_id") for call in self.context.bot.send_message.call_args_list]
+
+    async def test_notices_reply_to_the_admin_card(self):
+        event_id = self.make_event()
+        self.link(event_id)
+        await service.cancel_only_on_eventbrite(self.context, db.get_event(event_id), ADMIN)
+        self.assertEqual(self.replies(), [500])
+
+    async def test_a_missing_card_falls_back_to_a_plain_message(self):
+        event_id = self.make_event()
+        self.link(event_id)
+        db.update_event_field(event_id, "admin_message_id", None)
+        await service.cancel_only_on_eventbrite(self.context, db.get_event(event_id), ADMIN)
+        self.assertEqual(self.replies(), [None])
+
+    async def test_a_failing_reply_is_resent_plain(self):
+        event_id = self.make_event()
+        calls = []
+
+        async def send(**kwargs):
+            calls.append(kwargs)
+            if "reply_to_message_id" in kwargs:
+                raise Exception("message to reply not found")
+
+        self.context.bot.send_message = AsyncMock(side_effect=send)
+        await service.notify_admin(self.context, ADMIN, "ciao", event_id=event_id)
+        self.assertEqual([c.get("reply_to_message_id") for c in calls], [500, None])
+        self.assertEqual(calls[1]["text"], "ciao")
+
+    async def test_notices_without_an_event_are_plain(self):
+        await service.notify_admin(self.context, ADMIN, "ciao")
+        self.assertEqual(self.replies(), [None])
+
+
 class TestCancelOnlyOnEventbrite(EventbriteServiceCase):
     async def cancel_only(self, event_id):
         await service.cancel_only_on_eventbrite(self.context, db.get_event(event_id), ADMIN)
