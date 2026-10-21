@@ -67,7 +67,7 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Admins can send `/event_generate <istruzioni>` (or reply to a message with the command) in `ADMIN_CHAT_ID`.
    - Handled in the `bot/event_generator/` package (`command.py` → `pipeline.py`, using `ai.py` and `bgg.py`):
      - Gemini AI interprets natural language instructions (games, date, host, seats, extra info, RPG vs board game) and writes an engaging synopsis/pitch in Italian constrained to <= 400 characters.
-     - For each identified game, queries the BoardGameGeek JSON API (`https://api.geekdo.com/api/geekitems`) to find the best match and download the official box cover image.
+     - For each identified game, `fetch_bgg_game_image` looks for the box cover: with `BGG_API_TOKEN` set it queries the BoardGameGeek JSON API (`https://api.geekdo.com/api/geekitems`, Bearer token) and takes the best match; without a token, or when BGG answers with an error (e.g. 401) or finds nothing, it falls back to Wikipedia and then a Bing image search (`fetch_fallback_game_image`).
      - If multiple games were requested, builds a uniform horizontal collage via `utils/image_utils.create_collage_from_bytes`. If a single game was requested, preserves the single image without collaging.
      - Programmatically guarantees the entire formatted event caption stays within Telegram's 1024-character caption limit via `enforce_caption_limit()`.
      - Inserts the generated event as `pending` into SQLite and sends the preview card to `ADMIN_CHAT_ID` with standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
@@ -430,7 +430,7 @@ GdG-Event-Bot/
 - **`bot/handlers/`:**
   - `albums.py` owns `media_groups` / `admin_media_groups`, module-level dicts (changed in place, never reassigned) that buffer album photos for channel ingestion and for admin `/ep` / `/event_edit_image`.
   - `extraction.handle_event_extraction` is the single ingestion pipeline. Channel posts, albums, `/ep`, `/event_repost` and `/event_schedule_invoke` all go through it.
-  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field (including `/event_edit_extra_add`). `FIELD_EDITORS` maps fields/commands that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `/event_edit_extra_add`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
+  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field: `/event_edit_title`, `/event_edit_date`, `/event_edit_system`, `/event_edit_seats`, `/event_edit_booked`, `/event_edit_host`, `/event_edit_extra`, `/event_edit_extra_add`, `/event_edit_description`, `/event_edit_image` and `/event_edit_type`. `FIELD_EDITORS` maps fields/commands that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `/event_edit_extra_add`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
   - Shared flows: `subscribers._add_subscriber_and_notify` (used by the ForceReply prompt and `/event_sub_add`), `subscribers._parse_subscriber_command` (shared by `/event_sub_add` and `/event_sub_remove`), `public._reply_with_participants` (used by `/event_subs` and the `start=subs_<id>` deep link), and `repost.extract_repost_content` (shared by repost and repost scheduling).
 - **`bot/callbacks/`:** `router.handle_callback_query` is the only `CallbackQueryHandler` registered in `main.py`. It walks `CALLBACK_ROUTES`, an ordered `(prefix, handler)` table, and calls `handler(query, context, payload)` with the callback data that follows the prefix. To add a button, give it a new callback prefix (one that is not a prefix of an existing entry; a test enforces this), write the handler in the matching feature module, and add one row to `CALLBACK_ROUTES`.
 - **`bot/service/`:**
@@ -546,6 +546,7 @@ GdG-Event-Bot/
 | `ADMIN_CHAT_ID` | Admin User ID or Admin Group ID | `123456789` or `-100...` |
 | `GEMINI_API_KEY` | Google AI Studio API Key | `AIzaSy...` |
 | `GEMINI_MODEL` | Gemini model name | `gemini-3.1-flash-lite` |
+| `BGG_API_TOKEN` | (Optional) BoardGameGeek API token for the `/event_generate` box covers; without it (or on a 401 / no result) covers come from Wikipedia, then a Bing image search | `xxxxxxxx` |
 | `WP_URL` | WordPress base URL | `https://www.gildadelgrifonetorino.it` |
 | `WP_USERNAME` | WordPress username | `direttivogilda` |
 | `WP_APP_PASSWORD` | WordPress Application Password | `xxxx xxxx xxxx xxxx` |
