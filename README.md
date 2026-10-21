@@ -83,6 +83,7 @@ Create or edit the `.env` file in the root directory:
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 PUBLIC_CHANNEL_ID=-100xxxxxxxxxx
 ADMIN_CHAT_ID=your_admin_user_or_group_id
+TELEGRAM_BOT_USERNAME=your_bot_username_here   # without @; used for the 👥 Lista deep links
 
 # Google Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -227,7 +228,7 @@ In `ADMIN_CHAT_ID` only:
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
-- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own). In memory: a restart returns to the default.
+- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. In memory: a restart returns to the default.
 - `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. In memory: a restart returns to the env value.
 
 ---

@@ -1,5 +1,7 @@
 # Eventbrite Integration Plan (GdG-Event-Bot)
 
+> **Historical planning document.** The integration is implemented; where this plan and the code differ (cancellation flow with per-order links, Eventbrite-only mode, venues, sold-out handling, background publish, `LOG_LEVEL`), `GEMINI.md` (section on Eventbrite) is the reference.
+
 ## Context
 Today events are booked only through Telegram (`➕ Prenota` / `➖ Annulla`). Admins also want to publish an event on **Eventbrite**, so people outside Telegram can book a seat there. One seat pool is shared by both platforms:
 - A booking on either side updates the other side's availability.

@@ -231,8 +231,8 @@ When `[Publish Recap]` is clicked:
     - Line 2: `[Sabato] [Domenica]` (special opening days).
     - Buttons display dynamic emoji checkboxes (`✅` when active, `⬜` when inactive) to toggle recurring schedule days.
   - Admins can also specify a one-off scheduled date via `/event_schedule [ID] DD-MM-YYYY [HH:MM]`.
-- **Scheduled Repost Notification & Invocation (10:00 AM Cron):**
-  - Runs daily at **10:00 AM** via APScheduler.
+- **Scheduled Repost Notification & Invocation (9:00 AM Cron):**
+  - Runs daily at **9:00 AM** via APScheduler.
   - Queries `scheduled_events` for entries matching today's date or active weekday.
   - Sends a consolidated digest to `ADMIN_CHAT_ID` listing each scheduled event with a clickable invocation command: `/event_schedule_invoke <SCHEDULED_ID>`.
   - Invoking `/event_schedule_invoke <SCHEDULED_ID>` prepares the event with date set to today and outputs the approval card ready for publishing.
@@ -269,7 +269,9 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
 
-**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (in memory, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
+**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the last row is `[❌ Chiudi]` (`ebvenue_close`, deletes the message); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (in memory, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
+
+**Description:** `description_modules` builds one structured-content text module: `Sistema`, `Master`/`Host`, `Posti totali: <max_seats>` (omitted for unlimited and `0/0` events; `seats` is therefore in `EVENTBRITE_CONTENT_FIELDS`), `Dettagli`, the description, the association address and the `Evento su Telegram` link.
 
 **Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited. A failure is only a warning to the admins. Already published events are not backfilled.
 
@@ -341,7 +343,8 @@ GdG-Event-Bot/
 │   │   ├── recap.py      # Publish / discard recap, WordPress draft & publish
 │   │   ├── booking.py    # ➕ Prenota / 🚫 Esauriti / ➖ Annulla
 │   │   ├── subscribers.py # 👥 Gestisci Iscritti panel (± seats, add prompt, close)
-│   │   └── schedule.py   # Repost schedule weekday toggles, delete, close
+│   │   ├── schedule.py   # Repost schedule weekday toggles, delete, close
+│   │   └── venues.py     # /bot_eventbrite_venue picker (ebvenue_<id>) and its [❌ Chiudi] (ebvenue_close)
 │   ├── service/          # Telegram side effects shared by handlers and callbacks
 │   │   ├── posts.py      # update_event_messages: sync channel post + discussion reply (with RetryAfter retry)
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
@@ -359,7 +362,7 @@ GdG-Event-Bot/
 │   ├── __init__.py
 │   ├── config.py         # Loads environment variables (.env), paths, constants
 │   ├── ai_parser.py      # Gemini: generate_text, event extraction (+ seat safety net), WP article writing
-│   ├── log_utils.py      # Daily rotating log handler and monthly log zip archiving
+│   ├── log_utils.py      # Daily rotating log handler, monthly log zip archiving, JobLinesToDebug filter (poller job lines)
 │   ├── instagram.py      # Meta Graph API: container creation & story publishing
 │   ├── db/               # SQLite data access (public API: `from core.db import ...`)
 │   │   ├── connection.py # get_connection, transaction(), fetch_one/fetch_all/execute, @db_safe
@@ -372,10 +375,12 @@ GdG-Event-Bot/
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
 │   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
-│   │   └── reposts.py    # 10:00 digest of scheduled reposts due today
+│   │   └── reposts.py    # 09:00 digest of scheduled reposts due today
 │   ├── eventbrite/       # Eventbrite REST API (public API: `from core.eventbrite import ...`)
 │   │   ├── client.py     # eventbrite_enabled, eb_get / eb_post, EventbriteError, paginate
 │   │   ├── payload.py    # Pure builders: start/end, event payload, description modules, ticket_quantity, names, dashboard URLs
+│   │   ├── collections.py # Eventbrite collections: add/remove an event (by event type)
+│   │   ├── venues.py     # get_venue, eventbrite_venue_ids (default + alternatives)
 │   │   ├── events.py     # create/update/get event, publish/unpublish/cancel, structured-content description
 │   │   ├── tickets.py    # Free ticket class create / quantity update / close sales when full
 │   │   ├── media.py      # Three-step logo upload (2:1 padding, browser User-Agent, retries)
@@ -394,7 +399,7 @@ GdG-Event-Bot/
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
-│   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create the venue and collections
+│   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create/update venues, create collections
 │   ├── eventbrite_inspect.py # Read-only Eventbrite check: quantity_sold vs orders/attendees (--watch)
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
 ├── tests/                # unittest/pytest suite mirroring the source tree; shared helpers in tests/support/ (see §3.3)
