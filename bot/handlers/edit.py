@@ -39,7 +39,7 @@ EDIT_COMMAND_FIELDS = {
 }
 
 # Fields shown on the Eventbrite listing: editing one of them re-pushes the event page
-EVENTBRITE_CONTENT_FIELDS = frozenset({"title", "date", "system", "host", "extra_info", "description", "is_roleplay"})
+EVENTBRITE_CONTENT_FIELDS = frozenset({"title", "date", "system", "host", "extra_info", "description", "is_roleplay", "seats"})
 
 ROLEPLAY_TRUE_TOKENS = {"rpg", "gdr", "ruolo", "master", "true", "1", "si", "sì", "yes"}
 ROLEPLAY_FALSE_TOKENS = {"boardgame", "gdt", "tavolo", "host", "false", "0", "no", "non rpg", "non gdr"}

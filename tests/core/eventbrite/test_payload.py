@@ -116,6 +116,11 @@ class TestDescriptionModules(unittest.TestCase):
         self.assertIn("<em>Gilda del Grifone, Via Ada Negri 8/A, Torino</em>", text)
         self.assertIn('<a href="https://t.me/c/1/2">Evento su Telegram</a>', text)
 
+    def test_total_seats_are_listed_but_not_for_unlimited_or_zero(self):
+        self.assertIn("<p><b>Posti totali:</b> 6</p>", self.html(max_seats=6))
+        for max_seats in (None, 0):
+            self.assertNotIn("Posti totali", self.html(max_seats=max_seats))
+
     def test_host_label_follows_roleplay_flag_and_empty_parts_are_skipped(self):
         text = self.html(is_roleplay=0, system="", extra_info="", description="", message_link=None)
         self.assertIn("<b>Host:</b>", text)

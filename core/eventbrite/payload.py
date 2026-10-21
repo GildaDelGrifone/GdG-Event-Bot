@@ -86,6 +86,8 @@ def description_modules(event):
     if (event.get("host") or "").strip():
         label = "Master" if event.get("is_roleplay") in _TRUTHY_ROLEPLAY else "Host"
         parts.append(f"<p><b>{label}:</b> {html.escape(event['host'].strip())}</p>")
+    if event.get("max_seats"):  # unlimited (NULL) and 0/0 have no number worth showing
+        parts.append(f"<p><b>Posti totali:</b> {int(event['max_seats'])}</p>")
     if (event.get("extra_info") or "").strip():
         parts.append("<p><b>Dettagli:</b></p>")
         parts.extend(_paragraphs(event["extra_info"]))

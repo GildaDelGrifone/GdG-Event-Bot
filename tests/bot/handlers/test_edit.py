@@ -425,7 +425,7 @@ class TestEventbriteEdits(OldEventMixin, unittest.IsolatedAsyncioTestCase):
             "/event_edit_system Cthulhu": True, "/event_edit_host Nuovo Host": True,
             "/event_edit_extra Note": True, "/event_edit_extra_add Altre note": True,
             "/event_edit_description Testo": True, "/event_edit_type boardgame": True,
-            "/event_edit_seats 3/4": False, "/event_edit_booked 1": False,
+            "/event_edit_seats 3/4": True, "/event_edit_booked 1": False,
         }
         db.update_event_status(self.event_id, "approved")
         for text, expected in cases.items():
