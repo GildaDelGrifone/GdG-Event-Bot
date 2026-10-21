@@ -215,7 +215,7 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 
 
 ### 7. Event Overview & Bot Control Commands
-- `/event_next`: Public command displaying today's and upcoming events in chronological order, with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
+- `/event_next [date]`: Public command displaying today's and upcoming events in chronological order (or only the events of one day when given `gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato` or `domenica`; a weekday means its next occurrence, today included), with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
 
 In `ADMIN_CHAT_ID` only:

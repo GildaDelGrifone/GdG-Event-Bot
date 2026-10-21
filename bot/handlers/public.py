@@ -1,6 +1,7 @@
 import html
 import logging
 import re
+from datetime import date
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -8,6 +9,7 @@ from telegram.ext import ContextTypes
 from core import config
 from core.db import get_event, get_reservations_for_event, get_upcoming_events
 from utils.templates import format_event_participants_message, format_event_seats
+from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
 from bot.common.auth import describe_user, is_admin_chat
 from bot.common.messages import private_chat_link, reply_in_chunks, resolve_message
 
@@ -51,6 +53,14 @@ def _format_event_next_entry(ev, bot_username):
     )
 
 
+def _day_argument(message):
+    """The date typed after /event_next (or /event_next@bot); "" otherwise, e.g. for the /start event_next deep link."""
+    parts = (message.text or "").split(maxsplit=1)
+    if not parts or parts[0].split("@")[0].lower() != "/event_next":
+        return ""
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
 async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message or not update.effective_chat:
@@ -71,17 +81,33 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     logger.info(f"{describe_user(update.effective_user, role='User')} requested upcoming events (/event_next) in chat {chat_id_str} ({chat_type}).")
 
+    day = None
+    day_text = _day_argument(message)
+    if day_text:
+        day = parse_day_filter(day_text)
+        if day is None:
+            await message.reply_text("❌ Data non valida. Usa /event_next [gg-mm-aaaa | oggi | lunedì | mercoledì | venerdì | sabato | domenica]")
+            return
+        if day < date.today():
+            await message.reply_text("ℹ️ Quella data è già passata.")
+            return
+
     events = get_upcoming_events(include_today=True)
+    if day:
+        events = [ev for ev in events if event_date_tuple(ev) == (day.year, day.month, day.day)]
+    day_label = f"{DAYS_IT[day.weekday()]} {day.strftime('%d-%m-%Y')}" if day else ""
     if not events:
-        await message.reply_text("Nessun evento in programma per oggi o per i prossimi giorni.")
+        await message.reply_text(f"Nessun evento in programma per {day_label}." if day
+                                 else "Nessun evento in programma per oggi o per i prossimi giorni.")
         return
 
     bot_username = getattr(getattr(context, 'bot', None), 'username', None) or config.TELEGRAM_BOT_USERNAME
+    title = f"Eventi di {day_label}" if day else "Eventi di oggi e prossimi in programma"
     await reply_in_chunks(
         message,
         [_format_event_next_entry(ev, bot_username) for ev in events],
         limit=3800,
-        prefix="📅 <b>Eventi di oggi e prossimi in programma:</b>\n<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>\n\n",
+        prefix=f"📅 <b>{title}:</b>\n<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>\n\n",
         parse_mode="HTML",
         disable_web_page_preview=True,
     )

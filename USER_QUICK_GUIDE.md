@@ -87,7 +87,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 - `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa) e la modalità solo Eventbrite.
 - `/bot_eventbrite_venue`: Se sono configurate più sedi Eventbrite, mostra i pulsanti per sceglierne una: vale per tutti gli eventi pubblicati su Eventbrite da quel momento (ogni evento mantiene la propria). Riavviando il bot si torna alla sede predefinita.
 - `/bot_eventbrite_only_toggle`: Attiva/disattiva la modalità solo Eventbrite: le nuove anteprime non hanno i pulsanti per pubblicare solo su Telegram e la storia Instagram non viene generata.
-- `/event_next`: Mostra la lista di tutti gli eventi di oggi e futuri in ordine cronologico con data e link rapidi. Questo comando è **accessibile anche pubblicamente agli utenti** sia in chat privata col bot che nel gruppo discussione (disattivabile nel gruppo discussione tramite variabile d'ambiente `ALLOW_GROUP_EVENT_NEXT=false` per prevenire spam).
+- `/event_next [data]`: Mostra la lista di tutti gli eventi di oggi e futuri in ordine cronologico con data e link rapidi. Con una data (`gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato`, `domenica`) mostra solo gli eventi di quel giorno; un giorno della settimana indica la prima occorrenza, oggi compreso (es. `/event_next venerdì`). Questo comando è **accessibile anche pubblicamente agli utenti** sia in chat privata col bot che nel gruppo discussione (disattivabile nel gruppo discussione tramite variabile d'ambiente `ALLOW_GROUP_EVENT_NEXT=false` per prevenire spam).
 
 ---
 

@@ -1,7 +1,9 @@
 import unittest
 from datetime import date, datetime
 
-from utils.date_utils import extract_event_datetime, format_standard_event_date, parse_user_date, validate_event_date_anomalies
+from utils.date_utils import (
+    extract_event_datetime, format_standard_event_date, parse_day_filter, parse_user_date, validate_event_date_anomalies,
+)
 
 
 class TestDateUtils(unittest.TestCase):
@@ -119,6 +121,28 @@ class TestExtractEventDatetime(unittest.TestCase):
         self.assertEqual(extract_event_datetime(event, default_time="19:00"), datetime(2026, 9, 4, 19, 0))
         self.assertEqual(extract_event_datetime(event, default_time="bogus"), datetime(2026, 9, 4, 20, 45))
         self.assertIsNone(extract_event_datetime({"date": "da definire", "normalized_date": ""}))
+
+
+class TestParseDayFilter(unittest.TestCase):
+    MONDAY = date(2026, 10, 19)
+
+    def test_calendar_dates_and_today(self):
+        for text in ("06-11-2026", "6/11/2026", " 06-11-2026 "):
+            self.assertEqual(parse_day_filter(text, self.MONDAY), date(2026, 11, 6))
+        for text in ("oggi", "OGGI", "today"):
+            self.assertEqual(parse_day_filter(text, self.MONDAY), self.MONDAY)
+
+    def test_weekdays_are_the_next_such_day_counting_today(self):
+        cases = {"lunedi": date(2026, 10, 19), "lunedì": date(2026, 10, 19), "Mercoledi": date(2026, 10, 21),
+                 "venerdì": date(2026, 10, 23), "sabato": date(2026, 10, 24), "domenica": date(2026, 10, 25)}
+        for text, expected in cases.items():
+            self.assertEqual(parse_day_filter(text, self.MONDAY), expected, text)
+        self.assertEqual(parse_day_filter("martedi", self.MONDAY), date(2026, 10, 20))
+        self.assertEqual(parse_day_filter("lunedi", date(2026, 10, 20)), date(2026, 10, 26))
+
+    def test_anything_else_is_not_a_day(self):
+        for text in ("", None, "boh", "31-02-2026", "06-11-2026 21:00", "2026-11-06", "6-11"):
+            self.assertIsNone(parse_day_filter(text, self.MONDAY), text)
 
 
 if __name__ == "__main__":

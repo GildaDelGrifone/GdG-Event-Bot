@@ -1,10 +1,11 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import core.db as db
 from bot.handlers.public import event_next_command, event_subs_command, start_command
 from tests.support.config import patched_config
+from utils.date_utils import DAYS_IT
 from tests.support.db import TempDBMixin, create_deep_link_event, create_event
 from tests.support.telegram import make_context, make_update
 
@@ -13,8 +14,8 @@ DISCUSSION_GROUP = "-100888888"
 
 
 class TestEventNextCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
-    async def _event_next(self, chat_id, chat_type="group", **config_values):
-        update = make_update(chat_id=chat_id, chat_type=chat_type)
+    async def _event_next(self, chat_id, chat_type="group", text=None, **config_values):
+        update = make_update(chat_id=chat_id, chat_type=chat_type, text=text)
         with patched_config(ADMIN_CHAT_ID=ADMIN_CHAT, **config_values):
             await event_next_command(update, make_context(bot_username="GdG_Event_bot"))
         return update.message.reply_text
@@ -64,6 +65,63 @@ class TestEventNextCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(f'(/event_subs {ev_today_id})', text)
         self.assertIn('👥 Iscritti</a> (Nessun limite)', text)
         self.assertIn(f'start=subs_{ev_today_id}', text)
+
+    def _two_days(self):
+        today = datetime.now()
+        later = today + timedelta(days=3)
+        for title, day, status in (("Serata Oggi", today, "approved"), ("Serata In Attesa", today, "pending"),
+                                   ("Serata Dopo", later, "approved")):
+            create_event(status=status, title=title, date=day.strftime("%d-%m-%Y"), normalized_date=day.strftime("%d-%m-%Y"))
+        return today, later
+
+    async def test_event_next_with_a_date_lists_only_that_day(self):
+        today, later = self._two_days()
+
+        reply_text = await self._event_next(ADMIN_CHAT, text=f"/event_next {later.strftime('%d-%m-%Y')}")
+
+        text = reply_text.call_args[0][0]
+        self.assertIn("Serata Dopo", text)
+        self.assertNotIn("Serata Oggi", text)
+        self.assertIn(f"Eventi di {DAYS_IT[later.weekday()]} {later.strftime('%d-%m-%Y')}", text)
+
+    async def test_event_next_oggi_lists_approved_and_pending_events_of_today(self):
+        self._two_days()
+
+        reply_text = await self._event_next(ADMIN_CHAT, text="/event_next@GdG_Event_bot oggi")
+
+        text = reply_text.call_args[0][0]
+        self.assertIn("Serata Oggi", text)
+        self.assertIn("Serata In Attesa", text)
+        self.assertNotIn("Serata Dopo", text)
+
+    async def test_event_next_with_a_weekday_name(self):
+        today, _ = self._two_days()
+
+        reply_text = await self._event_next(ADMIN_CHAT, text=f"/event_next {DAYS_IT[today.weekday()].lower()}")
+
+        self.assertIn("Serata Oggi", reply_text.call_args[0][0])
+
+    async def test_event_next_without_a_date_still_lists_everything(self):
+        self._two_days()
+
+        for text in ("/event_next", "/start event_next", None):
+            reply_text = await self._event_next(ADMIN_CHAT, text=text)
+            body = reply_text.call_args[0][0]
+            self.assertIn("Serata Oggi", body)
+            self.assertIn("Serata Dopo", body)
+            self.assertIn("Eventi di oggi e prossimi in programma", body)
+
+    async def test_event_next_empty_day_invalid_and_past_dates(self):
+        self._two_days()
+        far = (datetime.now() + timedelta(days=40)).strftime("%d-%m-%Y")
+
+        empty = await self._event_next(ADMIN_CHAT, text=f"/event_next {far}")
+        self.assertIn(f"Nessun evento in programma per", empty.call_args[0][0])
+        self.assertIn(far, empty.call_args[0][0])
+        invalid = await self._event_next(ADMIN_CHAT, text="/event_next boh")
+        self.assertIn("Data non valida", invalid.call_args[0][0])
+        past = await self._event_next(ADMIN_CHAT, text="/event_next 01-01-2020")
+        self.assertIn("già passata", past.call_args[0][0])
 
     async def test_event_next_command_public_private_chat_allowed(self):
         reply_text = await self._event_next(55555, "private", DISCUSSION_GROUP_ID=DISCUSSION_GROUP)

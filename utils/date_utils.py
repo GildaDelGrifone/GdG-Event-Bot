@@ -100,6 +100,23 @@ def parse_user_date(date_str: str, reference_date: date | datetime | None = None
     except ValueError:
         return None
 
+def parse_day_filter(text: str, today: date | None = None) -> date | None:
+    """A day asked for by a user, or None when the text is not one.
+
+    Accepts DD-MM-YYYY / DD/MM/YYYY, "oggi" and weekday names (the next such day, counting today: asking for
+    "lunedì" on a Monday means tonight, unlike parse_user_date which jumps a week ahead). No time part."""
+    s = (text or "").strip().lower()
+    if not s:
+        return None
+    today = today or date.today()
+    if s in KEYWORD_WEEKDAYS:
+        return today + timedelta(days=(KEYWORD_WEEKDAYS[s] - today.weekday()) % 7)
+    if s in ("oggi", "today"):
+        return today
+    parsed = parse_user_date(s) if re.fullmatch(r"\d{1,2}[-/]\d{1,2}[-/]\d{4}", s) else None
+    return parsed[0].date() if parsed else None
+
+
 def format_standard_event_date(dt: datetime, has_time: bool) -> tuple[str, str]:
     """
     Given a datetime and has_time flag:
