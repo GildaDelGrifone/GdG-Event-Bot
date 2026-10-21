@@ -171,6 +171,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 Ciao! Sono il bot per la gestione degli eventi della Gilda del Grifone.\n\n"
         "Puoi visualizzare le proposte e gestire le prenotazioni direttamente dai pulsanti interattivi sul canale e nel gruppo di discussione!\n\n"
         "Inoltre puoi visualizzare facilmente gli eventi in programma e i partecipanti con i seguenti comandi:\n"
-        "/event_next - Visualizza gli eventi in programma\n"
+        "/event_next [data] - Visualizza gli eventi in programma, o solo quelli di un giorno (gg-mm-aaaa, oggi, lunedì, mercoledì, venerdì, sabato, domenica)\n"
         "/event_subs <id> - Visualizza i partecipanti a un evento specifico\n"
     )

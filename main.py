@@ -59,7 +59,7 @@ async def post_init(application: Application):
     # Default commands for users in private chats / groups
     default_commands = [
         BotCommand("start", "Avvia il bot e visualizza info o iscritti"),
-        BotCommand("event_next", "Mostra gli eventi di oggi e futuri (o di una data)"),
+        BotCommand("event_next", "[gg-mm-aaaa|oggi|lunedì…] Mostra gli eventi in programma, o solo quelli di un giorno"),
         BotCommand("event_subs", "<id> Mostra gli iscritti di un evento"),
     ]
 
