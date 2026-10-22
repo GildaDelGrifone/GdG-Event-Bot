@@ -8,7 +8,11 @@ from telegram.ext import ContextTypes
 
 from core import config
 from core.db import get_event, get_reservations_for_event, get_upcoming_events
-from utils.templates import format_event_participants_message, format_event_seats
+from utils.templates import (
+    EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE, EVENT_NEXT_PENDING_SUFFIX,
+    EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID, START_WELCOME, format_event_next_entry,
+    format_event_next_none_for_day, format_event_next_prefix, format_event_participants_message, format_event_seats,
+)
 from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
 from bot.common.auth import describe_user, is_admin_chat
 from bot.common.messages import private_chat_link, reply_in_chunks, resolve_message
@@ -23,9 +27,9 @@ def _format_event_next_entry(ev, bot_username):
 
     status_suffix = ""
     if ev.get('status') == 'pending':
-        status_suffix = " <i>[In attesa di approvazione]</i>"
+        status_suffix = EVENT_NEXT_PENDING_SUFFIX
     elif ev.get('status') == 'cancelled':
-        status_suffix = " ❌ <i>[ANNULLATO]</i>"
+        status_suffix = EVENT_NEXT_CANCELLED_SUFFIX
 
     links = []
     if ev.get('admin_message_id'):
@@ -46,11 +50,7 @@ def _format_event_next_entry(ev, bot_username):
     else:
         links.append(f'👥 Iscritti ({seats_str})')
 
-    return (
-        f"• <b>{escaped_title}</b> (ID {ev_id}){status_suffix}\n"
-        f"  🗓️ Data: {escaped_date}\n"
-        f"  🔗 {' | '.join(links)}\n"
-    )
+    return format_event_next_entry(ev_id, escaped_title, status_suffix, escaped_date, links)
 
 
 def _day_argument(message):
@@ -86,10 +86,10 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if day_text:
         day = parse_day_filter(day_text)
         if day is None:
-            await message.reply_text("❌ Data non valida. Usa /event_next [gg-mm-aaaa | oggi | lunedì | mercoledì | venerdì | sabato | domenica]")
+            await message.reply_text(EVENT_NEXT_INVALID_DATE)
             return
         if day < date.today():
-            await message.reply_text("ℹ️ Quella data è già passata.")
+            await message.reply_text(EVENT_NEXT_DATE_PAST)
             return
 
     events = get_upcoming_events(include_today=True)
@@ -97,17 +97,15 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         events = [ev for ev in events if event_date_tuple(ev) == (day.year, day.month, day.day)]
     day_label = f"{DAYS_IT[day.weekday()]} {day.strftime('%d-%m-%Y')}" if day else ""
     if not events:
-        await message.reply_text(f"Nessun evento in programma per {day_label}." if day
-                                 else "Nessun evento in programma per oggi o per i prossimi giorni.")
+        await message.reply_text(format_event_next_none_for_day(day_label) if day else EVENT_NEXT_NONE)
         return
 
     bot_username = getattr(getattr(context, 'bot', None), 'username', None) or config.TELEGRAM_BOT_USERNAME
-    title = f"Eventi di {day_label}" if day else "Eventi di oggi e prossimi in programma"
     await reply_in_chunks(
         message,
         [_format_event_next_entry(ev, bot_username) for ev in events],
         limit=3800,
-        prefix=f"📅 <b>{title}:</b>\n<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>\n\n",
+        prefix=format_event_next_prefix(day_label),
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -116,7 +114,7 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def _reply_with_participants(message, event_id):
     event = get_event(event_id)
     if not event:
-        await message.reply_text("❌ Evento non trovato o già rimosso.")
+        await message.reply_text(EVENT_REMOVED)
         return
     text = format_event_participants_message(event, get_reservations_for_event(event_id))
     await message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
@@ -137,13 +135,13 @@ async def event_subs_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             event_id_str = m.group(1)
 
     if not event_id_str:
-        await message.reply_text("❌ Specifica l'ID dell'evento (es. /event_subs 123 o /subs 123).")
+        await message.reply_text(EVENT_SUBS_USAGE)
         return
 
     try:
         event_id = int(event_id_str)
     except ValueError:
-        await message.reply_text("❌ ID evento non valido. Deve essere un numero intero.")
+        await message.reply_text(EVENT_SUBS_INVALID_ID)
         return
 
     await _reply_with_participants(message, event_id)
@@ -162,15 +160,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             event_id = int(arg.split("_")[1])
         except (IndexError, ValueError):
-            await message.reply_text("❌ ID evento non valido.")
+            await message.reply_text(START_INVALID_ID)
             return
         await _reply_with_participants(message, event_id)
         return
 
-    await message.reply_text(
-        "👋 Ciao! Sono il bot per la gestione degli eventi della Gilda del Grifone.\n\n"
-        "Puoi visualizzare le proposte e gestire le prenotazioni direttamente dai pulsanti interattivi sul canale e nel gruppo di discussione!\n\n"
-        "Inoltre puoi visualizzare facilmente gli eventi in programma e i partecipanti con i seguenti comandi:\n"
-        "/event_next [data] - Visualizza gli eventi in programma, o solo quelli di un giorno (gg-mm-aaaa, oggi, lunedì, mercoledì, venerdì, sabato, domenica)\n"
-        "/event_subs <id> - Visualizza i partecipanti a un evento specifico\n"
-    )
+    await message.reply_text(START_WELCOME)

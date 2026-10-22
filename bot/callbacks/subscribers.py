@@ -3,7 +3,9 @@ import logging
 from telegram import ForceReply
 
 from core.db import get_event, get_reservations_for_event, get_reservation, admin_add_seat, admin_remove_seat
-from utils.templates import format_event_title_link, format_reservation_subscriber_display
+from utils.templates import (
+    POPUP_CLOSED, POPUP_EVENT_NOT_FOUND, SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel,
+)
 from bot.common.auth import describe_user
 from bot.keyboards import get_subscribers_management_keyboard
 from bot.service.notices import send_admin_action_notice
@@ -11,38 +13,11 @@ from bot.service.posts import update_event_messages
 
 logger = logging.getLogger(__name__)
 
-PANEL_TITLE = "Gestione Iscritti"
+PANEL_TITLE = SUBSCRIBERS_PANEL_TITLE
 
 
 def format_subscribers_management_view(event, reservations):
-    booked = int(event.get('booked_seats', 0) or 0)
-    max_s = event.get('max_seats')
-    max_str = str(max_s) if max_s is not None else "Nessun limite"
-
-    text = (
-        f"👥 <b>{PANEL_TITLE}</b>\n"
-        f"📌 {format_event_title_link(event)}\n"
-        f"🪑 Posti occupati: <b>{booked}/{max_str}</b>\n\n"
-    )
-
-    if not reservations:
-        text += "<i>Nessun utente iscritto al momento.</i>\n"
-    else:
-        text += "<b>Iscritti:</b>\n"
-        for i, res in enumerate(reservations, 1):
-            seats = res.get('seats_booked', 1)
-            posti_str = "posto" if seats == 1 else "posti"
-            text += f"{i}. <b>{format_reservation_subscriber_display(res, as_html=True)}</b> — {seats} {posti_str}\n"
-
-    if any(res.get('source') == 'eventbrite' for res in reservations):
-        text += "\n🎟️ = prenotazione Eventbrite (gestisci dalla dashboard)\n"
-
-    text += (
-        f"\n<i>Modifica con i tasti sotto oppure invia:</i>\n"
-        f"<code>/event_sub_add {event['id']} @username [posti]</code>\n"
-        f"<code>/event_sub_remove {event['id']} @username [posti]</code>"
-    )
-    return text
+    return format_subscribers_panel(event, reservations)
 
 
 def _render_panel(event_id, event):
@@ -56,7 +31,7 @@ async def handle_manage_subs(query, context, payload):
     logger.info(f"{describe_user(query.from_user)} opened subscribers management panel for event #{event_id}.")
     event = get_event(event_id)
     if not event:
-        await query.answer("Evento non trovato.", show_alert=True)
+        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
         return
 
     text, keyboard = _render_panel(event_id, event)
@@ -127,17 +102,17 @@ async def handle_add_subscriber_prompt(query, context, payload):
     await query.answer()
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} opened add-subscriber prompt for event #{event_id}.")
-    # bot.handlers.subscribers.handle_admin_reply matches replies on this exact wording
+    # bot.handlers.subscribers.handle_admin_reply matches replies on ADD_SUBSCRIBER_PROMPT_MARKER (inside this prompt)
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text=f"✏️ Invia l'username Telegram, rispondendo a questo messaggio, da aggiungere all'evento #{event_id} (es. <code>@mario</code> oppure <code>@mario 2</code>):\nOppure usa: <code>/event_sub_add {event_id} @username [posti]</code>",
+        text=format_add_subscriber_prompt(event_id),
         reply_markup=ForceReply(selective=True),
         parse_mode="HTML",
     )
 
 
 async def handle_close_panel(query, context, payload):
-    await query.answer("Chiuso.")
+    await query.answer(POPUP_CLOSED)
     logger.info(f"{describe_user(query.from_user)} closed subscribers management panel.")
     try:
         await query.message.delete()

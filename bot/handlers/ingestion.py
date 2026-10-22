@@ -10,6 +10,7 @@ from bot.common.messages import command_argument, resolve_message
 from bot.handlers.albums import buffer_media_group_message, get_media_group_data_from_cache
 from bot.handlers.extraction import handle_event_extraction
 from bot.state import runtime_state
+from utils.templates import PROCESS_NO_TEXT, PROCESS_NO_TEXT_IN_REPLY, PROCESSED_REPLY, PROCESSED_TEXT
 
 logger = logging.getLogger(__name__)
 
@@ -100,11 +101,11 @@ async def manual_trigger_command(update: Update, context: ContextTypes.DEFAULT_T
 
     if not text:
         if is_reply:
-            await message.reply_text("Nessun testo trovato nel messaggio o nel comando. Includi il testo o invia una didascalia.")
+            await message.reply_text(PROCESS_NO_TEXT_IN_REPLY)
         else:
-            await message.reply_text("Rispondi a un messaggio o fornisci il testo.")
+            await message.reply_text(PROCESS_NO_TEXT)
         return
 
     success = await handle_event_extraction(text, image_bytes, context, target_msg.link, target_msg.message_id, is_manual_trigger=True)
     if success:
-        await message.reply_text("Processato il messaggio risposto." if is_reply else "Processato il testo inviato.")
+        await message.reply_text(PROCESSED_REPLY if is_reply else PROCESSED_TEXT)

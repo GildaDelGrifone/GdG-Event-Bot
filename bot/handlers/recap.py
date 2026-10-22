@@ -7,7 +7,7 @@ from core import config
 from core.db import get_event, get_event_by_telegram_message_id, update_discussion_message_info
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
-from utils.templates import format_discussion_booking_message, recap_links_text
+from utils.templates import RECAP_INVALID_DATE, format_discussion_booking_message, format_recap_done, recap_links_text
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
@@ -25,17 +25,14 @@ async def manual_recap_command(update: Update, context: ContextTypes.DEFAULT_TYP
         parsed = parse_user_date(args[0])
         if not parsed:
             if update.message:
-                await update.message.reply_text(
-                    "❌ Formato data non valido.\n"
-                    "Usa il formato DD-MM-YYYY (es. /recap_generate 05-09-2026)."
-                )
+                await update.message.reply_text(RECAP_INVALID_DATE)
             return
         date_str = parsed[0].strftime("%d-%m-%Y")
 
     reply_id = update.message.message_id if update.message else None
     success = await generate_daily_recap(context.bot, date_str, is_manual=True, reply_to_message_id=reply_id)
     if success:
-        done_text = f"Recap generato per la data: {date_str or 'Oggi'}"
+        done_text = format_recap_done(date_str)
         if update.message:
             await update.message.reply_text(done_text)
         else:

@@ -501,3 +501,127 @@ def format_channel_publish_error(event_id, error):
 
 def format_approved_without_telegram(event_id):
     return f"🔇 Evento #{event_id} approvato senza pubblicazione su Telegram."
+
+
+# ---------------------------------------------------------------------------
+# /event_process, /event_next, /event_subs, /start
+# ---------------------------------------------------------------------------
+PROCESS_NO_TEXT_IN_REPLY = "Nessun testo trovato nel messaggio o nel comando. Includi il testo o invia una didascalia."
+PROCESS_NO_TEXT = "Rispondi a un messaggio o fornisci il testo."
+PROCESSED_REPLY = "Processato il messaggio risposto."
+PROCESSED_TEXT = "Processato il testo inviato."
+EVENT_NEXT_INVALID_DATE = "❌ Data non valida. Usa /event_next [gg-mm-aaaa | oggi | lunedì | mercoledì | venerdì | sabato | domenica]"
+EVENT_NEXT_DATE_PAST = "ℹ️ Quella data è già passata."
+EVENT_NEXT_NONE = "Nessun evento in programma per oggi o per i prossimi giorni."
+EVENT_NEXT_PENDING_SUFFIX = " <i>[In attesa di approvazione]</i>"
+EVENT_NEXT_CANCELLED_SUFFIX = " ❌ <i>[ANNULLATO]</i>"
+EVENT_NEXT_TITLE_DEFAULT = "Eventi di oggi e prossimi in programma"
+EVENT_NEXT_HINT = "<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>"
+EVENT_SUBS_USAGE = "❌ Specifica l'ID dell'evento (es. /event_subs 123 o /subs 123)."
+EVENT_SUBS_INVALID_ID = "❌ ID evento non valido. Deve essere un numero intero."
+EVENT_REMOVED = "❌ Evento non trovato o già rimosso."
+START_INVALID_ID = "❌ ID evento non valido."
+START_WELCOME = (
+    "👋 Ciao! Sono il bot per la gestione degli eventi della Gilda del Grifone.\n\n"
+    "Puoi visualizzare le proposte e gestire le prenotazioni direttamente dai pulsanti interattivi sul canale e nel gruppo di discussione!\n\n"
+    "Inoltre puoi visualizzare facilmente gli eventi in programma e i partecipanti con i seguenti comandi:\n"
+    "/event_next [data] - Visualizza gli eventi in programma, o solo quelli di un giorno (gg-mm-aaaa, oggi, lunedì, mercoledì, venerdì, sabato, domenica)\n"
+    "/event_subs <id> - Visualizza i partecipanti a un evento specifico\n"
+)
+
+
+def format_event_next_none_for_day(day_label):
+    return f"Nessun evento in programma per {day_label}."
+
+
+def format_event_next_prefix(day_label=""):
+    title = f"Eventi di {day_label}" if day_label else EVENT_NEXT_TITLE_DEFAULT
+    return f"📅 <b>{title}:</b>\n{EVENT_NEXT_HINT}\n\n"
+
+
+def format_event_next_entry(event_id, escaped_title, status_suffix, escaped_date, links):
+    return (
+        f"• <b>{escaped_title}</b> (ID {event_id}){status_suffix}\n"
+        f"  🗓️ Data: {escaped_date}\n"
+        f"  🔗 {' | '.join(links)}\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# /recap_generate
+# ---------------------------------------------------------------------------
+RECAP_INVALID_DATE = "❌ Formato data non valido.\nUsa il formato DD-MM-YYYY (es. /recap_generate 05-09-2026)."
+
+
+def format_recap_done(date_str):
+    return f"Recap generato per la data: {date_str or 'Oggi'}"
+
+
+# ---------------------------------------------------------------------------
+# Subscribers (/event_sub_add, /event_sub_remove, management panel)
+# ---------------------------------------------------------------------------
+# The add prompt is matched by bot.handlers.subscribers.handle_admin_reply: keep the marker inside the prompt text
+ADD_SUBSCRIBER_PROMPT_MARKER = "Invia l'username Telegram, rispondendo a questo messaggio, da aggiungere all'evento #"
+SUBSCRIBERS_PANEL_TITLE = "Gestione Iscritti"
+SUBSCRIBERS_PANEL_EMPTY = "<i>Nessun utente iscritto al momento.</i>\n"
+SUBSCRIBERS_PANEL_LIST_HEADER = "<b>Iscritti:</b>\n"
+SUBSCRIBERS_PANEL_EVENTBRITE_LEGEND = "\n🎟️ = prenotazione Eventbrite (gestisci dalla dashboard)\n"
+SUBSCRIBER_EVENT_ID_NOT_INT = "L'ID evento deve essere un numero intero."
+SUBSCRIBER_SEATS_NOT_INT = "I posti devono essere un numero intero."
+
+
+def format_subscriber_usage_reply(command):
+    return f"Uso in risposta a un evento: <code>{command} @username [posti]</code>"
+
+
+def format_subscriber_usage(command):
+    return (
+        f"Uso: <code>{command} &lt;event_id&gt; @username [posti]</code>\n"
+        f"Oppure rispondi a un evento con: <code>{command} @username [posti]</code>"
+    )
+
+
+def format_admin_failure(message):
+    return f"❌ {message}"
+
+
+def format_admin_success(message):
+    return f"✅ {message}"
+
+
+def format_subscribers_panel(event, reservations):
+    booked = int(event.get('booked_seats', 0) or 0)
+    max_s = event.get('max_seats')
+    max_str = str(max_s) if max_s is not None else "Nessun limite"
+
+    text = (
+        f"👥 <b>{SUBSCRIBERS_PANEL_TITLE}</b>\n"
+        f"📌 {format_event_title_link(event)}\n"
+        f"🪑 Posti occupati: <b>{booked}/{max_str}</b>\n\n"
+    )
+
+    if not reservations:
+        text += SUBSCRIBERS_PANEL_EMPTY
+    else:
+        text += SUBSCRIBERS_PANEL_LIST_HEADER
+        for i, res in enumerate(reservations, 1):
+            seats = res.get('seats_booked', 1)
+            posti_str = "posto" if seats == 1 else "posti"
+            text += f"{i}. <b>{format_reservation_subscriber_display(res, as_html=True)}</b> — {seats} {posti_str}\n"
+
+    if any(res.get('source') == 'eventbrite' for res in reservations):
+        text += SUBSCRIBERS_PANEL_EVENTBRITE_LEGEND
+
+    text += (
+        f"\n<i>Modifica con i tasti sotto oppure invia:</i>\n"
+        f"<code>/event_sub_add {event['id']} @username [posti]</code>\n"
+        f"<code>/event_sub_remove {event['id']} @username [posti]</code>"
+    )
+    return text
+
+
+def format_add_subscriber_prompt(event_id):
+    return (
+        f"✏️ {ADD_SUBSCRIBER_PROMPT_MARKER}{event_id} (es. <code>@mario</code> oppure <code>@mario 2</code>):\n"
+        f"Oppure usa: <code>/event_sub_add {event_id} @username [posti]</code>"
+    )
