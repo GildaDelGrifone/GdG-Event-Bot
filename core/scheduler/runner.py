@@ -1,5 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from core import config
 from core.scheduler.archive import archive_completed_month_logs, archive_today_images
 from core.scheduler.recap import generate_daily_recap
 from core.scheduler.reposts import send_daily_scheduled_reposts
@@ -10,10 +11,10 @@ _scheduler = None
 def start_scheduler(bot):
     global _scheduler
     _scheduler = AsyncIOScheduler()
-    _scheduler.add_job(send_daily_scheduled_reposts, 'cron', hour=9, minute=0, args=[bot])
-    _scheduler.add_job(generate_daily_recap, 'cron', hour=16, minute=0, args=[bot])
-    _scheduler.add_job(archive_today_images, 'cron', hour=23, minute=59, args=[bot])
-    _scheduler.add_job(archive_completed_month_logs, 'cron', hour=0, minute=5)
+    _scheduler.add_job(send_daily_scheduled_reposts, 'cron', hour=config.REPOSTS_TIME[0], minute=config.REPOSTS_TIME[1], args=[bot])
+    _scheduler.add_job(generate_daily_recap, 'cron', hour=config.RECAP_TIME[0], minute=config.RECAP_TIME[1], args=[bot])
+    _scheduler.add_job(archive_today_images, 'cron', hour=config.ARCHIVE_IMAGES_TIME[0], minute=config.ARCHIVE_IMAGES_TIME[1], args=[bot])
+    _scheduler.add_job(archive_completed_month_logs, 'cron', hour=config.ARCHIVE_LOGS_TIME[0], minute=config.ARCHIVE_LOGS_TIME[1])
     _scheduler.start()
 
 

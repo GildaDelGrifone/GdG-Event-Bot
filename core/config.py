@@ -64,6 +64,25 @@ def _env_log_level(name, default="INFO"):
 
 LOG_LEVEL = _env_log_level("LOG_LEVEL")
 
+
+def _env_time(name, default):
+    """An (hour, minute) tuple from an HH:MM environment value; a typo falls back to the default instead of stopping the bot."""
+    for value in (os.getenv(name, default), default):
+        try:
+            hour, minute = (int(part) for part in value.strip().split(":"))
+        except ValueError:
+            continue
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    raise ValueError(f"Invalid default time for {name}: {default}")
+
+
+REPOSTS_TIME = _env_time("REPOSTS_TIME", "09:00")
+RECAP_TIME = _env_time("RECAP_TIME", "16:00")
+ARCHIVE_IMAGES_TIME = _env_time("ARCHIVE_IMAGES_TIME", "23:59")
+ARCHIVE_LOGS_TIME = _env_time("ARCHIVE_LOGS_TIME", "00:05")
+EVENTBRITE_CLEANUP_TIME = _env_time("EVENTBRITE_CLEANUP_TIME", "23:59")
+
 MAX_EVENTS_PER_ROW = int(os.getenv("MAX_EVENTS_PER_ROW", "0"))
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))

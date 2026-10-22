@@ -555,6 +555,7 @@ GdG-Event-Bot/
 | `IG_ACCOUNT_ID` | Instagram Business Account Numeric ID | `178414...` |
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
 | `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
+| `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages | `4` |
 | `ALLOW_GROUP_EVENT_NEXT` | (Optional) Enable/disable `/event_next` in discussion group (`true`/`false`) | `true` |
 | `EVENTBRITE_TOKEN` | (Optional) Eventbrite private OAuth token | `ABC...` |

@@ -131,6 +131,13 @@ IG_ACCOUNT_ID=178414...
 # Logging (Optional): DEBUG, INFO (default), WARNING, ERROR or CRITICAL. DEBUG also shows the Eventbrite poller job lines.
 # LOG_LEVEL=INFO
 
+# Scheduled job times (Optional): 24h HH:MM, local time; an invalid value falls back to the default
+# REPOSTS_TIME=09:00               # digest of the scheduled reposts due today
+# RECAP_TIME=16:00                 # daily recap card (gaming days only)
+# ARCHIVE_IMAGES_TIME=23:59        # image archiving + booking shutdown
+# ARCHIVE_LOGS_TIME=00:05          # monthly log zip check
+# EVENTBRITE_CLEANUP_TIME=23:59    # delete cancelled events from Eventbrite
+
 # Collage Configuration (Optional)
 MAX_EVENTS_PER_ROW=4
 ```

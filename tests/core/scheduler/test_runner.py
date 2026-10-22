@@ -28,6 +28,20 @@ class TestAddIntervalJob(unittest.TestCase):
             runner.add_interval_job(print, 1)
 
 
+class TestStartScheduler(unittest.TestCase):
+    def test_jobs_use_the_configured_times(self):
+        scheduler = MagicMock()
+        with patch.object(runner, "AsyncIOScheduler", return_value=scheduler), \
+             patch.object(runner.config, "REPOSTS_TIME", (8, 15)), \
+             patch.object(runner.config, "RECAP_TIME", (17, 30)), \
+             patch.object(runner.config, "ARCHIVE_IMAGES_TIME", (22, 0)), \
+             patch.object(runner.config, "ARCHIVE_LOGS_TIME", (1, 5)):
+            runner.start_scheduler("bot")
+        times = [(c.kwargs["hour"], c.kwargs["minute"]) for c in scheduler.add_job.call_args_list]
+        self.assertEqual(times, [(8, 15), (17, 30), (22, 0), (1, 5)])
+        scheduler.start.assert_called_once()
+
+
 class TestAddCronJob(unittest.TestCase):
     def test_registers_a_daily_job_at_the_given_time(self):
         scheduler = MagicMock()

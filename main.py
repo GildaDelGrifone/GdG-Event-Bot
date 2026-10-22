@@ -54,7 +54,7 @@ async def post_init(application: Application):
     start_scheduler(application.bot)
     if eventbrite_enabled():
         add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
-        add_cron_job(delete_cancelled_eventbrite_events, 23, 59, [application.bot])
+        add_cron_job(delete_cancelled_eventbrite_events, *config.EVENTBRITE_CLEANUP_TIME, [application.bot])
 
     # Default commands for users in private chats / groups
     default_commands = [
