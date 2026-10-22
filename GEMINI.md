@@ -32,7 +32,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - Intercepts and parses unstructured event announcements from a Telegram public channel or admin chat using Google Gemini AI.
 - Re-publishes standardized event announcements to the public channel with interactive inline buttons for live seat reservations.
 - Tracks reservations per user and manages seat availability in real time.
-- Compiles daily recap messages and multi-image collages on game days (Mon, Wed, Fri, Sat, Sun).
+- Compiles daily recap messages and multi-image collages on game days (default Mon, Wed, Fri, Sat, Sun; `RECAP_WEEKDAYS`).
 - Generates Instagram Story images (1080x1920) for both individual events and daily recaps using Pillow.
 - Generates engaging recap articles using Gemini AI and drafts/publishes them on WordPress via the WordPress REST API.
 
@@ -194,7 +194,7 @@ When `[Publish Recap]` is clicked:
 2. **Instagram Recap Story:**
    - `utils/image_utils.create_recap_story_image()` builds a 1080x1920 canvas.
    - Collage pinned at top, header `Proposte del [Data]`, bulleted event list with seats, and footer:
-     `Ci vediamo alle 20:45, alla Gilda del Grifone in Via Ada Negri 8/A, Torino!`
+     `Ci vediamo alle {EVENT_START_TIME}, alla {ASSOCIATION_ADDRESS}!` (default: `Ci vediamo alle 20:45, alla Gilda del Grifone, Via Ada Negri 8/A, Torino!`)
    - Sent to `ADMIN_CHAT_ID` for review.
 3. **WordPress Article Generation (`core/wordpress/` & `core/ai_parser.py`):**
    - Uploads each individual event image to WordPress Media Library (style set to max 400x400px).
@@ -424,9 +424,9 @@ GdG-Event-Bot/
 - **Configuration is read at call time** through `from core import config` / `config.ADMIN_CHAT_ID` (also `PUBLIC_CHANNEL_ID`, `DISCUSSION_GROUP_ID`, `ALLOW_GROUP_EVENT_NEXT`, `DATA_DIR`, `TELEGRAM_BOT_USERNAME`). Tests patch these once at `core.config.*` (see §3.2). Patch functions where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `bot.callbacks.events.update_event_messages`.
 - **`bot/common/`:**
   - `auth.py`: `@admin_only()` / `@admin_only(notify=True)` restricts a handler to `ADMIN_CHAT_ID` (`notify=True` replies `Non sei autorizzato.` to outsiders). Also `is_admin_chat`, and `describe_user(user, role="Admin")` for the `Admin <id> (@username)` identifier in audit logs. Do not hand-write chat-ID checks in new admin commands.
-  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT`, `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
+  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
   - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`.
-  - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`.
+  - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`; `resolve_event_id(message)` combines it with a numeric command argument (`/cmd <id>`).
   - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap WordPress generation and `/event_generate`.
 - **`bot/state.py`:** `runtime_state` (`BotRuntimeState`) holds the pause flag (`is_paused`) and the last published recap (`last_recap_message_id`, `last_recap_events`). `bot/callbacks/recap.py` records a published recap via `remember_published_recap(message_id, events)`; `bot/handlers/recap.py` reads it when the recap is auto-forwarded into the discussion group.
 - **`bot/handlers/`:**
@@ -544,7 +544,7 @@ GdG-Event-Bot/
 
 | Variable | Description | Example / Format |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | Token provided by `@BotFather` | `123456789:ABCdef...` |
+| `TELEGRAM_BOT_TOKEN` | Token provided by `@BotFather`. Required: without it (or `ADMIN_CHAT_ID`) `main.py` logs the missing names (`core.config.missing_required_settings`) and exits | `123456789:ABCdef...` |
 | `PUBLIC_CHANNEL_ID` | Telegram Channel ID | `-1001234567890` |
 | `ADMIN_CHAT_ID` | Admin User ID or Admin Group ID | `123456789` or `-100...` |
 | `GEMINI_API_KEY` | Google AI Studio API Key | `AIzaSy...` |
@@ -559,7 +559,10 @@ GdG-Event-Bot/
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
 | `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
 | `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
-| `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages | `4` |
+| `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
+| `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
+| `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the WordPress article prompt | `@Destard,@ManueleAbi` |
+| `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages. Numeric settings (this and the `EVENTBRITE_*` numbers) fall back to their default on a typo (`_env_int` / `_env_float`) | `4` |
 | `ALLOW_GROUP_EVENT_NEXT` | (Optional) Enable/disable `/event_next` in discussion group (`true`/`false`) | `true` |
 | `EVENTBRITE_TOKEN` | (Optional) Eventbrite private OAuth token | `ABC...` |
 | `EVENTBRITE_ORGANIZATION_ID` | (Optional) Eventbrite organization ID (`scripts/eventbrite_setup.py --orgs`) | `1234567890` |
@@ -568,7 +571,7 @@ GdG-Event-Bot/
 | `EVENTBRITE_TIMEZONE` | (Optional) Time zone of event dates | `Europe/Rome` |
 | `EVENTBRITE_CURRENCY` | (Optional) Currency of the (free) tickets | `EUR` |
 | `EVENTBRITE_LISTED` | (Optional) `false` = unlisted events (useful for testing) | `true` |
-| `EVENTBRITE_DEFAULT_START_TIME` | (Optional) Start time when the event date has no time | `20:45` |
+| `EVENTBRITE_DEFAULT_START_TIME` | (Optional) Start time when the event date has no time (default: `EVENT_START_TIME`) | `20:45` |
 | `EVENTBRITE_EVENT_DURATION_HOURS` | (Optional) Event length used for the end time | `4` |
 | `EVENTBRITE_UNLIMITED_CAPACITY` | (Optional) Eventbrite capacity for events with unlimited seats (Telegram stays unlimited) | `50` |
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
@@ -586,9 +589,9 @@ Every user-facing Telegram text lives in the `utils/templates/` package, one mod
 
 | Module | What it holds |
 |---|---|
-| `common.py` | `format_event_title_link` (escaped, bold, linked to the channel post), `ASSOCIATION_ADDRESS`, `EVENTBRITE_ROW_PREFIX`, generic replies and popups (`UNAUTHORIZED_REPLY`, `POPUP_EVENT_NOT_FOUND`, `POPUP_CLOSED`, `NO_TEXT_IN_REPLIED_MESSAGE`), `format_seats_count`, `format_admin_failure/success` |
+| `common.py` | `format_event_title_link` (escaped, bold, linked to the channel post), `ASSOCIATION_ADDRESS`, `CAPTION_LIMIT` (Telegram caption length, 1024), `EVENTBRITE_ROW_PREFIX`, generic replies and popups (`UNAUTHORIZED_REPLY`, `POPUP_EVENT_NOT_FOUND`, `POPUP_CLOSED`, `NO_TEXT_IN_REPLIED_MESSAGE`), `format_seats_count`, `format_admin_failure/success` |
 | `event.py` | `format_public_event_message` (channel post), `format_instagram_story`, `format_event_seats`, `format_discussion_booking_message` (`👇 Gestisci qui la tua prenotazione!`, plus the Eventbrite link when the event is `live`) |
-| `recap.py` | `recap_generate_text` (full recap; switches to the slim variant when it exceeds the 1024-character caption limit), `recap_links_text` (discussion comment with linked titles), `/recap_generate` and recap-job messages |
+| `recap.py` | `format_contacts` (Italian list of `RECAP_CONTACTS`), `recap_generate_text` (full recap; footer uses `RECAP_CONTACTS` and `EVENT_START_TIME`; switches to the slim variant when it exceeds the 1024-character caption limit), `recap_links_text` (discussion comment with linked titles), `/recap_generate` and recap-job messages |
 | `subscribers.py` | `format_reservation_subscriber_display`, `format_event_participants_message`, the subscribers management panel (`format_subscribers_panel`), `/event_sub_add` / `/event_sub_remove` usage and the add-subscriber prompt (`ADD_SUBSCRIBER_PROMPT_MARKER` is matched by `handle_admin_reply`) |
 | `reposts.py` | `format_schedule_repost_message`, `REPOST_UPDATE_REMINDER`, `/event_repost` and `/event_schedule*` replies, the daily digest and list entries, schedule popups |
 | `control.py` | `/bot_pause`, `/bot_resume`, `/bot_status`, Eventbrite-only mode and the venue picker texts |

@@ -4,11 +4,12 @@ import unittest
 from types import SimpleNamespace
 
 import core.db as db
+from tests.support.config import patched_config
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event
 from utils.templates.event import (
     format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
-from utils.templates.recap import recap_generate_text, recap_links_text
+from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
 from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
 import utils.templates as templates_package
 
@@ -102,6 +103,18 @@ class TestRecapTexts(unittest.TestCase):
         self.assertIn("- <b>Avventura D&amp;D</b> (D&amp;D 5e) : 3/5", text)
         self.assertIn("- ❌ <b>Cyberpunk Red</b> (Cyberpunk) : 0/4 [ANNULLATO]", text)
         self.assertIn("- <b>One Shot Giochi Liberi</b> : Nessun limite (Prenotati: 3)", text)
+
+    def test_format_contacts(self):
+        self.assertEqual(format_contacts([]), "")
+        self.assertEqual(format_contacts(["@a"]), "@a")
+        self.assertEqual(format_contacts(["@a", "@b"]), "@a o @b")
+        self.assertEqual(format_contacts(["@a", "@b", "@c"]), "@a, @b o @c")
+
+    def test_recap_footer_uses_configured_contacts_and_start_time(self):
+        with patched_config(RECAP_CONTACTS=["@Host1"], EVENT_START_TIME="21:00"):
+            text = recap_generate_text("Venerdì", "05-09-2026", [])
+        self.assertIn("contatta @Host1.", text)
+        self.assertIn("Ci vediamo alle 21:00!", text)
 
     def test_recap_links_text_event_titles_bold_and_linked(self):
         events = [
@@ -230,7 +243,7 @@ templates = _load_templates()
 class TestMessageCatalogue(unittest.TestCase):
     def test_public_text_constants_are_non_empty_strings(self):
         for name in dir(templates):
-            if name.isupper() and not name.startswith("_") and name not in ("ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
+            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
                 with self.subTest(name=name):
                     value = getattr(templates, name)
                     self.assertIsInstance(value, str)

@@ -8,7 +8,9 @@ import logging
 import tempfile
 import textwrap
 from datetime import datetime
+from core import config
 from core.config import FONTS_DIR, MAX_EVENTS_PER_ROW
+from utils.templates.common import ASSOCIATION_ADDRESS
 
 logger = logging.getLogger(__name__)
 
@@ -609,7 +611,7 @@ def create_recap_story_image(events, collage_path, date_str, output_dir):
                 y += 20
                     
             # Draw bottom footer
-            footer = "Ci vediamo alle 20:45, alla Gilda del Grifone in Via Ada Negri 8/A, Torino!"
+            footer = f"Ci vediamo alle {config.EVENT_START_TIME}, alla {ASSOCIATION_ADDRESS}!"
             char_width_footer = int((STORY_WIDTH - margin * 2) / (font_small.size * 0.55))
             
             # Always place footer near the bottom

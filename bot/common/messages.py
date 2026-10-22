@@ -1,8 +1,8 @@
 import logging
 
-logger = logging.getLogger(__name__)
+from utils.templates.common import CAPTION_LIMIT
 
-CAPTION_LIMIT = 1024
+logger = logging.getLogger(__name__)
 
 
 def resolve_message(update):

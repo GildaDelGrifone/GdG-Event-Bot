@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, date, timedelta
 
+from core import config
+
 DAYS_IT = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 
 WEEKDAYS_MAP = {
@@ -252,9 +254,9 @@ def _parse_hhmm(value):
     return (hour, minute) if hour < 24 and minute < 60 else None
 
 
-def extract_event_datetime(event, default_time="20:45") -> datetime | None:
+def extract_event_datetime(event, default_time=None) -> datetime | None:
     """Naive local datetime of an event: the day from the event dates, the time from the first HH:MM / HH.MM in
-    event['date'] (else default_time). None when no day can be determined."""
+    event['date'] (else default_time, by default config.EVENT_START_TIME). None when no day can be determined."""
     day = event_date_tuple(event)
     if not day:
         return None
@@ -264,5 +266,5 @@ def extract_event_datetime(event, default_time="20:45") -> datetime | None:
         if time_of_day:
             break
     if not time_of_day:
-        time_of_day = _parse_hhmm(default_time) or (20, 45)
+        time_of_day = _parse_hhmm(default_time or config.EVENT_START_TIME) or (20, 45)
     return datetime(*day, *time_of_day)

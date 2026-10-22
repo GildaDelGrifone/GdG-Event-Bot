@@ -6,13 +6,12 @@ from core import config
 from core.db import get_pending_events_for_recap, mark_events_as_recap
 from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, compress_existing_image_file
+from utils.templates.common import CAPTION_LIMIT
 from utils.templates.recap import RECAP_NO_EVENTS_TODAY, format_recap_no_events_for_date, recap_generate_text
 from bot.keyboards import get_recap_approval_keyboard
 
 logger = logging.getLogger(__name__)
 
-RECAP_WEEKDAYS = frozenset({0, 2, 4, 5, 6})  # Mon, Wed, Fri, Sat, Sun game nights
-CAPTION_LIMIT = 1024
 
 
 def _recap_day(manual_date, now):
@@ -73,7 +72,7 @@ async def _send_collage(bot, collage_path, caption, keyboard):
 async def generate_daily_recap(bot, manual_date=None, is_manual=False, reply_to_message_id=None):
     """Builds the recap collage + text for a game night and sends it to ADMIN_CHAT_ID for approval."""
     now = datetime.now()
-    if not is_manual and now.weekday() not in RECAP_WEEKDAYS:
+    if not is_manual and now.weekday() not in config.RECAP_WEEKDAYS:
         return False
 
     date_str = manual_date or now.strftime("%d-%m-%Y")

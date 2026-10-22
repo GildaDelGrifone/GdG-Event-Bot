@@ -1,7 +1,15 @@
 """Daily recap texts (caption, links, /recap_generate, recap job)."""
 import html
 
-from utils.templates.common import format_event_title_link
+from core import config
+from utils.templates.common import CAPTION_LIMIT, format_event_title_link
+
+
+def format_contacts(handles):
+    """"@a", "@a o @b", "@a, @b o @c" (Italian list of the RECAP_CONTACTS handles)."""
+    if len(handles) <= 1:
+        return "".join(handles)
+    return f"{', '.join(handles[:-1])} o {handles[-1]}"
 
 
 def recap_generate_text(day_str, date_str, events):
@@ -39,22 +47,23 @@ def recap_generate_text(day_str, date_str, events):
         else:
             body += f"- <b>{title}</b>{sys_str} : {seats_display}\n\n"
         
+    contacts = format_contacts(config.RECAP_CONTACTS)
     footer = (
         "Tutto pieno? Vieni lo stesso! Abbiamo oltre 400 giochi a disposizione. "
-        "Se invece vuoi proporre tu una serata, contatta @Destard o @ManueleAbi.\n\n"
-        "Ci vediamo alle 20:45! 🦅"
+        f"Se invece vuoi proporre tu una serata, contatta {contacts}.\n\n"
+        f"Ci vediamo alle {config.EVENT_START_TIME}! 🦅"
     )
     
     full_text = header + body + footer
     
-    if len(full_text) > 1024:
+    if len(full_text) > CAPTION_LIMIT:
         slim_header = (
             f"Proposte di stasera, {day_str} {date_str} 🎲\n"
             f"Trovi i link per prenotarti nei commenti qui sotto:\n\n"
         )
         slim_footer = (
-            "\nVuoi proporre una serata? Scrivi a @Destard o @ManueleAbi.\n"
-            "Ci vediamo alle 20:45! 🦅"
+            f"\nVuoi proporre una serata? Scrivi a {contacts}.\n"
+            f"Ci vediamo alle {config.EVENT_START_TIME}! 🦅"
         )
         return slim_header + body + slim_footer
         

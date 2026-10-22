@@ -13,6 +13,49 @@ def _env_bool(name, default):
     return os.getenv(name, "true" if default else "false").strip().lower() in ("true", "1", "yes")
 
 
+def _env_number(name, default, cast):
+    """A number from the environment; a typo falls back to the default instead of stopping the bot."""
+    try:
+        return cast(os.getenv(name, str(default)).strip())
+    except ValueError:
+        return default
+
+
+def _env_int(name, default):
+    return _env_number(name, default, int)
+
+
+def _env_float(name, default):
+    return _env_number(name, default, float)
+
+
+def _env_time(name, default):
+    """An (hour, minute) tuple from an HH:MM environment value; a typo falls back to the default instead of stopping the bot."""
+    for value in (os.getenv(name, default), default):
+        try:
+            hour, minute = (int(part) for part in value.strip().split(":"))
+        except ValueError:
+            continue
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    raise ValueError(f"Invalid default time for {name}: {default}")
+
+
+def _env_weekdays(name, default):
+    """A frozenset of weekday numbers (0 = Monday) from a comma-separated value; a typo falls back to the default."""
+    try:
+        days = frozenset(int(part) for part in os.getenv(name, default).split(",") if part.strip())
+    except ValueError:
+        days = None
+    if not days or not days <= set(range(7)):
+        days = frozenset(int(part) for part in default.split(","))
+    return days
+
+
+def _env_list(name, default):
+    return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
+
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME")
 
@@ -26,6 +69,11 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 BGG_API_TOKEN = os.getenv("BGG_API_TOKEN")
 
+# Start time of a game night, shown in the recap texts and story image
+EVENT_START_TIME = "%02d:%02d" % _env_time("EVENT_START_TIME", "20:45")
+# Telegram handles that members can contact to propose an event (recap texts, WordPress article)
+RECAP_CONTACTS = _env_list("RECAP_CONTACTS", "@Destard,@ManueleAbi")
+
 WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")
 WP_APP_PASSWORD = os.getenv("WP_APP_PASSWORD")
@@ -37,16 +85,16 @@ IG_ACCOUNT_ID = os.getenv("IG_ACCOUNT_ID")
 EVENTBRITE_TOKEN = os.getenv("EVENTBRITE_TOKEN")
 EVENTBRITE_ORGANIZATION_ID = os.getenv("EVENTBRITE_ORGANIZATION_ID")
 EVENTBRITE_VENUE_ID = os.getenv("EVENTBRITE_VENUE_ID")
-EVENTBRITE_VENUE_ID_ALTERNATIVES = [v.strip() for v in os.getenv("EVENTBRITE_VENUE_ID_ALTERNATIVES", "").split(",") if v.strip()]
+EVENTBRITE_VENUE_ID_ALTERNATIVES = _env_list("EVENTBRITE_VENUE_ID_ALTERNATIVES", "")
 EVENTBRITE_ORGANIZER_ID = os.getenv("EVENTBRITE_ORGANIZER_ID")
 EVENTBRITE_TIMEZONE = os.getenv("EVENTBRITE_TIMEZONE", "Europe/Rome")
 EVENTBRITE_CURRENCY = os.getenv("EVENTBRITE_CURRENCY", "EUR")
 EVENTBRITE_LISTED = _env_bool("EVENTBRITE_LISTED", True)
-EVENTBRITE_DEFAULT_START_TIME = os.getenv("EVENTBRITE_DEFAULT_START_TIME", "20:45")
-EVENTBRITE_EVENT_DURATION_HOURS = float(os.getenv("EVENTBRITE_EVENT_DURATION_HOURS", "4"))
-EVENTBRITE_UNLIMITED_CAPACITY = int(os.getenv("EVENTBRITE_UNLIMITED_CAPACITY", "50"))
-EVENTBRITE_POLL_MINUTES = int(os.getenv("EVENTBRITE_POLL_MINUTES", "2"))
-EVENTBRITE_FULL_SYNC_MINUTES = int(os.getenv("EVENTBRITE_FULL_SYNC_MINUTES", "30"))
+EVENTBRITE_DEFAULT_START_TIME = os.getenv("EVENTBRITE_DEFAULT_START_TIME", EVENT_START_TIME)
+EVENTBRITE_EVENT_DURATION_HOURS = _env_float("EVENTBRITE_EVENT_DURATION_HOURS", 4.0)
+EVENTBRITE_UNLIMITED_CAPACITY = _env_int("EVENTBRITE_UNLIMITED_CAPACITY", 50)
+EVENTBRITE_POLL_MINUTES = _env_int("EVENTBRITE_POLL_MINUTES", 2)
+EVENTBRITE_FULL_SYNC_MINUTES = _env_int("EVENTBRITE_FULL_SYNC_MINUTES", 30)
 EVENTBRITE_DELETE_CANCELLED = _env_bool("EVENTBRITE_DELETE_CANCELLED", True)
 EVENTBRITE_ONLY_MODE = _env_bool("EVENTBRITE_ONLY_MODE", False)
 EVENTBRITE_COLLECTION_ROLEPLAY = os.getenv("EVENTBRITE_COLLECTION_ROLEPLAY") or None
@@ -64,26 +112,14 @@ def _env_log_level(name, default="INFO"):
 
 LOG_LEVEL = _env_log_level("LOG_LEVEL")
 
-
-def _env_time(name, default):
-    """An (hour, minute) tuple from an HH:MM environment value; a typo falls back to the default instead of stopping the bot."""
-    for value in (os.getenv(name, default), default):
-        try:
-            hour, minute = (int(part) for part in value.strip().split(":"))
-        except ValueError:
-            continue
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            return hour, minute
-    raise ValueError(f"Invalid default time for {name}: {default}")
-
-
 REPOSTS_TIME = _env_time("REPOSTS_TIME", "09:00")
 RECAP_TIME = _env_time("RECAP_TIME", "16:00")
 ARCHIVE_IMAGES_TIME = _env_time("ARCHIVE_IMAGES_TIME", "23:59")
 ARCHIVE_LOGS_TIME = _env_time("ARCHIVE_LOGS_TIME", "00:05")
 EVENTBRITE_CLEANUP_TIME = _env_time("EVENTBRITE_CLEANUP_TIME", "23:59")
+RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 
-MAX_EVENTS_PER_ROW = int(os.getenv("MAX_EVENTS_PER_ROW", "0"))
+MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -94,3 +130,11 @@ LOGS_DIR = os.path.join(DATA_DIR, "logs")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+
+REQUIRED_SETTINGS = ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID")
+
+
+def missing_required_settings():
+    """Names of the settings the bot cannot start without that are unset in the environment."""
+    return [name for name in REQUIRED_SETTINGS if not globals().get(name)]

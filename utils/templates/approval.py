@@ -1,4 +1,5 @@
 """Admin approval card: status suffixes, preview warnings, approval/cancellation popups and story captions."""
+from utils.templates.common import CAPTION_LIMIT
 
 REGENERATE_STORY_USAGE = ("❌ Rispondi al messaggio di un evento (quello con i pulsanti) per rigenerarne la storia,\n"
                           "oppure usa: /event_regenerate_story <id>")
@@ -65,7 +66,7 @@ STORY_GENERATED_CAPTION = "✅ Immagine Storia generata (Pubblicazione IG disabi
 def format_channel_publish_error(event_id, error):
     return (
         f"❌ Errore pubblicazione evento #{event_id} sul canale: {error}\n"
-        "Se la didascalia supera i 1024 caratteri, riduci la descrizione con /event_edit_description e riprova ad approvare."
+        f"Se la didascalia supera i {CAPTION_LIMIT} caratteri, riduci la descrizione con /event_edit_description e riprova ad approvare."
     )
 
 

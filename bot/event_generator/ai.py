@@ -4,6 +4,7 @@ from datetime import datetime
 
 from core.ai_parser import GeminiQuotaError, coerce_bool, generate_text, strip_json_fence
 from utils.date_utils import DAYS_IT
+from utils.templates.common import CAPTION_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ Required JSON structure:
 
 CRITICAL RULES:
 1. "description" MUST BE CONCISE: maximum 350-400 characters!
-   The entire Telegram post (including title, host, date, seats, and description) MUST fit within Telegram's strict 1024-character caption limit.
+   The entire Telegram post (including title, host, date, seats, and description) MUST fit within Telegram's strict {CAPTION_LIMIT}-character caption limit.
 2. "games" must contain only clean game names without dates, hosts, or extra words (e.g. ["Root", "Wingspan"]).
 3. Return ONLY valid JSON, with no markdown outside ```json blocks.
 

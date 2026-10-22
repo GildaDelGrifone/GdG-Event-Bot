@@ -150,6 +150,8 @@ def _article_prompt(recap_text, event_list):
         img_url = ev.get('wp_media_url')
         img_info = f" | Image URL: {img_url}" if img_url else ""
         events_details += f"- {ev.get('title')}: {link}{img_info}\n"
+    names = [handle.lstrip("@") for handle in config.RECAP_CONTACTS]
+    examples = [f'"l\'utente Telegram @{name} (https://t.me/{name})"' for name in names]
 
     return f"""
     You are an AI generating an engaging article for a tabletop games association's WordPress blog.
@@ -158,7 +160,7 @@ def _article_prompt(recap_text, event_list):
 
     CRITICAL INSTRUCTIONS:
     - You must include the direct Telegram event link for each event in the article text, using the provided list below. Do not use placeholders like [Inserisci qui i link diretti agli eventi].
-    - If you cite Destard or ManueleAbi, specify clearly that they are Telegram usernames. For example, use "l'utente Telegram @Destard (https://t.me/Destard)" and "l'utente Telegram @ManueleAbi (https://t.me/ManueleAbi)".
+    - If you cite {" or ".join(names)}, specify clearly that they are Telegram usernames. For example, use {" and ".join(examples)}.
     - If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using an HTML <img> tag with a maximum size constraint (e.g., <img src="..." alt="..." style="max-width:400px; max-height:400px; width:auto; height:auto; margin-bottom:15px;">). Do not mention or include HTML tags for the daily collage, as the system will automatically attach it as the article's featured image (Immagine in evidenza).
 
     Recap Info:

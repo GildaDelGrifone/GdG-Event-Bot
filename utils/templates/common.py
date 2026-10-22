@@ -4,6 +4,9 @@ import html
 
 ASSOCIATION_ADDRESS = "Gilda del Grifone, Via Ada Negri 8/A, Torino"
 
+# Telegram's maximum caption length for a photo message
+CAPTION_LIMIT = 1024
+
 
 EVENTBRITE_ROW_PREFIX = "🎟️ "
 

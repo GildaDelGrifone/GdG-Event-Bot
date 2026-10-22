@@ -89,8 +89,9 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         logger.error("Eccezione non gestita durante l'elaborazione di un update:", exc_info=context.error)
 
 def main():
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN non impostato.")
+    missing = config.missing_required_settings()
+    if missing:
+        logger.error(f"Impostazioni obbligatorie mancanti nel file .env: {', '.join(missing)}. Il bot non può avviarsi.")
         return
         
     init_db()
