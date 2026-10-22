@@ -13,18 +13,12 @@ from bot.common.messages import command_argument, command_tokens, resolve_messag
 from bot.common.parsing import extract_event_id_from_reply
 from bot.handlers.albums import extract_image_bytes_from_update
 from bot.handlers.extraction import handle_event_extraction
-
-logger = logging.getLogger(__name__)
-
-REPOST_USAGE = (
-    "Uso: <code>/event_repost DATE SEATS</code>\n"
-    "Esempi:\n"
-    "• <code>/event_repost oggi 4</code>\n"
-    "• <code>/event_repost LUN 4</code>\n"
-    "• <code>/event_repost MER 21:00 4</code>\n"
-    "• <code>/event_repost 15-10-2026 21:00 4</code>"
+from utils.templates import (
+    NO_TEXT_IN_REPLIED_MESSAGE, REPOST_DONE, REPOST_INVALID_DATE, REPOST_MISSING_PARAMS, REPOST_NO_REPLY, REPOST_USAGE,
+    SCHEDULE_INVOKE_USAGE, SCHEDULED_EVENT_NO_TEXT, format_scheduled_event_invoked, format_scheduled_event_not_found,
 )
 
+logger = logging.getLogger(__name__)
 
 async def extract_repost_content(update: Update):
     """Returns (text, image_bytes, target_msg), falling back to the stored event when the target is a known event."""
@@ -54,27 +48,24 @@ async def event_repost_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if not message.reply_to_message:
-        await message.reply_text("❌ Rispondi al messaggio dell'evento che vuoi ripubblicare.\n" + REPOST_USAGE, parse_mode="HTML")
+        await message.reply_text(REPOST_NO_REPLY, parse_mode="HTML")
         return
 
     tokens = command_argument(message).split()
     if len(tokens) < 2:
-        await message.reply_text("❌ Parametri mancanti.\n" + REPOST_USAGE, parse_mode="HTML")
+        await message.reply_text(REPOST_MISSING_PARAMS, parse_mode="HTML")
         return
 
     seats_arg = tokens[-1]
     date_arg = " ".join(tokens[:-1])
 
     if not parse_user_date(date_arg):
-        await message.reply_text(
-            "❌ Formato data non valido.\n"
-            "Puoi usare: 'oggi', 'LUN', 'MER', 'VEN', oppure DD-MM-YYYY (con orario opzionale, es. 'MER 21:00' o '15-10-2026 21:00')."
-        )
+        await message.reply_text(REPOST_INVALID_DATE)
         return
 
     text, image_bytes, target_msg = await extract_repost_content(update)
     if not text:
-        await message.reply_text("❌ Nessun testo trovato nel messaggio risposto.")
+        await message.reply_text(NO_TEXT_IN_REPLIED_MESSAGE)
         return
 
     logger.info(f"{describe_user(update.effective_user)} triggered /event_repost with date='{date_arg}', seats='{seats_arg}'.")
@@ -90,7 +81,7 @@ async def event_repost_command(update: Update, context: ContextTypes.DEFAULT_TYP
         override_seats=seats_arg
     )
     if success:
-        await message.reply_text("✅ Evento ripubblicato ed elaborato! Conferma la pubblicazione con i pulsanti sopra.")
+        await message.reply_text(REPOST_DONE)
 
 
 def _invoke_overrides(sched_ev, extra_tokens):
@@ -122,18 +113,18 @@ async def event_schedule_invoke_command(update: Update, context: ContextTypes.DE
 
     tokens = command_tokens(message)
     if not tokens or not tokens[0].isdigit():
-        await message.reply_text("❌ Specifica l'ID dell'evento programmato (es. /event_schedule_invoke 123).")
+        await message.reply_text(SCHEDULE_INVOKE_USAGE)
         return
 
     sched_id = int(tokens[0])
     sched_ev = get_scheduled_event(sched_id)
     if not sched_ev:
-        await message.reply_text(f"❌ Evento programmato #{sched_id} non trovato.")
+        await message.reply_text(format_scheduled_event_not_found(sched_id))
         return
 
     text = sched_ev.get('text')
     if not text:
-        await message.reply_text("❌ L'evento programmato non contiene testo.")
+        await message.reply_text(SCHEDULED_EVENT_NO_TEXT)
         return
 
     img_path = sched_ev.get('image_path')
@@ -149,4 +140,4 @@ async def event_schedule_invoke_command(update: Update, context: ContextTypes.DE
         override_seats=override_seats
     )
     if success:
-        await message.reply_text(f"✅ Evento programmato #{sched_id} invocato e pronto per la revisione!")
+        await message.reply_text(format_scheduled_event_invoked(sched_id))

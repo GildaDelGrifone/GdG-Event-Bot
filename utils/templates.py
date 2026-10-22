@@ -266,3 +266,163 @@ REPOST_UPDATE_REMINDER = (
     "💡 <i>Promemoria:</i> Puoi aggiornare il contenuto di un evento programmato rispondendo a un messaggio con il nuovo testo/locandina e usando:\n"
     "<code>/event_schedule_update ID</code>"
 )
+
+
+# ---------------------------------------------------------------------------
+# Generic replies
+# ---------------------------------------------------------------------------
+UNAUTHORIZED_REPLY = "Non sei autorizzato."
+POPUP_EVENT_NOT_FOUND = "Evento non trovato."
+POPUP_CLOSED = "Chiuso."
+
+
+def format_event_id_not_found(event_id):
+    return f"❌ Evento #{event_id} non trovato"
+
+
+def format_event_id_not_found_in_db(event_id):
+    return f"❌ Evento #{event_id} non trovato nel database."
+
+
+# ---------------------------------------------------------------------------
+# Bot control (/bot_pause, /bot_resume, /bot_status, Eventbrite-only mode, venue)
+# ---------------------------------------------------------------------------
+BOT_PAUSED_TEXT = "🔴 **Bot in pausa!**\nIl bot ora ignorerà tutti i messaggi inviati sul canale eventi."
+BOT_RESUMED_TEXT = "🟢 **Bot riattivato!**\nIl bot ricomincerà a monitorare il canale eventi."
+EVENTBRITE_ONLY_UNAVAILABLE_TEXT = "❌ Eventbrite non è configurato: la modalità solo Eventbrite non è disponibile."
+EVENTBRITE_ONLY_ON_TEXT = ("🎟️ Modalità solo Eventbrite ATTIVA: la scheda dei nuovi eventi mostra solo i pulsanti Eventbrite "
+                           "e la storia Instagram non viene generata.")
+EVENTBRITE_ONLY_OFF_TEXT = "📣 Modalità solo Eventbrite DISATTIVATA: pulsanti Telegram e storia Instagram di nuovo attivi."
+EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT = "❌ Eventbrite non è configurato."
+SINGLE_VENUE_TEXT = "ℹ️ C'è una sola sede configurata. Aggiungi le altre con EVENTBRITE_VENUE_ID_ALTERNATIVES."
+CHOOSE_VENUE_TEXT = "📍 Scegli la sede Eventbrite per i nuovi eventi:"
+BOT_STATUS_PAUSED = "🔴 IN PAUSA (monitoraggio canale eventi disattivato)"
+BOT_STATUS_ACTIVE = "🟢 ATTIVO (monitoraggio canale eventi funzionante)"
+PUBLISH_MODE_EVENTBRITE_ONLY = "🎟️ SOLO EVENTBRITE (nessun pulsante Telegram, niente storia Instagram)"
+PUBLISH_MODE_NORMAL = "📣 normale"
+
+
+def format_bot_status(paused, eventbrite_only, venue=None):
+    status = BOT_STATUS_PAUSED if paused else BOT_STATUS_ACTIVE
+    mode = PUBLISH_MODE_EVENTBRITE_ONLY if eventbrite_only else PUBLISH_MODE_NORMAL
+    text = f"Stato del bot: {status}\nModalità pubblicazione: {mode}"
+    if venue:
+        text += f"\nSede Eventbrite: {venue}"
+    return text
+
+
+# ---------------------------------------------------------------------------
+# /event_publish_eventbrite
+# ---------------------------------------------------------------------------
+PUBLISH_EVENTBRITE_USAGE = "❌ Rispondi al messaggio di un evento (quello con i pulsanti) oppure usa: /event_publish_eventbrite <id>"
+PUBLISH_EVENTBRITE_PENDING = "❌ Pubblica prima l'evento su Telegram (oppure usa 🚀 Publish + Eventbrite sulla scheda)"
+PUBLISH_EVENTBRITE_CANCELLED = "❌ Evento annullato: riattivalo prima"
+
+
+# ---------------------------------------------------------------------------
+# /event_regenerate_story
+# ---------------------------------------------------------------------------
+REGENERATE_STORY_USAGE = ("❌ Rispondi al messaggio di un evento (quello con i pulsanti) per rigenerarne la storia,\n"
+                          "oppure usa: /event_regenerate_story <id>")
+REGENERATE_STORY_PROGRESS = "⏳ Rigenerazione Storia Instagram in corso..."
+STORY_SEND_ERROR = "❌ Errore durante l'invio dell'immagine della storia."
+STORY_GENERATION_ERROR = "❌ Errore durante la generazione dell'immagine della storia."
+
+
+def format_story_regenerated_caption(event_id, title):
+    return f"✅ Immagine Storia rigenerata per l'evento #{event_id} ({title or 'Senza Titolo'})."
+
+
+# ---------------------------------------------------------------------------
+# Admin preview warnings
+# ---------------------------------------------------------------------------
+def format_date_anomaly_warning(warnings):
+    return "🚨 ATTENZIONE ANOMALIE DATA:\n" + "\n".join(warnings) + "\n👉 Usa /event_edit_date per correggere prima di approvare.\n\n"
+
+
+def format_caption_limit_warning(length, limit):
+    return (
+        f"🚨 ATTENZIONE LIMITE CARATTERI:\n"
+        f"⚠️ IL TESTO DELL'EVENTO SUPERA I {limit} CARATTERI ({length}/{limit})!\n"
+        f"La pubblicazione sul canale fallirà. Riduci la descrizione con /event_edit_description prima di approvare.\n\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reposts (/event_repost, /event_schedule*, daily digest)
+# ---------------------------------------------------------------------------
+REPOST_USAGE = (
+    "Uso: <code>/event_repost DATE SEATS</code>\n"
+    "Esempi:\n"
+    "• <code>/event_repost oggi 4</code>\n"
+    "• <code>/event_repost LUN 4</code>\n"
+    "• <code>/event_repost MER 21:00 4</code>\n"
+    "• <code>/event_repost 15-10-2026 21:00 4</code>"
+)
+REPOST_NO_REPLY = "❌ Rispondi al messaggio dell'evento che vuoi ripubblicare.\n" + REPOST_USAGE
+REPOST_MISSING_PARAMS = "❌ Parametri mancanti.\n" + REPOST_USAGE
+REPOST_INVALID_DATE = (
+    "❌ Formato data non valido.\n"
+    "Puoi usare: 'oggi', 'LUN', 'MER', 'VEN', oppure DD-MM-YYYY (con orario opzionale, es. 'MER 21:00' o '15-10-2026 21:00')."
+)
+NO_TEXT_IN_REPLIED_MESSAGE = "❌ Nessun testo trovato nel messaggio risposto."
+REPOST_DONE = "✅ Evento ripubblicato ed elaborato! Conferma la pubblicazione con i pulsanti sopra."
+SCHEDULE_INVOKE_USAGE = "❌ Specifica l'ID dell'evento programmato (es. /event_schedule_invoke 123)."
+SCHEDULED_EVENT_NO_TEXT = "❌ L'evento programmato non contiene testo."
+SCHEDULE_INVALID_DATE_FOR_EXISTING = "❌ Formato data non valido per la programmazione specifica."
+SCHEDULE_DATE_UPDATED_PREFIX = "✅ Data specifica aggiornata!\n\n"
+SCHEDULE_NO_REPLY = (
+    "❌ Rispondi al messaggio dell'evento che vuoi programmare per il repost.\n"
+    "Uso: <code>/event_schedule [DATA HH:MM]</code>\n"
+    "Esempi:\n"
+    "• <code>/event_schedule</code> (mostra i giorni di apertura)\n"
+    "• <code>/event_schedule 09-10-2026 21:00</code>"
+)
+SCHEDULE_INVALID_DATE = "❌ Formato data specifica non valido. Usa DD-MM-YYYY [HH:MM] o oggi/LUN/MER/VEN."
+SCHEDULE_SAVE_ERROR = "❌ Errore durante il salvataggio della programmazione nel database."
+SCHEDULE_UPDATE_NO_REPLY = (
+    "❌ Rispondi al messaggio dell'evento con cui vuoi aggiornare la programmazione.\n"
+    "Uso: <code>/event_schedule_update SCHEDULED_ID</code> (es. <code>/event_schedule_update 1</code>)"
+)
+SCHEDULE_UPDATE_USAGE = "❌ Specifica l'ID dell'evento programmato da aggiornare (es. /event_schedule_update 1)."
+SCHEDULE_UPDATE_ERROR = "❌ Errore durante l'aggiornamento nel database."
+SCHEDULE_LIST_EMPTY = "📋 Nessun evento programmato per il repost nel database."
+
+
+def format_scheduled_event_not_found(sched_id):
+    return f"❌ Evento programmato #{sched_id} non trovato."
+
+
+def format_scheduled_event_invoked(sched_id):
+    return f"✅ Evento programmato #{sched_id} invocato e pronto per la revisione!"
+
+
+def format_scheduled_event_updated(sched_id):
+    return f"✅ Evento programmato #{sched_id} aggiornato con successo con il nuovo contenuto!"
+
+
+def format_schedule_list_header(count):
+    return f"📋 <b>Eventi programmati per il reposting ({count}):</b>\n"
+
+
+def format_schedule_list_entry(sched_event):
+    sched_id = sched_event['id']
+    days = sched_event.get('schedule_days') or []
+    return (
+        f"• <b>{html.escape(sched_event.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
+        f"  🗓️ Giorni: {', '.join(days) if days else 'Nessuno'} | Data: {sched_event.get('specific_date') or 'Nessuna'}\n"
+        f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
+        f"  ⚙️ Gestisci programmazione: <code>/event_schedule {sched_id}</code>\n"
+    )
+
+
+def format_reposts_digest_header(weekday_it, today_str):
+    return f"📅 <b>Eventi programmati per il reposting di oggi ({weekday_it} {today_str}):</b>\n"
+
+
+def format_reposts_digest_entry(sched_event):
+    sched_id = sched_event['id']
+    return (
+        f"• <b>{html.escape(sched_event.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
+        f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
+    )

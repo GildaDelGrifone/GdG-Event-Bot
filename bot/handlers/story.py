@@ -11,6 +11,10 @@ from bot.common.parsing import extract_event_id_from_reply
 from core import config
 from core.db import get_event
 from utils.image_utils import create_story_image
+from utils.templates import (
+    REGENERATE_STORY_PROGRESS, REGENERATE_STORY_USAGE, STORY_GENERATION_ERROR, STORY_SEND_ERROR,
+    format_event_id_not_found_in_db, format_story_regenerated_caption,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +33,16 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
             event_id = int(arg.strip())
 
     if not event_id:
-        await msg.reply_text(
-            "❌ Rispondi al messaggio di un evento (quello con i pulsanti) per rigenerarne la storia,\n"
-            "oppure usa: /event_regenerate_story <id>"
-        )
+        await msg.reply_text(REGENERATE_STORY_USAGE)
         return
 
     event = get_event(event_id)
     if not event:
-        await msg.reply_text(f"❌ Evento #{event_id} non trovato nel database.")
+        await msg.reply_text(format_event_id_not_found_in_db(event_id))
         return
 
     logger.info(f"{describe_user(update.effective_user)} requested story regeneration for event #{event_id}.")
-    status_msg = await msg.reply_text("⏳ Rigenerazione Storia Instagram in corso...")
+    status_msg = await msg.reply_text(REGENERATE_STORY_PROGRESS)
 
     story_image_path = create_story_image(event, event.get('image_path'), config.DATA_DIR)
     if story_image_path:
@@ -49,8 +50,8 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
             context.bot,
             msg.chat_id,
             story_image_path,
-            caption=f"✅ Immagine Storia rigenerata per l'evento #{event_id} ({event.get('title') or 'Senza Titolo'}).",
-            error_text="❌ Errore durante l'invio dell'immagine della storia.",
+            caption=format_story_regenerated_caption(event_id, event.get('title')),
+            error_text=STORY_SEND_ERROR,
         )
         try:
             await status_msg.delete()
@@ -58,6 +59,6 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
             pass
     else:
         try:
-            await status_msg.edit_text("❌ Errore durante la generazione dell'immagine della storia.")
+            await status_msg.edit_text(STORY_GENERATION_ERROR)
         except Exception:
-            await msg.reply_text("❌ Errore durante la generazione dell'immagine della storia.")
+            await msg.reply_text(STORY_GENERATION_ERROR)

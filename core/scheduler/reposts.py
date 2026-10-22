@@ -1,23 +1,17 @@
-import html
 import logging
 from datetime import datetime
 
 from core import config
 from core.db import get_scheduled_events_for_date
 from utils.date_utils import DAYS_IT
-from utils.templates import REPOST_UPDATE_REMINDER
+from utils.templates import REPOST_UPDATE_REMINDER, format_reposts_digest_entry, format_reposts_digest_header
 
 logger = logging.getLogger(__name__)
 
 
 def format_reposts_digest(events, weekday_it, today_str):
-    lines = [f"📅 <b>Eventi programmati per il reposting di oggi ({weekday_it} {today_str}):</b>\n"]
-    for ev in events:
-        sched_id = ev['id']
-        lines.append(
-            f"• <b>{html.escape(ev.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
-            f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
-        )
+    lines = [format_reposts_digest_header(weekday_it, today_str)]
+    lines.extend(format_reposts_digest_entry(ev) for ev in events)
     lines.append(REPOST_UPDATE_REMINDER)
     return "\n".join(lines)
 

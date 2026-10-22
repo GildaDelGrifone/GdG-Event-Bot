@@ -10,6 +10,10 @@ from core.eventbrite import eventbrite_enabled, eventbrite_venue_ids
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
 from bot.state import runtime_state
+from utils.templates import (
+    BOT_PAUSED_TEXT, BOT_RESUMED_TEXT, CHOOSE_VENUE_TEXT, EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT, EVENTBRITE_ONLY_OFF_TEXT,
+    EVENTBRITE_ONLY_ON_TEXT, EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SINGLE_VENUE_TEXT, format_bot_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,29 +22,28 @@ logger = logging.getLogger(__name__)
 async def bot_pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     runtime_state.is_paused = True
     logger.info(f"{describe_user(update.effective_user)} paused bot execution.")
-    await update.message.reply_text("🔴 **Bot in pausa!**\nIl bot ora ignorerà tutti i messaggi inviati sul canale eventi.", parse_mode="Markdown")
+    await update.message.reply_text(BOT_PAUSED_TEXT, parse_mode="Markdown")
 
 
 @admin_only()
 async def bot_resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     runtime_state.is_paused = False
     logger.info(f"{describe_user(update.effective_user)} resumed bot execution.")
-    await update.message.reply_text("🟢 **Bot riattivato!**\nIl bot ricomincerà a monitorare il canale eventi.", parse_mode="Markdown")
+    await update.message.reply_text(BOT_RESUMED_TEXT, parse_mode="Markdown")
 
 
 @admin_only()
 async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eventbrite_enabled():
-        await update.message.reply_text("❌ Eventbrite non è configurato: la modalità solo Eventbrite non è disponibile.")
+        await update.message.reply_text(EVENTBRITE_ONLY_UNAVAILABLE_TEXT)
         return
     runtime_state.eventbrite_only = not runtime_state.eventbrite_only
     state = "ON" if runtime_state.eventbrite_only else "OFF"
     logger.info(f"{describe_user(update.effective_user)} turned Eventbrite-only mode {state}.")
     if runtime_state.eventbrite_only:
-        text = ("🎟️ Modalità solo Eventbrite ATTIVA: la scheda dei nuovi eventi mostra solo i pulsanti Eventbrite "
-                "e la storia Instagram non viene generata.")
+        text = EVENTBRITE_ONLY_ON_TEXT
     else:
-        text = "📣 Modalità solo Eventbrite DISATTIVATA: pulsanti Telegram e storia Instagram di nuovo attivi."
+        text = EVENTBRITE_ONLY_OFF_TEXT
     await update.message.reply_text(text)
 
 
@@ -53,15 +56,15 @@ def current_venue_id():
 @admin_only()
 async def bot_eventbrite_venue_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eventbrite_enabled():
-        await update.message.reply_text("❌ Eventbrite non è configurato.")
+        await update.message.reply_text(EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT)
         return
     venue_ids = eventbrite_venue_ids()
     if len(venue_ids) < 2:
-        await update.message.reply_text("ℹ️ C'è una sola sede configurata. Aggiungi le altre con EVENTBRITE_VENUE_ID_ALTERNATIVES.")
+        await update.message.reply_text(SINGLE_VENUE_TEXT)
         return
     venues = [(venue_id, await asyncio.to_thread(venue_name, venue_id)) for venue_id in venue_ids]
     await update.message.reply_text(
-        "📍 Scegli la sede Eventbrite per i nuovi eventi:",
+        CHOOSE_VENUE_TEXT,
         reply_markup=get_venue_keyboard(venues, current_venue_id(), config.EVENTBRITE_VENUE_ID),
     )
 
@@ -69,9 +72,8 @@ async def bot_eventbrite_venue_command(update: Update, context: ContextTypes.DEF
 @admin_only()
 async def bot_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"{describe_user(update.effective_user)} requested bot status.")
-    status = "🔴 IN PAUSA (monitoraggio canale eventi disattivato)" if runtime_state.is_paused else "🟢 ATTIVO (monitoraggio canale eventi funzionante)"
-    mode = "🎟️ SOLO EVENTBRITE (nessun pulsante Telegram, niente storia Instagram)" if runtime_state.eventbrite_only else "📣 normale"
-    text = f"Stato del bot: {status}\nModalità pubblicazione: {mode}"
+    venue = None
     if eventbrite_enabled() and len(eventbrite_venue_ids()) > 1:
-        text += f"\nSede Eventbrite: {await asyncio.to_thread(venue_name, current_venue_id())}"
+        venue = await asyncio.to_thread(venue_name, current_venue_id())
+    text = format_bot_status(runtime_state.is_paused, runtime_state.eventbrite_only, venue)
     await update.message.reply_text(text)

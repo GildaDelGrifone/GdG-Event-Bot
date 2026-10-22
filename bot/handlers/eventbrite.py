@@ -8,6 +8,9 @@ from bot.common.messages import command_argument, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
 from bot.service.eventbrite import start_eventbrite_publish
 from core.db import get_event
+from utils.templates import (
+    PUBLISH_EVENTBRITE_CANCELLED, PUBLISH_EVENTBRITE_PENDING, PUBLISH_EVENTBRITE_USAGE, format_event_id_not_found,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,20 +30,18 @@ async def event_publish_eventbrite_command(update: Update, context: ContextTypes
             event_id = int(arg.strip())
 
     if not event_id:
-        await msg.reply_text(
-            "❌ Rispondi al messaggio di un evento (quello con i pulsanti) oppure usa: /event_publish_eventbrite <id>"
-        )
+        await msg.reply_text(PUBLISH_EVENTBRITE_USAGE)
         return
 
     event = get_event(event_id)
     if not event:
-        await msg.reply_text(f"❌ Evento #{event_id} non trovato")
+        await msg.reply_text(format_event_id_not_found(event_id))
         return
     if event.get('status') == 'pending':
-        await msg.reply_text("❌ Pubblica prima l'evento su Telegram (oppure usa 🚀 Publish + Eventbrite sulla scheda)")
+        await msg.reply_text(PUBLISH_EVENTBRITE_PENDING)
         return
     if event.get('status') == 'cancelled':
-        await msg.reply_text("❌ Evento annullato: riattivalo prima")
+        await msg.reply_text(PUBLISH_EVENTBRITE_CANCELLED)
         return
 
     logger.info(f"{describe_user(update.effective_user)} requested Eventbrite publication of event #{event_id}.")
