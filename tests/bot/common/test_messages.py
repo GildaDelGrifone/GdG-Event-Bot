@@ -3,13 +3,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 from bot.common.messages import (
     command_argument,
+    edit_card,
     private_chat_link,
     reply_in_chunks,
     send_with_reply_fallback,
     truncate_caption,
     with_html_fallback,
 )
-from tests.support.telegram import make_bot, make_message
+from tests.support.telegram import callback_update, make_bot, make_message
 
 
 class TestSmallHelpers(unittest.TestCase):
@@ -40,6 +41,20 @@ class TestAsyncHelpers(unittest.IsolatedAsyncioTestCase):
         sent = [c.args[0] for c in message.reply_text.call_args_list]
         self.assertEqual(sent, ["H:" + "a" * 6 + "\n", "b" * 6 + "\n" + "c" * 6 + "\n"])
         self.assertTrue(all(c.kwargs == {"parse_mode": "HTML"} for c in message.reply_text.call_args_list))
+
+
+class TestEditCard(unittest.IsolatedAsyncioTestCase):
+    async def test_photo_card_edits_truncated_caption(self):
+        _update, query = callback_update("x", text=None, caption="old", photo=True)
+        await edit_card(query, "a" * 2000, reply_markup=None)
+        query.edit_message_caption.assert_awaited_once_with(caption="a" * 1020 + "...", reply_markup=None)
+        query.edit_message_text.assert_not_called()
+
+    async def test_text_card_edits_text(self):
+        _update, query = callback_update("x", text="old")
+        await edit_card(query, "new", parse_mode="HTML")
+        query.edit_message_text.assert_awaited_once_with(text="new", parse_mode="HTML")
+        query.edit_message_caption.assert_not_called()
 
 
 class TestSendWithReplyFallback(unittest.IsolatedAsyncioTestCase):

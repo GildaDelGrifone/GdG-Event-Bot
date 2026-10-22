@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock
 
 import core.db as db
-from bot.common.parsing import contains_event_keywords, extract_event_id_from_reply, parse_seats_input
+from bot.common.parsing import contains_event_keywords, extract_event_id_from_reply, parse_seats_input, resolve_event_id
 from tests.support.db import TempDBMixin, create_event
 from tests.support.telegram import make_message
 
@@ -89,6 +89,27 @@ class TestExtractEventIdFromReply(TempDBMixin, unittest.TestCase):
         db.update_event_field(event_id, "admin_message_id", 8888)
         msg_admin = plain_message(text="Messaggio admin senza riferimenti", message_id=8888)
         self.assertEqual(extract_event_id_from_reply(msg_admin), event_id)
+
+
+class TestResolveEventId(TempDBMixin, unittest.TestCase):
+    def test_reply_to_event_card_wins_over_argument(self):
+        card = make_message(message_id=9999)
+        card.reply_markup.inline_keyboard = [[MagicMock(callback_data="publish_event_42")]]
+        msg = plain_message(text="/event_story 7")
+        msg.reply_to_message = card
+        self.assertEqual(resolve_event_id(msg), 42)
+
+    def test_numeric_argument_without_reply(self):
+        msg = plain_message(text="/event_story  7 ")
+        msg.reply_to_message = None
+        self.assertEqual(resolve_event_id(msg), 7)
+
+    def test_none_without_reply_or_numeric_argument(self):
+        for text in ["/event_story", "/event_story abc"]:
+            with self.subTest(text=text):
+                msg = plain_message(text=text)
+                msg.reply_to_message = None
+                self.assertIsNone(resolve_event_id(msg))
 
 
 if __name__ == "__main__":

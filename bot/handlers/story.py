@@ -6,8 +6,8 @@ from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
 from bot.common.auth import admin_only, describe_user
-from bot.common.messages import command_argument, resolve_message, send_image_or_error
-from bot.common.parsing import extract_event_id_from_reply
+from bot.common.messages import resolve_message, send_image_or_error
+from bot.common.parsing import resolve_event_id
 from core import config
 from core.db import get_event
 from utils.image_utils import create_story_image
@@ -26,12 +26,7 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
     if not msg:
         return
 
-    reply_msg = msg.reply_to_message
-    event_id = extract_event_id_from_reply(reply_msg) if reply_msg else None
-    if not event_id:
-        arg = command_argument(msg)
-        if arg and arg.strip().isdigit():
-            event_id = int(arg.strip())
+    event_id = resolve_event_id(msg)
 
     if not event_id:
         await msg.reply_text(REGENERATE_STORY_USAGE)

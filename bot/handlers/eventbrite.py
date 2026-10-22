@@ -4,8 +4,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.common.auth import admin_only, describe_user
-from bot.common.messages import command_argument, resolve_message
-from bot.common.parsing import extract_event_id_from_reply
+from bot.common.messages import resolve_message
+from bot.common.parsing import resolve_event_id
 from bot.service.eventbrite import start_eventbrite_publish
 from core.db import get_event
 from utils.templates.common import format_event_id_not_found
@@ -23,12 +23,7 @@ async def event_publish_eventbrite_command(update: Update, context: ContextTypes
     if not msg:
         return
 
-    reply_msg = msg.reply_to_message
-    event_id = extract_event_id_from_reply(reply_msg) if reply_msg else None
-    if not event_id:
-        arg = command_argument(msg)
-        if arg and arg.strip().isdigit():
-            event_id = int(arg.strip())
+    event_id = resolve_event_id(msg)
 
     if not event_id:
         await msg.reply_text(PUBLISH_EVENTBRITE_USAGE)

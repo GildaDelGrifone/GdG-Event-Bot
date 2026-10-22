@@ -1,6 +1,7 @@
 import re
 
 from core.db import get_event_by_telegram_message_id, get_event_by_admin_message_id
+from bot.common.messages import command_argument
 
 UNLIMITED_SEATS_DISPLAY = "no limit"
 UNLIMITED_SEAT_TOKENS = {"null", "nessuno", "illimitati", "unlimited", "none", "0", ""}
@@ -75,3 +76,12 @@ def extract_event_id_from_reply(reply_msg):
         if ev:
             return ev['id']
     return None
+
+
+def resolve_event_id(message):
+    """Event id from the replied-to event card, else from a numeric command argument (`/cmd 42`); None if neither."""
+    event_id = extract_event_id_from_reply(message.reply_to_message) if message.reply_to_message else None
+    if event_id:
+        return event_id
+    arg = command_argument(message)
+    return int(arg) if arg.isdigit() else None

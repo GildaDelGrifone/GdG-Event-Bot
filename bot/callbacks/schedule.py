@@ -8,7 +8,7 @@ from utils.templates.reposts import (
     POPUP_SCHEDULE_DELETED, POPUP_SCHEDULE_NOT_FOUND, SCHEDULE_DELETED_TEXT, format_schedule_day_toggled,
     format_schedule_repost_message,
 )
-from bot.common.messages import is_not_modified_error
+from bot.common.messages import edit_card, is_not_modified_error
 from bot.keyboards import SCHEDULE_DAY_NAMES, get_schedule_repost_keyboard
 
 logger = logging.getLogger(__name__)
@@ -42,10 +42,7 @@ async def handle_toggle_day(query, context, payload):
     new_text = format_schedule_repost_message(sched_ev)
     keyboard = get_schedule_repost_keyboard(scheduled_id, current_days)
     try:
-        if query.message.photo:
-            await query.edit_message_caption(caption=new_text, reply_markup=keyboard, parse_mode="HTML")
-        else:
-            await query.edit_message_text(text=new_text, reply_markup=keyboard, parse_mode="HTML")
+        await edit_card(query, new_text, reply_markup=keyboard, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Error updating schedule message on toggle: {e}")
 
@@ -55,10 +52,7 @@ async def handle_delete_schedule(query, context, payload):
     await query.answer(POPUP_SCHEDULE_DELETED)
     text = SCHEDULE_DELETED_TEXT
     try:
-        if query.message.photo:
-            await query.edit_message_caption(caption=text, reply_markup=None)
-        else:
-            await query.edit_message_text(text=text, reply_markup=None)
+        await edit_card(query, text, reply_markup=None)
     except TelegramError as e:
         if not is_not_modified_error(e):
             logger.warning(f"Could not edit deleted schedule card: {e}")

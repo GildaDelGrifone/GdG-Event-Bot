@@ -18,7 +18,7 @@ from utils.templates.common import POPUP_EVENT_NOT_FOUND
 from utils.templates.event import format_public_event_message
 from bot.callbacks.notices import send_cancellation_notice, send_reactivation_notice
 from bot.common.auth import describe_user
-from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback
+from bot.common.messages import edit_card, send_image_or_error, with_html_fallback
 from bot.keyboards import (
     get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
     get_eventbrite_cancel_confirmation_keyboard,
@@ -49,11 +49,7 @@ async def _mark_admin_card(query, suffix, action, keyboard=None, use_html=False)
     new_text = update_status_suffix(message.caption or message.text or "", suffix)
     extra = {"reply_markup": keyboard} if keyboard is not None else {}
 
-    if message.photo:
-        new_text = truncate_caption(new_text)
-        edit = lambda **kw: query.edit_message_caption(caption=new_text, **extra, **kw)
-    else:
-        edit = lambda **kw: query.edit_message_text(text=new_text, **extra, **kw)
+    edit = lambda **kw: edit_card(query, new_text, **extra, **kw)
 
     try:
         await (with_html_fallback(edit) if use_html else edit())

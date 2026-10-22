@@ -17,7 +17,7 @@ from utils.templates.wordpress import (
     format_wordpress_draft_created,
 )
 from bot.common.auth import describe_user
-from bot.common.messages import is_not_modified_error, send_image_or_error
+from bot.common.messages import edit_card, is_not_modified_error, send_image_or_error
 from bot.common.previews import notify_quota_depleted
 from bot.keyboards import get_wp_publish_keyboard
 from bot.state import remember_published_recap
@@ -26,10 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _append_to_card(query, suffix):
-    try:
-        await query.edit_message_caption(caption=f"{query.message.caption}{suffix}")
-    except Exception:
-        await query.edit_message_text(text=f"{query.message.text}{suffix}")
+    await edit_card(query, f"{query.message.caption or query.message.text}{suffix}")
 
 
 def _recap_day_name(date_str):
