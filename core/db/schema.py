@@ -1,4 +1,4 @@
-from core.db.connection import db_safe, transaction
+from core.db.connection import db_safe, get_connection, transaction
 
 TABLES = (
     '''
@@ -91,9 +91,24 @@ INDEXES = (
     "WHERE eventbrite_order_id IS NOT NULL",
 )
 
+# Non-additive changes (renames, data rewrites, ...): {version: (sql, ...)}, run once, in order, on databases whose
+# PRAGMA user_version is lower. Add an entry and bump SCHEMA_VERSION to its key.
+VERSIONED_MIGRATIONS = {}
+SCHEMA_VERSION = 1
+
+
+def _enable_wal():
+    """Write-ahead logging lets the Eventbrite poller and the handlers read while the other writes (persists in the file)."""
+    conn = get_connection()
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    finally:
+        conn.close()
+
 
 @db_safe()
 def init_db():
+    _enable_wal()
     with transaction() as cur:
         for ddl in TABLES:
             cur.execute(ddl)
@@ -105,3 +120,10 @@ def init_db():
                     cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
         for ddl in INDEXES:
             cur.execute(ddl)
+        cur.execute("PRAGMA user_version")
+        current = cur.fetchone()[0]
+        for version in sorted(v for v in VERSIONED_MIGRATIONS if current < v <= SCHEMA_VERSION):
+            for sql in VERSIONED_MIGRATIONS[version]:
+                cur.execute(sql)
+        if current < SCHEMA_VERSION:
+            cur.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")

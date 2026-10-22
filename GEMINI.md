@@ -366,7 +366,7 @@ GdG-Event-Bot/
 │   ├── instagram.py      # Meta Graph API: container creation & story publishing
 │   ├── db/               # SQLite data access (public API: `from core.db import ...`)
 │   │   ├── connection.py # get_connection, transaction(), fetch_one/fetch_all/execute, @db_safe
-│   │   ├── schema.py     # CREATE TABLEs + COLUMN_MIGRATIONS applied by init_db()
+│   │   ├── schema.py     # CREATE TABLEs + COLUMN_MIGRATIONS / VERSIONED_MIGRATIONS applied by init_db()
 │   │   ├── events.py     # events table: insert/update/delete, lookups, recap & upcoming queries
 │   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
@@ -453,7 +453,7 @@ GdG-Event-Bot/
   - `@db_safe(default)` logs `DB error in <function>: …` and returns `default` (`default=list` gives a fresh `[]`), so callers keep the old "never raises" contract.
   - `get_connection()` returns a raw connection for scripts.
   - SQL string literals use single quotes (`status IN ('approved', 'cancelled')`); double quotes are reserved for identifiers.
-- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start.
+- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start. For a change that is not a new column (rename, data rewrite), add `{N: (sql, ...)}` to `VERSIONED_MIGRATIONS` and set `SCHEMA_VERSION = N`: `init_db()` runs it once on databases whose `PRAGMA user_version` is lower. `init_db()` also switches the database to WAL journal mode (`bot_database.db-wal` / `-shm` files appear next to it; copy all three, or stop the bot, before backing it up).
 - **Eventbrite columns** are written only through `set_eventbrite_info` / `clear_eventbrite_info` (a whitelist); they are deliberately not in `EDITABLE_EVENT_FIELDS`, so `/event_edit_*` cannot set them. `init_db()` also applies an `INDEXES` tuple (a unique index on `reservations(event_id, eventbrite_order_id)`).
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
