@@ -13,6 +13,7 @@ from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import manual_trigger_command
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
+from tests.support.config import patched_config
 from tests.support.telegram import make_bot
 
 
@@ -70,7 +71,8 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         with patch("main.init_db"), \
              patch("main.Application.builder", return_value=mock_builder), \
              patch("main.ADMIN_CHAT_ID", "999"), \
-             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"):
+             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"), \
+             patched_config(TELEGRAM_BOT_TOKEN="fake_token", ADMIN_CHAT_ID="999"):
             try:
                 main()
             except Exception:
@@ -119,6 +121,16 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<DD-MM-YYYY HH:MM>", date_cmd.description)
 
 
+class TestRequiredSettings(unittest.TestCase):
+    def test_main_exits_before_building_the_app_when_required_settings_are_missing(self):
+        with patch("main.init_db") as init_db, patch("main.Application.builder") as builder, \
+             patch("main.logger") as mock_logger, patched_config(TELEGRAM_BOT_TOKEN=None, ADMIN_CHAT_ID=None):
+            main()
+        builder.assert_not_called()
+        init_db.assert_not_called()
+        self.assertIn("TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID", mock_logger.error.call_args.args[0])
+
+
 class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
     async def test_poller_is_scheduled_only_when_eventbrite_is_enabled(self):
         for enabled, expected_calls in ((True, 1), (False, 0)):
@@ -157,7 +169,8 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         mock_builder.build.return_value = mock_app
 
         with patch("main.init_db"), patch("main.Application.builder", return_value=mock_builder), \
-             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"):
+             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"), \
+             patched_config(TELEGRAM_BOT_TOKEN="fake_token", ADMIN_CHAT_ID="999"):
             try:
                 main()
             except Exception:
