@@ -11,7 +11,8 @@ from core.db import get_event, get_reservations_for_event, get_upcoming_events
 from utils.templates import (
     EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE, EVENT_NEXT_PENDING_SUFFIX,
     EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID, START_WELCOME, format_event_next_entry,
-    format_event_next_none_for_day, format_event_next_prefix, format_event_participants_message, format_event_seats,
+    format_event_next_none_for_day, format_event_next_prefix, format_event_next_subscribers_link,
+    format_event_participants_message, format_event_seats,
 )
 from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
 from bot.common.auth import describe_user, is_admin_chat
@@ -43,12 +44,7 @@ def _format_event_next_entry(ev, bot_username):
     if ev.get('message_link'):
         links.append(f'<a href="{ev["message_link"]}">Canale Eventi</a>')
 
-    seats_str = format_event_seats(ev)
-    if bot_username:
-        clean_username = bot_username.lstrip('@')
-        links.append(f'<a href="https://t.me/{clean_username}?start=subs_{ev_id}">👥 Iscritti</a> ({seats_str})')
-    else:
-        links.append(f'👥 Iscritti ({seats_str})')
+    links.append(format_event_next_subscribers_link(format_event_seats(ev), bot_username, ev_id))
 
     return format_event_next_entry(ev_id, escaped_title, status_suffix, escaped_date, links)
 

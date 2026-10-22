@@ -1017,3 +1017,18 @@ def format_generate_result(success, result_text):
 
 def format_recap_no_events_for_date(date_str):
     return f"Nessun evento in programma per la data {date_str}."
+
+
+# ---------------------------------------------------------------------------
+# Small shared fragments
+# ---------------------------------------------------------------------------
+SEATS_ADDED_ICON = "✅"
+SEATS_REMOVED_ICON = "❌"
+NOTICE_CANCELLED = ("⚠️", "ANNULLATO", "Iscritti avvisati")
+NOTICE_REACTIVATED = ("✅", "RIATTIVATO", "Iscritti prenotati")
+
+
+def format_event_next_subscribers_link(seats_str, bot_username=None, event_id=None):
+    if bot_username:
+        return f'<a href="https://t.me/{bot_username.lstrip("@")}?start=subs_{event_id}">👥 Iscritti</a> ({seats_str})'
+    return f'👥 Iscritti ({seats_str})'

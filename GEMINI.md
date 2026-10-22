@@ -393,7 +393,7 @@ GdG-Event-Bot/
 │   ├── __init__.py
 │   ├── date_utils.py     # Date parsing, format validation (DD-MM-YYYY [HH:MM]), and anomaly checks
 │   ├── image_utils.py    # Pillow image manipulation: collages, story generation, date folder resolution
-│   └── templates.py      # Standardized Telegram message templates (stories, channel posts, recaps)
+│   └── templates.py      # Every user-facing text: message constants, format_* helpers, button labels, command menu
 ├── scripts/              # Utility and maintenance scripts
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
@@ -456,6 +456,7 @@ GdG-Event-Bot/
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
 - **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
+- **Texts:** all user-facing Telegram texts (replies, popups, notices, inline button labels, `BotCommand` descriptions) live in `utils/templates.py` as constants or `format_*` helpers; handlers, callbacks and services import them instead of using inline literals. Logging, exceptions, `callback_data` and the LLM prompt stay where they are.
 - **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (the Eventbrite poller) and `runner.add_cron_job(func, hour, minute, args)` a daily one (the Eventbrite cleanup at 23:59); `core/` never imports `bot/` for them.
 - **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.

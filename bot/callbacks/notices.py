@@ -1,5 +1,5 @@
 from core.db import get_reservations_for_event
-from utils.templates import format_event_title_link, format_status_notice
+from utils.templates import NOTICE_CANCELLED, NOTICE_REACTIVATED, format_event_title_link, format_status_notice
 from bot.service.mentions import format_subscriber_tag
 from bot.service.notices import send_discussion_notice
 
@@ -22,8 +22,8 @@ async def _send_status_notice(context, event, icon, status_word, subscribers_lab
 
 
 async def send_cancellation_notice(context, event):
-    await _send_status_notice(context, event, "⚠️", "ANNULLATO", "Iscritti avvisati")
+    await _send_status_notice(context, event, *NOTICE_CANCELLED)
 
 
 async def send_reactivation_notice(context, event):
-    await _send_status_notice(context, event, "✅", "RIATTIVATO", "Iscritti prenotati")
+    await _send_status_notice(context, event, *NOTICE_REACTIVATED)

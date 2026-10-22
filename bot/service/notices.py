@@ -3,7 +3,7 @@ import logging
 
 from core import config
 from utils.templates import (
-    format_admin_action_notice, format_event_title_link, format_seats_added_verb, format_seats_removed_verb,
+    SEATS_ADDED_ICON, SEATS_REMOVED_ICON, format_admin_action_notice, format_event_title_link, format_seats_added_verb, format_seats_removed_verb,
 )
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import format_subscriber_tag
@@ -60,9 +60,9 @@ async def send_admin_action_notice(
     user_tag = format_subscriber_tag(target_username, target_full_name, target_user_id) or "Utente"
     seats_count = max(1, int(seats or 1))
     if action == "add":
-        icon, verb = "✅", format_seats_added_verb(seats_count)
+        icon, verb = SEATS_ADDED_ICON, format_seats_added_verb(seats_count)
     else:
-        icon, verb = "❌", format_seats_removed_verb(seats_count)
+        icon, verb = SEATS_REMOVED_ICON, format_seats_removed_verb(seats_count)
 
     text = format_admin_action_notice(_admin_suffix(admin_user), icon, verb, user_tag, format_event_title_link(event))
     await send_discussion_notice(context, event, text, label="admin action notice")

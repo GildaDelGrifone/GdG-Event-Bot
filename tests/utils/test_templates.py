@@ -1,5 +1,7 @@
 import unittest
 
+from utils import templates
+
 import core.db as db
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event
 from utils.templates import (
@@ -212,6 +214,55 @@ class TestEventbriteTemplates(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertEqual(format_discussion_booking_message({**live, "eventbrite_status": status}), plain)
         self.assertEqual(format_discussion_booking_message({"eventbrite_status": "live"}), plain)
+
+
+class TestMessageCatalogue(unittest.TestCase):
+    def test_public_text_constants_are_non_empty_strings(self):
+        for name in dir(templates):
+            if name.isupper() and not name.startswith("_") and name not in ("ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
+                with self.subTest(name=name):
+                    value = getattr(templates, name)
+                    self.assertIsInstance(value, str)
+                    self.assertTrue(value.strip())
+
+    def test_command_menu_entries_are_unique_name_description_pairs(self):
+        names = [name for name, _ in templates.DEFAULT_COMMAND_DESCRIPTIONS + templates.ADMIN_COMMAND_DESCRIPTIONS]
+        self.assertEqual(len(names), len(set(names)))
+        for _, description in templates.DEFAULT_COMMAND_DESCRIPTIONS + templates.ADMIN_COMMAND_DESCRIPTIONS:
+            self.assertTrue(description)
+
+    def test_seat_helpers_pluralise(self):
+        self.assertEqual(templates.format_seats_count(1), "1 posto")
+        self.assertEqual(templates.format_seats_count(3), "3 posti")
+        self.assertEqual(templates.format_seats_added_verb(1), "Aggiunto 1 posto")
+        self.assertEqual(templates.format_seats_removed_verb(2), "Rimossi 2 posti")
+
+    def test_helpers_escape_user_supplied_html(self):
+        self.assertIn("&lt;b&gt;", templates.format_eb_poll_booked("<b>", "1 posto", "T"))
+        self.assertIn("&lt;i&gt;", templates.format_conflict_item("T", "<i>"))
+        self.assertIn("&lt;x&gt;", templates.format_reposts_digest_entry({"id": 1, "title": "<x>"}))
+        self.assertIn("&lt;x&gt;", templates.format_schedule_list_entry({"id": 1, "title": "<x>"}))
+
+    def test_overbooking_and_status_messages(self):
+        self.assertEqual(templates.format_eb_overbooking(7, 5, 4),
+                         "⚠️ Overbooking su #7: 5/4 (prenotazione Eventbrite arrivata in contemporanea).")
+        self.assertIn("Ultima prenotazione Telegram: @mario.", templates.format_eb_overbooking(7, 5, 4, "@mario"))
+        self.assertIn("annullato su Eventbrite ma attivo su Telegram", templates.format_eb_poll_event_cancelled(3, False))
+        self.assertIn("iscritti avvisati da Eventbrite", templates.format_eb_poll_event_cancelled(3, True))
+
+    def test_status_notice_adds_subscribers_only_when_present(self):
+        plain = templates.format_status_notice("⚠️", "ANNULLATO", "T", "Iscritti avvisati", "")
+        self.assertNotIn("Iscritti avvisati", plain)
+        tagged = templates.format_status_notice("⚠️", "ANNULLATO", "T", "Iscritti avvisati", "@a, @b")
+        self.assertTrue(tagged.endswith("Iscritti avvisati: @a, @b"))
+
+    def test_keyboard_label_helpers(self):
+        self.assertEqual(templates.format_venue_button("Sede", True, True), "✅ Sede (predefinito)")
+        self.assertEqual(templates.format_venue_button("Sede", False, False), "Sede")
+        self.assertEqual(templates.format_schedule_day_button("Lunedì", True), "✅ Lunedì")
+        self.assertEqual(templates.format_schedule_day_button("Lunedì", False), "⬜ Lunedì")
+        self.assertEqual(templates.format_eb_orders_to_cancel(1, 3).count("altri"), 0)
+        self.assertIn("altri 2 ordini", templates.format_eb_orders_to_cancel(1, 42, hidden=2))
 
 
 if __name__ == "__main__":
