@@ -6,15 +6,11 @@ from telegram.ext import ContextTypes
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, resolve_message
 from bot.event_generator.pipeline import process_event_generation
+from utils.templates import GENERATE_PROGRESS, GENERATE_USAGE, format_generate_result
 
 logger = logging.getLogger(__name__)
 
-USAGE = (
-    "ℹ️ **Uso del comando /event_generate:**\n"
-    "Invia il comando seguito dai dettagli dell'evento, oppure rispondi a un messaggio.\n\n"
-    "**Esempi:**\n"
-    "`/event_generate Catan e Carcassonne, venerdì 10 ottobre ore 21, Host Destard, 4 posti`\n"
-)
+USAGE = GENERATE_USAGE
 
 
 @admin_only(notify=True)
@@ -34,10 +30,10 @@ async def event_generate_command(update: Update, context: ContextTypes.DEFAULT_T
         await msg.reply_text(USAGE, parse_mode="Markdown")
         return
 
-    status_msg = await msg.reply_text("⏳ Generazione evento in corso con AI e BoardGameGeek...")
+    status_msg = await msg.reply_text(GENERATE_PROGRESS)
     success, result_text = await process_event_generation(prompt_text, context)
 
-    reply = f"{'✅' if success else '❌'} {result_text}"
+    reply = format_generate_result(success, result_text)
     try:
         await status_msg.edit_text(reply)
     except Exception:

@@ -25,6 +25,7 @@ from bot.handlers.repost_schedule import (
 )
 from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
 from bot.handlers.story import event_regenerate_story_command
+from utils.templates import ADMIN_COMMAND_DESCRIPTIONS, DEFAULT_COMMAND_DESCRIPTIONS
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
@@ -57,45 +58,10 @@ async def post_init(application: Application):
         add_cron_job(delete_cancelled_eventbrite_events, *config.EVENTBRITE_CLEANUP_TIME, [application.bot])
 
     # Default commands for users in private chats / groups
-    default_commands = [
-        BotCommand("start", "Avvia il bot e visualizza info o iscritti"),
-        BotCommand("event_next", "[gg-mm-aaaa|oggi|lunedì…] Mostra gli eventi in programma, o solo quelli di un giorno"),
-        BotCommand("event_subs", "<id> Mostra gli iscritti di un evento"),
-    ]
+    default_commands = [BotCommand(name, description) for name, description in DEFAULT_COMMAND_DESCRIPTIONS]
 
     # Admin commands available in ADMIN_CHAT_ID with syntax descriptions
-    admin_commands = [
-        BotCommand("event_process", "<testo o foto> Analizza e crea bozza evento"),
-        BotCommand("ep", "<testo o foto> Analizza e crea bozza evento"),
-        BotCommand("event_generate", "<istruzioni> Genera evento e locandina con AI"),
-        BotCommand("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
-        BotCommand("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
-        BotCommand("bot_pause", "Mette in pausa l'intercettazione automatica"),
-        BotCommand("bot_resume", "Riattiva l'intercettazione automatica"),
-        BotCommand("bot_status", "Mostra lo stato operativo del bot"),
-        BotCommand("bot_eventbrite_venue", "Scegli la sede Eventbrite per i nuovi eventi"),
-        BotCommand("bot_eventbrite_only_toggle", "Attiva/disattiva la modalità solo Eventbrite"),
-        BotCommand("event_edit_title", "<Titolo> Modifica il titolo dell'evento"),
-        BotCommand("event_edit_date", "<DD-MM-YYYY HH:MM> Modifica data e ora"),
-        BotCommand("event_edit_system", "<Sistema> Modifica il sistema/gioco"),
-        BotCommand("event_edit_host", "<Nome> Modifica Master o Host"),
-        BotCommand("event_edit_type", "<rpg|boardgame> Imposta tipo tavolo"),
-        BotCommand("event_edit_seats", "<X/Y> Modifica posti disponibili/totali"),
-        BotCommand("event_edit_booked", "<N> Modifica posti già prenotati"),
-        BotCommand("event_edit_extra", "<Note> Modifica dettagli/note extra"),
-        BotCommand("event_edit_extra_add", "<Note> Aggiunge dettagli/note extra"),
-        BotCommand("event_edit_description", "<Testo> Modifica la descrizione"),
-        BotCommand("event_edit_image", "[ID] Allega nuova foto per la locandina"),
-        BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram"),
-        BotCommand("event_publish_eventbrite", "[ID] Pubblica l'evento su Eventbrite"),
-        BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
-        BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
-        BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
-        BotCommand("event_schedule", "[ID] [DATA HH:MM] Programma ripubblicazione evento"),
-        BotCommand("event_schedule_invoke", "<ID> Prepara il post dell'evento programmato"),
-        BotCommand("event_schedule_update", "<ID> Aggiorna il contenuto dell'evento programmato"),
-        BotCommand("event_schedule_list", "Mostra tutti gli eventi programmati per il repost"),
-    ]
+    admin_commands = [BotCommand(name, description) for name, description in ADMIN_COMMAND_DESCRIPTIONS]
 
     try:
         await application.bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())

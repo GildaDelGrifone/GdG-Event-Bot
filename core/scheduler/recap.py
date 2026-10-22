@@ -5,7 +5,7 @@ from core import config
 from core.db import get_pending_events_for_recap, mark_events_as_recap
 from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, compress_existing_image_file
-from utils.templates import recap_generate_text
+from utils.templates import RECAP_NO_EVENTS_TODAY, format_recap_no_events_for_date, recap_generate_text
 from bot.keyboards import get_recap_approval_keyboard
 
 logger = logging.getLogger(__name__)
@@ -25,9 +25,9 @@ def _recap_day(manual_date, now):
 
 async def _notify_no_events(bot, date_str, manual_date, now, reply_to_message_id):
     if manual_date and manual_date != now.strftime("%d-%m-%Y"):
-        msg = f"Nessun evento in programma per la data {date_str}."
+        msg = format_recap_no_events_for_date(date_str)
     else:
-        msg = "Nessun evento in programma per oggi."
+        msg = RECAP_NO_EVENTS_TODAY
     if reply_to_message_id:
         try:
             await bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=msg, reply_to_message_id=reply_to_message_id)
