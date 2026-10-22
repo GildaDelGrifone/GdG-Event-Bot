@@ -2,9 +2,11 @@ import html
 import logging
 
 from core import config
-from utils.templates import (
-    SEATS_ADDED_ICON, SEATS_REMOVED_ICON, format_admin_action_notice, format_event_title_link, format_seats_added_verb, format_seats_removed_verb,
+from utils.templates.booking import (
+    SEATS_ADDED_ICON, SEATS_REMOVED_ICON, format_admin_action_notice, format_seats_added_verb,
+    format_seats_removed_verb,
 )
+from utils.templates.common import format_event_title_link
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import format_subscriber_tag
 

@@ -7,9 +7,11 @@ from core import config
 from core.ai_parser import GeminiQuotaError
 from core.db import insert_event, update_event_field
 from utils.image_utils import create_collage_from_bytes, save_image_locally
-from utils.templates import format_public_event_message
+from utils.templates.event import format_public_event_message
 from bot.common.messages import CAPTION_LIMIT
-from utils.templates import GENERATE_PARSE_FAILED, GENERATE_QUOTA_DEPLETED, GENERATE_SAVE_ERROR, GENERATE_SUCCESS
+from utils.templates.generator import (
+    GENERATE_PARSE_FAILED, GENERATE_QUOTA_DEPLETED, GENERATE_SAVE_ERROR, GENERATE_SUCCESS,
+)
 from bot.common.previews import date_anomaly_warning, notify_quota_depleted, send_admin_preview
 from bot.event_generator.ai import generate_event_data_with_ai
 from bot.event_generator.bgg import fetch_bgg_game_image

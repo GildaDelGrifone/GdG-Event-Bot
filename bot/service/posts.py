@@ -7,7 +7,7 @@ from telegram.error import RetryAfter
 
 from core import config
 from core.db import get_event, update_discussion_message_info
-from utils.templates import format_discussion_booking_message, format_public_event_message
+from utils.templates.event import format_discussion_booking_message, format_public_event_message
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
 from bot.service.eventbrite import sync_eventbrite

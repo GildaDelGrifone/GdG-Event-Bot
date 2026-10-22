@@ -5,7 +5,7 @@ from core.ai_parser import parse_event_message, GeminiQuotaError
 from core.db import insert_event, update_event_field
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally
-from utils.templates import format_public_event_message
+from utils.templates.event import format_public_event_message
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, contains_event_keywords, parse_seats_input
 from bot.common.previews import build_admin_warning_block, notify_quota_depleted, send_admin_preview
 from bot.keyboards import get_approval_keyboard

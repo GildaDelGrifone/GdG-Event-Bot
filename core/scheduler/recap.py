@@ -5,7 +5,7 @@ from core import config
 from core.db import get_pending_events_for_recap, mark_events_as_recap
 from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, compress_existing_image_file
-from utils.templates import RECAP_NO_EVENTS_TODAY, format_recap_no_events_for_date, recap_generate_text
+from utils.templates.recap import RECAP_NO_EVENTS_TODAY, format_recap_no_events_for_date, recap_generate_text
 from bot.keyboards import get_recap_approval_keyboard
 
 logger = logging.getLogger(__name__)

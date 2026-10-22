@@ -7,7 +7,8 @@ from core import config
 from core.db import get_event, get_event_by_telegram_message_id, update_discussion_message_info
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
-from utils.templates import RECAP_INVALID_DATE, format_discussion_booking_message, format_recap_done, recap_links_text
+from utils.templates.event import format_discussion_booking_message
+from utils.templates.recap import RECAP_INVALID_DATE, format_recap_done, recap_links_text
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard

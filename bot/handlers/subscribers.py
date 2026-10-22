@@ -9,9 +9,10 @@ from bot.common.auth import admin_only, describe_user
 from bot.common.parsing import extract_event_id_from_reply
 from bot.service.notices import send_admin_action_notice
 from bot.service.posts import update_event_messages
-from utils.templates import (
-    ADD_SUBSCRIBER_PROMPT_MARKER, SUBSCRIBER_EVENT_ID_NOT_INT, SUBSCRIBER_SEATS_NOT_INT, format_admin_failure,
-    format_admin_success, format_subscriber_usage, format_subscriber_usage_reply,
+from utils.templates.common import format_admin_failure, format_admin_success
+from utils.templates.subscribers import (
+    ADD_SUBSCRIBER_PROMPT_MARKER, SUBSCRIBER_EVENT_ID_NOT_INT, SUBSCRIBER_SEATS_NOT_INT, format_subscriber_usage,
+    format_subscriber_usage_reply,
 )
 
 logger = logging.getLogger(__name__)

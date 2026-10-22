@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, resolve_message
 from bot.event_generator.pipeline import process_event_generation
-from utils.templates import GENERATE_PROGRESS, GENERATE_USAGE, format_generate_result
+from utils.templates.generator import GENERATE_PROGRESS, GENERATE_USAGE, format_generate_result
 
 logger = logging.getLogger(__name__)
 

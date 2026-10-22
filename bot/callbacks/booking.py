@@ -4,7 +4,8 @@ from core.db import get_event
 from bot.keyboards import is_event_full
 from bot.service.booking import handle_seat_booking, handle_seat_unbooking
 from bot.service.posts import update_event_messages
-from utils.templates import POPUP_EVENT_NOT_FOUND, POPUP_TABLE_FULL
+from utils.templates.booking import POPUP_TABLE_FULL
+from utils.templates.common import POPUP_EVENT_NOT_FOUND
 
 logger = logging.getLogger(__name__)
 

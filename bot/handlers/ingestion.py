@@ -10,7 +10,7 @@ from bot.common.messages import command_argument, resolve_message
 from bot.handlers.albums import buffer_media_group_message, get_media_group_data_from_cache
 from bot.handlers.extraction import handle_event_extraction
 from bot.state import runtime_state
-from utils.templates import PROCESS_NO_TEXT, PROCESS_NO_TEXT_IN_REPLY, PROCESSED_REPLY, PROCESSED_TEXT
+from utils.templates.public import PROCESSED_REPLY, PROCESSED_TEXT, PROCESS_NO_TEXT, PROCESS_NO_TEXT_IN_REPLY
 
 logger = logging.getLogger(__name__)
 

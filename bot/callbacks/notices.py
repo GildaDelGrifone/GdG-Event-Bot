@@ -1,5 +1,6 @@
 from core.db import get_reservations_for_event
-from utils.templates import NOTICE_CANCELLED, NOTICE_REACTIVATED, format_event_title_link, format_status_notice
+from utils.templates.booking import NOTICE_CANCELLED, NOTICE_REACTIVATED, format_status_notice
+from utils.templates.common import format_event_title_link
 from bot.service.mentions import format_subscriber_tag
 from bot.service.notices import send_discussion_notice
 

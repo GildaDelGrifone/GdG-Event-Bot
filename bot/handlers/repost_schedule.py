@@ -15,12 +15,12 @@ from core.db import (
     update_scheduled_event_content,
 )
 from utils.date_utils import parse_user_date, format_standard_event_date
-from utils.templates import (
-    NO_TEXT_IN_REPLIED_MESSAGE, REPOST_UPDATE_REMINDER, SCHEDULE_DATE_UPDATED_PREFIX, SCHEDULE_INVALID_DATE,
-    SCHEDULE_INVALID_DATE_FOR_EXISTING, SCHEDULE_LIST_EMPTY, SCHEDULE_NO_REPLY, SCHEDULE_SAVE_ERROR,
-    SCHEDULE_UPDATE_ERROR, SCHEDULE_UPDATE_NO_REPLY, SCHEDULE_UPDATE_USAGE, format_schedule_list_entry,
-    format_schedule_list_header, format_schedule_repost_message, format_scheduled_event_not_found,
-    format_scheduled_event_updated,
+from utils.templates.common import NO_TEXT_IN_REPLIED_MESSAGE
+from utils.templates.reposts import (
+    REPOST_UPDATE_REMINDER, SCHEDULE_DATE_UPDATED_PREFIX, SCHEDULE_INVALID_DATE, SCHEDULE_INVALID_DATE_FOR_EXISTING,
+    SCHEDULE_LIST_EMPTY, SCHEDULE_NO_REPLY, SCHEDULE_SAVE_ERROR, SCHEDULE_UPDATE_ERROR, SCHEDULE_UPDATE_NO_REPLY,
+    SCHEDULE_UPDATE_USAGE, format_schedule_list_entry, format_schedule_list_header, format_schedule_repost_message,
+    format_scheduled_event_not_found, format_scheduled_event_updated,
 )
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, command_tokens, reply_in_chunks, resolve_message

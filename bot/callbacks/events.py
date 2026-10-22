@@ -5,12 +5,14 @@ from core.db import (
     delete_event, get_event, update_event_status, update_telegram_message_info,
 )
 from utils.image_utils import create_story_image, delete_local_image
-from utils.templates import (
+from utils.templates.approval import (
     APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_CANCELLATION_ABORTED,
-    POPUP_EVENT_NOT_FOUND, POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED,
-    REACTIVATED_SUFFIX, STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS,
-    format_approved_without_telegram, format_channel_publish_error, format_public_event_message,
+    POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED, REACTIVATED_SUFFIX,
+    STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS, format_approved_without_telegram,
+    format_channel_publish_error,
 )
+from utils.templates.common import POPUP_EVENT_NOT_FOUND
+from utils.templates.event import format_public_event_message
 from bot.callbacks.notices import send_cancellation_notice, send_reactivation_notice
 from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback

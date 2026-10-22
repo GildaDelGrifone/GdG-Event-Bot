@@ -11,10 +11,11 @@ from bot.common.parsing import extract_event_id_from_reply
 from core import config
 from core.db import get_event
 from utils.image_utils import create_story_image
-from utils.templates import (
+from utils.templates.approval import (
     REGENERATE_STORY_PROGRESS, REGENERATE_STORY_USAGE, STORY_GENERATION_ERROR, STORY_SEND_ERROR,
-    format_event_id_not_found_in_db, format_story_regenerated_caption,
+    format_story_regenerated_caption,
 )
+from utils.templates.common import format_event_id_not_found_in_db
 
 logger = logging.getLogger(__name__)
 

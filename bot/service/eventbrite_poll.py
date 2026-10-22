@@ -24,9 +24,9 @@ from core.db import (
     set_eventbrite_info,
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
-from utils.templates import (
+from utils.templates.common import format_event_title_link, format_seats_count
+from utils.templates.eventbrite import (
     format_eb_overbooking, format_eb_poll_booked, format_eb_poll_event_cancelled, format_eb_poll_released,
-    format_event_title_link, format_seats_count,
 )
 from bot.service.eventbrite import finish_eventbrite_cancellation, is_gone, notify_admin, unlink_deleted_eventbrite_event
 from bot.service.notices import send_discussion_notice

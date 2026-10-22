@@ -4,7 +4,7 @@ from datetime import datetime
 from core import config
 from core.db import get_scheduled_events_for_date
 from utils.date_utils import DAYS_IT
-from utils.templates import REPOST_UPDATE_REMINDER, format_reposts_digest_entry, format_reposts_digest_header
+from utils.templates.reposts import REPOST_UPDATE_REMINDER, format_reposts_digest_entry, format_reposts_digest_header
 
 logger = logging.getLogger(__name__)
 

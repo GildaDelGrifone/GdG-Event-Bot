@@ -2,10 +2,11 @@ import logging
 
 from core import config
 from core.db import get_event, book_seat, unbook_seat, get_user_conflicting_events
-from utils.templates import (
-    EVENTBRITE_TAKEN, format_booking_notice, format_conflict_item, format_conflict_warning, format_event_title_link,
-    format_unbooking_notice,
+from utils.templates.booking import (
+    format_booking_notice, format_conflict_item, format_conflict_warning, format_unbooking_notice,
 )
+from utils.templates.common import format_event_title_link
+from utils.templates.eventbrite import EVENTBRITE_TAKEN
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import describe_telegram_user, format_user_mention, get_user_display_name_and_username
 from bot.service.eventbrite import reserve_on_eventbrite

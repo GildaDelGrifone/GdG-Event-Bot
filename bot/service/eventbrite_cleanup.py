@@ -8,9 +8,9 @@ from core import config
 from core.db import clear_eventbrite_info, get_eventbrite_cleanup_candidates
 from core.eventbrite import EventbriteError, delete_eventbrite_event, eventbrite_enabled
 from bot.service.eventbrite import refresh_admin_card
-from utils.templates import (
-    format_cleanup_deleted, format_cleanup_failed, format_cleanup_kept, format_cleanup_label, format_cleanup_pending_orders,
-    format_cleanup_refused,
+from utils.templates.eventbrite import (
+    format_cleanup_deleted, format_cleanup_failed, format_cleanup_kept, format_cleanup_label,
+    format_cleanup_pending_orders, format_cleanup_refused,
 )
 
 logger = logging.getLogger(__name__)

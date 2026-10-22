@@ -8,8 +8,9 @@ from bot.common.messages import command_argument, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
 from bot.service.eventbrite import start_eventbrite_publish
 from core.db import get_event
-from utils.templates import (
-    PUBLISH_EVENTBRITE_CANCELLED, PUBLISH_EVENTBRITE_PENDING, PUBLISH_EVENTBRITE_USAGE, format_event_id_not_found,
+from utils.templates.common import format_event_id_not_found
+from utils.templates.eventbrite import (
+    PUBLISH_EVENTBRITE_CANCELLED, PUBLISH_EVENTBRITE_PENDING, PUBLISH_EVENTBRITE_USAGE,
 )
 
 logger = logging.getLogger(__name__)

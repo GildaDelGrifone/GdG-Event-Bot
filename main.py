@@ -25,7 +25,7 @@ from bot.handlers.repost_schedule import (
 )
 from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
 from bot.handlers.story import event_regenerate_story_command
-from utils.templates import ADMIN_COMMAND_DESCRIPTIONS, DEFAULT_COMMAND_DESCRIPTIONS
+from utils.templates.commands import ADMIN_COMMAND_DESCRIPTIONS, DEFAULT_COMMAND_DESCRIPTIONS
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events

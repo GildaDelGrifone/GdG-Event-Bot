@@ -8,12 +8,14 @@ from core import config
 from core.db import eventbrite_seat_count, get_event, update_event_field
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally, delete_local_image, move_image_locally
-from utils.templates import (
-    APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, EDIT_BOOKED_INVALID, EDIT_DATE_INVALID, EDIT_DB_ERROR,
-    EDIT_EVENT_ID_UNKNOWN, EDIT_EVENT_MISSING_AFTER_UPDATE, EDIT_EVENT_NOT_FOUND, EDIT_EXTRA_ADD_USAGE, EDIT_IMAGE_MISSING,
-    EDIT_IMAGE_SAVE_ERROR, EDIT_NO_REPLY, EDIT_SEATS_INVALID, EDIT_TYPE_INVALID, format_caption_overflow_warning,
-    format_edit_done, format_edit_eventbrite_seats_blocked, format_public_event_message,
+from utils.templates.approval import APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX
+from utils.templates.edit import (
+    EDIT_BOOKED_INVALID, EDIT_DATE_INVALID, EDIT_DB_ERROR, EDIT_EVENT_ID_UNKNOWN, EDIT_EVENT_MISSING_AFTER_UPDATE,
+    EDIT_EVENT_NOT_FOUND, EDIT_EXTRA_ADD_USAGE, EDIT_IMAGE_MISSING, EDIT_IMAGE_SAVE_ERROR, EDIT_NO_REPLY,
+    EDIT_SEATS_INVALID, EDIT_TYPE_INVALID, format_caption_overflow_warning, format_edit_done,
+    format_edit_eventbrite_seats_blocked,
 )
+from utils.templates.event import format_public_event_message
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import CAPTION_LIMIT, is_not_modified_error, truncate_caption, with_html_fallback
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, extract_event_id_from_reply, parse_seats_input

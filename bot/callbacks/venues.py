@@ -7,7 +7,8 @@ from bot.common.auth import describe_user
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
 from bot.state import runtime_state
-from utils.templates import POPUP_CLOSED, POPUP_VENUE_GONE, POPUP_VENUE_UPDATED, format_venue_selected
+from utils.templates.common import POPUP_CLOSED
+from utils.templates.control import POPUP_VENUE_GONE, POPUP_VENUE_UPDATED, format_venue_selected
 
 logger = logging.getLogger(__name__)
 

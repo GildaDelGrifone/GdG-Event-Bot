@@ -7,10 +7,11 @@ from core.db import get_pending_events_for_recap, update_events_wp_info
 from core.wordpress import publish_article, upload_media, update_article_status
 from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, create_recap_story_image
-from utils.templates import (
-    ARTICLE_PUBLISH_ERROR_SUFFIX, ARTICLE_PUBLISHED_SUFFIX, RECAP_DISCARDED_SUFFIX, RECAP_PUBLISHED_SUFFIX,
+from utils.templates.recap import recap_generate_text
+from utils.templates.wordpress import (
+    ARTICLE_PUBLISHED_SUFFIX, ARTICLE_PUBLISH_ERROR_SUFFIX, RECAP_DISCARDED_SUFFIX, RECAP_PUBLISHED_SUFFIX,
     RECAP_STORY_CAPTION, RECAP_STORY_ERROR, WORDPRESS_CREATE_ERROR, WORDPRESS_DRAFT_PROGRESS,
-    format_wordpress_draft_created, recap_generate_text,
+    format_wordpress_draft_created,
 )
 from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error

@@ -39,16 +39,20 @@ from core.eventbrite.tickets import update_ticket_capacity, update_ticket_quanti
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
 from bot.state import runtime_state
-from utils.templates import (
-    BUTTON_EB_CANCEL_DONE, BUTTON_EB_DASHBOARD, BUTTON_EB_RECREATE, BUTTON_EB_RETRY_LOGO, DATE_NOT_UPDATED,
-    EVENTBRITE_CANCELLED_CANNOT_REACTIVATE, EVENTBRITE_MUST_BE_APPROVED, EVENTBRITE_ORDERS_STILL_ACTIVE_PREFIX,
-    EVENTBRITE_STILL_TELEGRAM_ACTIVE, NOT_CONFIGURED, format_eb_all_orders_cancelled, format_eb_already_cancelled,
-    format_eb_already_published, format_eb_cancel_failed, format_eb_cancel_incomplete, format_eb_cancelled_keep_telegram,
-    format_eb_cancelled_too, format_eb_cannot_cancel_yet, format_eb_collection_warning, format_eb_error,
-    format_eb_link_removed, format_eb_logo_not_updated, format_eb_logo_not_uploaded, format_eb_logo_uploaded,
-    format_eb_no_image, format_eb_not_active, format_eb_order_button, format_eb_orders_to_cancel, format_eb_publish_failed,
-    format_eb_publish_in_progress, format_eb_published, format_eb_reactivate_failed, format_eb_reactivated,
-    format_eb_sync_failed, format_eb_taken_offline, format_event_id_not_found,
+from utils.templates.common import format_event_id_not_found
+from utils.templates.eventbrite import (
+    DATE_NOT_UPDATED, EVENTBRITE_CANCELLED_CANNOT_REACTIVATE, EVENTBRITE_MUST_BE_APPROVED,
+    EVENTBRITE_ORDERS_STILL_ACTIVE_PREFIX, EVENTBRITE_STILL_TELEGRAM_ACTIVE, NOT_CONFIGURED,
+    format_eb_all_orders_cancelled, format_eb_already_cancelled, format_eb_already_published, format_eb_cancel_failed,
+    format_eb_cancel_incomplete, format_eb_cancelled_keep_telegram, format_eb_cancelled_too,
+    format_eb_cannot_cancel_yet, format_eb_collection_warning, format_eb_error, format_eb_link_removed,
+    format_eb_logo_not_updated, format_eb_logo_not_uploaded, format_eb_logo_uploaded, format_eb_no_image,
+    format_eb_not_active, format_eb_orders_to_cancel, format_eb_publish_failed, format_eb_publish_in_progress,
+    format_eb_published, format_eb_reactivate_failed, format_eb_reactivated, format_eb_sync_failed,
+    format_eb_taken_offline,
+)
+from utils.templates.keyboards import (
+    BUTTON_EB_CANCEL_DONE, BUTTON_EB_DASHBOARD, BUTTON_EB_RECREATE, BUTTON_EB_RETRY_LOGO, format_eb_order_button,
 )
 
 logger = logging.getLogger(__name__)

@@ -1,19 +1,16 @@
+import importlib
+import pkgutil
 import unittest
-
-from utils import templates
+from types import SimpleNamespace
 
 import core.db as db
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event
-from utils.templates import (
-    format_discussion_booking_message,
-    format_event_participants_message,
-    format_event_seats,
-    format_instagram_story,
-    format_public_event_message,
-    format_reservation_subscriber_display,
-    recap_generate_text,
-    recap_links_text,
+from utils.templates.event import (
+    format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
+from utils.templates.recap import recap_generate_text, recap_links_text
+from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
+import utils.templates as templates_package
 
 
 class TestRoleplayTypeFormatting(unittest.TestCase):
@@ -214,6 +211,20 @@ class TestEventbriteTemplates(unittest.TestCase):
             with self.subTest(status=status):
                 self.assertEqual(format_discussion_booking_message({**live, "eventbrite_status": status}), plain)
         self.assertEqual(format_discussion_booking_message({"eventbrite_status": "live"}), plain)
+
+
+def _load_templates():
+    """Every public name of every utils.templates module, in one namespace (names are unique across modules)."""
+    names = {}
+    for info in pkgutil.iter_modules(templates_package.__path__):
+        module = importlib.import_module(f"utils.templates.{info.name}")
+        for name, value in vars(module).items():
+            if not name.startswith("_") and getattr(value, "__module__", module.__name__) == module.__name__:
+                names[name] = value
+    return SimpleNamespace(**names)
+
+
+templates = _load_templates()
 
 
 class TestMessageCatalogue(unittest.TestCase):

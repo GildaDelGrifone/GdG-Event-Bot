@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from core import config
 from utils.date_utils import extract_event_datetime
-from utils.templates import ASSOCIATION_ADDRESS
+from utils.templates.common import ASSOCIATION_ADDRESS
 
 NAME_MAX_LENGTH = 75
 SUMMARY_MAX_LENGTH = 140

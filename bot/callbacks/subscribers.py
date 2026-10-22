@@ -3,9 +3,8 @@ import logging
 from telegram import ForceReply
 
 from core.db import get_event, get_reservations_for_event, get_reservation, admin_add_seat, admin_remove_seat
-from utils.templates import (
-    POPUP_CLOSED, POPUP_EVENT_NOT_FOUND, SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel,
-)
+from utils.templates.common import POPUP_CLOSED, POPUP_EVENT_NOT_FOUND
+from utils.templates.subscribers import SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel
 from bot.common.auth import describe_user
 from bot.keyboards import get_subscribers_management_keyboard
 from bot.service.notices import send_admin_action_notice

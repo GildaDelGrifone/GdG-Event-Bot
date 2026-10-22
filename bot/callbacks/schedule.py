@@ -1,8 +1,9 @@
 import logging
 
 from core.db import get_scheduled_event, update_scheduled_event_days, delete_scheduled_event
-from utils.templates import (
-    POPUP_CLOSED, POPUP_SCHEDULE_DELETED, POPUP_SCHEDULE_NOT_FOUND, SCHEDULE_DELETED_TEXT, format_schedule_day_toggled,
+from utils.templates.common import POPUP_CLOSED
+from utils.templates.reposts import (
+    POPUP_SCHEDULE_DELETED, POPUP_SCHEDULE_NOT_FOUND, SCHEDULE_DELETED_TEXT, format_schedule_day_toggled,
     format_schedule_repost_message,
 )
 from bot.keyboards import SCHEDULE_DAY_NAMES, get_schedule_repost_keyboard

@@ -113,7 +113,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - **[Publish]:**
   1. Generates 1080x1920 Instagram Story image using `utils/image_utils.create_story_image()` and saves it in `[DATA_DIR]/YYYY/MM/DD/`.
   2. Sends the generated story image to `ADMIN_CHAT_ID` for review *(Meta Graph API publishing is currently commented out for testing; see section 6)*.
-  3. Formats the official standardized public channel post using `utils/templates.format_public_event_post()`.
+  3. Formats the official standardized public channel post using `utils/templates/event.py` (`format_public_event_message`).
   4. Posts the formatted message with the original image to `PUBLIC_CHANNEL_ID`, attaching the `[➕ Prenota] [👥 Lista] [➖ Annulla]` inline keyboard.
   5. Updates DB with the public `telegram_message_id` and `message_link`.
   6. Leaves persistent `[❌ Annulla Evento]` and `[👥 Gestisci Iscritti]` buttons under the admin review message.
@@ -180,7 +180,7 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Collects images for all matching events.
    - Resizes images to a uniform average height preserving individual aspect ratios (no distortion, no cropped borders).
    - Arranges images into rows based on `MAX_EVENTS_PER_ROW` (centering shorter rows for a balanced layout) and saves to `[DATA_DIR]/YYYY/MM/DD/recap_collage_DD-MM-YYYY.jpg`.
-4. **Text Formatting (`utils/templates.recap_generate_text` & `recap_links_text`):**
+4. **Text Formatting (`utils/templates/recap.py`: `recap_generate_text` & `recap_links_text`):**
    - Italian day names (Lunedì, Mercoledì, etc.).
    - Lists events in caption with bold titles and live available seats: `- <b>Titolo</b> (Sistema) : X/Y` (or `- ❌ <b>Titolo</b> (Sistema) : X/Y [ANNULLATO]`).
    - Generates comment text `recap_links_text` listing all active events with bold hyperlinked titles: `- <a href="..."><b>Titolo</b></a> (Sistema)`.
@@ -250,7 +250,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 1. Refuses (messaging `admin_chat_id`) when the integration is off, the event is missing or not `approved`, the date is missing/past. Nothing is created on Eventbrite in these cases. An event with nothing left to sell (`0/0 Completo`, or fully booked on Telegram) is **not** refused: it is published sold out, with a 1-seat ticket class created `closed=True` (hidden, `sales_end` 2 minutes ahead, so it can never be bought) and `eventbrite_quantity_total = 0`; the success notice adds the sold-out line, and the first sync with a free seat reopens it (see the seat model). `max_seats` NULL (unlimited) is never full.
 2. Idempotent: an already `live` event just replies with its link; a `draft` resumes from the failed step. Steps run in `asyncio.to_thread` and store ids after each one: create event → create ticket class → upload logo (a failure is only a warning with a `[🖼️ Riprova caricamento logo]` button (`eb_logo_<id>`, `retry_logo_on_eventbrite`), the event still goes live; the image is padded to 2:1 by `utils.image_utils.pad_to_aspect`; the upload to the pre-signed URL goes out with a browser User-Agent and the whole upload cycle is retried up to 3 times with a fresh upload target on 429/502/503/504 and network errors, honouring `Retry-After` up to 15 s, because Eventbrite's WAF sometimes answers it with an HTML "Whoops!" page; errors are reduced to a one-line reason) → write the description page (structured content, version = stored version + 1) → publish. `eventbrite_status` goes `draft` → `live`.
 3. Sends `✅ Evento pubblicato su Eventbrite: <url>`, swaps the admin card buttons through `events.admin_message_id` (so the button and the command behave the same) and calls `update_event_messages`, so the discussion reply gains the link.
-- The link appears **only** in the discussion-group booking message (`utils.templates.format_discussion_booking_message`); the channel post is unchanged.
+- The link appears **only** in the discussion-group booking message (`utils.templates.event.format_discussion_booking_message`); the channel post is unchanged.
 
 **Background publish.** The buttons and `/event_publish_eventbrite` (and `[🎟️ Ricrea su Eventbrite]`) call `start_eventbrite_publish`, which runs `publish_event_to_eventbrite` / `recreate_on_eventbrite` as an `asyncio` task and returns at once (tasks kept in `runtime_state.eventbrite_tasks`, event ids in flight in `runtime_state.eventbrite_publishing`; a second press for the same event gets `⏳ Pubblicazione su Eventbrite già in corso`). Reason: the Application handles updates one at a time, so awaiting ~10 Eventbrite calls inside the callback held back the channel post's auto-forward in the discussion group, i.e. the booking message with its buttons. Now that message is sent as before Eventbrite existed, and `publish_event_to_eventbrite` ends with `update_event_messages`, which edits the stored `discussion_message_id` to add the Eventbrite link. `handle_discussion_forward` re-reads the event after sending and edits the message once if the publish finished in the meantime.
 
@@ -393,7 +393,9 @@ GdG-Event-Bot/
 │   ├── __init__.py
 │   ├── date_utils.py     # Date parsing, format validation (DD-MM-YYYY [HH:MM]), and anomaly checks
 │   ├── image_utils.py    # Pillow image manipulation: collages, story generation, date folder resolution
-│   └── templates.py      # Every user-facing text: message constants, format_* helpers, button labels, command menu
+│   └── templates/        # Every user-facing text, one module per area
+│       ├── common.py, event.py, recap.py, subscribers.py, reposts.py, control.py, eventbrite.py
+│       └── booking.py, edit.py, approval.py, public.py, wordpress.py, generator.py, keyboards.py, commands.py
 ├── scripts/              # Utility and maintenance scripts
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
@@ -456,7 +458,7 @@ GdG-Event-Bot/
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
 - **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
-- **Texts:** all user-facing Telegram texts (replies, popups, notices, inline button labels, `BotCommand` descriptions) live in `utils/templates.py` as constants or `format_*` helpers; handlers, callbacks and services import them instead of using inline literals. Logging, exceptions, `callback_data` and the LLM prompt stay where they are.
+- **Texts:** all user-facing Telegram texts (replies, popups, notices, inline button labels, `BotCommand` descriptions) live in the `utils/templates/` package (one module per area, imported by name, e.g. `from utils.templates.common import POPUP_CLOSED`) as constants or `format_*` helpers; handlers, callbacks and services import them instead of using inline literals. Logging, exceptions, `callback_data` and the LLM prompt stay where they are.
 - **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (the Eventbrite poller) and `runner.add_cron_job(func, hour, minute, args)` a daily one (the Eventbrite cleanup at 23:59); `core/` never imports `bot/` for them.
 - **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
@@ -580,7 +582,7 @@ GdG-Event-Bot/
 ---
 
 ## 6. Templates & Character Limit Handling
-Defined in `utils/templates.py`:
+Defined in `utils/templates/` (see the module docstrings):
 - **`format_event_title_link(event)`:** Centralized title formatter ensuring all event titles across notifications and lists are HTML escaped and bolded (`<b>{escaped_title}</b>`), and hyperlinked to the event's public channel message (`<a href="{link}"><b>{escaped_title}</b></a>`) whenever a link exists.
 - **Instagram Story Text:** Standardized Italian text block.
 - **Public Event Post:** Standardized channel post with emoji formatting.

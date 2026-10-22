@@ -10,9 +10,10 @@ from core.eventbrite import eventbrite_enabled, eventbrite_venue_ids
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
 from bot.state import runtime_state
-from utils.templates import (
-    BOT_PAUSED_TEXT, BOT_RESUMED_TEXT, CHOOSE_VENUE_TEXT, EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT, EVENTBRITE_ONLY_OFF_TEXT,
-    EVENTBRITE_ONLY_ON_TEXT, EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SINGLE_VENUE_TEXT, format_bot_status,
+from utils.templates.control import (
+    BOT_PAUSED_TEXT, BOT_RESUMED_TEXT, CHOOSE_VENUE_TEXT, EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT,
+    EVENTBRITE_ONLY_OFF_TEXT, EVENTBRITE_ONLY_ON_TEXT, EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SINGLE_VENUE_TEXT,
+    format_bot_status,
 )
 
 logger = logging.getLogger(__name__)

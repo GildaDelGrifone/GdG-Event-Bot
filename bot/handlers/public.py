@@ -8,12 +8,14 @@ from telegram.ext import ContextTypes
 
 from core import config
 from core.db import get_event, get_reservations_for_event, get_upcoming_events
-from utils.templates import (
-    EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE, EVENT_NEXT_PENDING_SUFFIX,
-    EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID, START_WELCOME, format_event_next_entry,
-    format_event_next_none_for_day, format_event_next_prefix, format_event_next_subscribers_link,
-    format_event_participants_message, format_event_seats,
+from utils.templates.event import format_event_seats
+from utils.templates.public import (
+    EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE,
+    EVENT_NEXT_PENDING_SUFFIX, EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID,
+    START_WELCOME, format_event_next_entry, format_event_next_none_for_day, format_event_next_prefix,
+    format_event_next_subscribers_link,
 )
+from utils.templates.subscribers import format_event_participants_message
 from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
 from bot.common.auth import describe_user, is_admin_chat
 from bot.common.messages import private_chat_link, reply_in_chunks, resolve_message

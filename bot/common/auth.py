@@ -2,7 +2,7 @@ import functools
 
 from core import config
 from bot.common.messages import resolve_message
-from utils.templates import UNAUTHORIZED_REPLY
+from utils.templates.common import UNAUTHORIZED_REPLY
 
 
 

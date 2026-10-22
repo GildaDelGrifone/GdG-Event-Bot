@@ -3,7 +3,7 @@ import logging
 from core import config
 from core.ai_parser import GEMINI_DEPLETED_ALERT
 from utils.date_utils import validate_event_date_anomalies
-from utils.templates import format_caption_limit_warning, format_date_anomaly_warning
+from utils.templates.approval import format_caption_limit_warning, format_date_anomaly_warning
 from bot.common.messages import CAPTION_LIMIT, truncate_caption, with_html_fallback
 
 logger = logging.getLogger(__name__)

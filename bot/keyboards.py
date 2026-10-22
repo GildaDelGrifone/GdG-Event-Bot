@@ -4,16 +4,16 @@ from core import config
 from core.db import get_event
 from core.eventbrite import dashboard_url, eventbrite_enabled, order_url
 from bot.state import runtime_state
-from utils.templates import (
+from utils.templates.keyboards import (
     BUTTON_ADD_SUBSCRIBER, BUTTON_BACK, BUTTON_BOOK, BUTTON_CANCEL_EVENT, BUTTON_CLOSE, BUTTON_CONFIRM_CANCEL,
     BUTTON_DELETE, BUTTON_DISCARD, BUTTON_DISCARD_RECAP, BUTTON_EB_CANCEL, BUTTON_EB_COMPLETE_CANCEL,
     BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS, BUTTON_REACTIVATE, BUTTON_REFRESH,
-    BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button,
-    format_eventbrite_order_row_button, format_increment_seat_button, format_reservation_subscriber_display,
-    format_schedule_day_button, format_venue_button,
+    BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button, format_eventbrite_order_row_button,
+    format_increment_seat_button, format_schedule_day_button, format_venue_button,
 )
+from utils.templates.subscribers import format_reservation_subscriber_display
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
 SCHEDULE_DAYS = (
