@@ -5,7 +5,12 @@ from core.db import (
     delete_event, get_event, update_event_status, update_telegram_message_info,
 )
 from utils.image_utils import create_story_image, delete_local_image
-from utils.templates import format_public_event_message
+from utils.templates import (
+    APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_CANCELLATION_ABORTED,
+    POPUP_EVENT_NOT_FOUND, POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED,
+    REACTIVATED_SUFFIX, STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS,
+    format_approved_without_telegram, format_channel_publish_error, format_public_event_message,
+)
 from bot.callbacks.notices import send_cancellation_notice, send_reactivation_notice
 from bot.common.auth import describe_user
 from bot.common.messages import send_image_or_error, truncate_caption, with_html_fallback
@@ -22,10 +27,7 @@ from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
 
-APPROVED_SUFFIX = "\n\n✅ APPROVATO"
-CANCELLED_SUFFIX = "\n\n⚠️ ANNULLATO"
-DISCARDED_SUFFIX = "\n\n❌ SCARTATO"
-STATUS_SUFFIXES = (APPROVED_SUFFIX, CANCELLED_SUFFIX, "\n\n✅ RIATTIVATO", DISCARDED_SUFFIX)
+STATUS_SUFFIXES = (APPROVED_SUFFIX, CANCELLED_SUFFIX, REACTIVATED_SUFFIX, DISCARDED_SUFFIX)
 
 
 def update_status_suffix(msg_text, new_suffix):
@@ -75,7 +77,7 @@ async def _publish_to_channel(context, query, event_id, event):
         try:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"❌ Errore pubblicazione evento #{event_id} sul canale: {e}\nSe la didascalia supera i 1024 caratteri, riduci la descrizione con /event_edit_description e riprova ad approvare."
+                text=format_channel_publish_error(event_id, e)
             )
         except Exception:
             pass
@@ -83,12 +85,12 @@ async def _publish_to_channel(context, query, event_id, event):
 
 async def _send_story_preview(context, chat_id, event):
     # Instagram publishing is disabled for now; admins review the generated story image instead
-    await context.bot.send_message(chat_id=chat_id, text="⏳ Generazione e pubblicazione Storia Instagram in corso...")
+    await context.bot.send_message(chat_id=chat_id, text=STORY_GENERATION_PROGRESS)
     story_image_path = create_story_image(event, event.get('image_path'), config.DATA_DIR)
     await send_image_or_error(
         context.bot, chat_id, story_image_path,
-        caption="✅ Immagine Storia generata (Pubblicazione IG disabilitata temporaneamente per test).",
-        error_text="❌ Errore durante la generazione dell'immagine della storia.",
+        caption=STORY_GENERATED_CAPTION,
+        error_text=STORY_GENERATION_ERROR,
     )
 
 
@@ -106,7 +108,7 @@ async def _publish(query, context, event_id, telegram=True):
             logger.info(f"Event #{event_id} approved without a Telegram post.")
             await context.bot.send_message(
                 chat_id=query.message.chat_id, reply_to_message_id=query.message.message_id,
-                text=f"🔇 Evento #{event_id} approvato senza pubblicazione su Telegram.",
+                text=format_approved_without_telegram(event_id),
             )
         if not runtime_state.eventbrite_only:  # Eventbrite-only mode: no automatic Instagram story
             await _send_story_preview(context, query.message.chat_id, event)
@@ -163,7 +165,7 @@ async def handle_eventbrite_cancel_ask(query, context, payload):
     event_id = int(payload)
     event = get_event(event_id)
     if not _eventbrite_cancellable(event):
-        await query.answer("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
+        await query.answer(POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, show_alert=True)
         return
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} on Eventbrite only.")
     await query.answer()
@@ -177,7 +179,7 @@ async def handle_eventbrite_cancel_do(query, context, payload):
     event_id = int(payload)
     event = get_event(event_id)
     if not _eventbrite_cancellable(event):
-        await query.answer("Niente da annullare su Eventbrite per questo evento.", show_alert=True)
+        await query.answer(POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, show_alert=True)
         return
     await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id} on Eventbrite only.")
@@ -185,7 +187,7 @@ async def handle_eventbrite_cancel_do(query, context, payload):
 
 
 async def handle_eventbrite_logo_retry(query, context, payload):
-    await query.answer("Carico il logo…")
+    await query.answer(POPUP_LOADING_LOGO)
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} retried the Eventbrite logo upload of event #{event_id}.")
     await retry_logo_on_eventbrite(context, event_id, query.message.chat_id)
@@ -197,7 +199,7 @@ async def handle_eventbrite_cancel_retry(query, context, payload):
     logger.info(f"{describe_user(query.from_user)} asked to complete the Eventbrite cancellation of event #{event_id}.")
     event = get_event(event_id)
     if not event:
-        await query.answer("Evento non trovato.", show_alert=True)
+        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
         return
     # The order-links message is temporary; the button on the admin card itself must stay
     is_card = query.message.message_id == event.get('admin_message_id')
@@ -231,7 +233,7 @@ async def handle_cancel_event(query, context, payload):
     event_id = int(payload)
     event = get_event(event_id)
     if not event:
-        await query.answer("Evento non trovato.", show_alert=True)
+        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
         return
 
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} (confirmation requested).")
@@ -243,7 +245,7 @@ async def handle_cancel_event(query, context, payload):
 
 
 async def handle_cancel_abort(query, context, payload):
-    await query.answer("Annullamento interrotto.")
+    await query.answer(POPUP_CANCELLATION_ABORTED)
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} aborted the cancellation of event #{event_id}.")
     try:
@@ -256,10 +258,10 @@ async def handle_cancel_confirm(query, context, payload):
     event_id = int(payload)
     event = get_event(event_id)
     if not event:
-        await query.answer("Evento non trovato.", show_alert=True)
+        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
         return
     if event.get('status') == 'cancelled':
-        await query.answer("Evento già annullato.")
+        await query.answer(POPUP_ALREADY_CANCELLED)
         return
     await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id}.")
@@ -273,7 +275,7 @@ async def handle_cancel_confirm(query, context, payload):
 
 
 async def handle_reactivate_event(query, context, payload):
-    await query.answer("Evento riattivato!")
+    await query.answer(POPUP_REACTIVATED)
     event_id = int(payload)
     logger.info(f"{describe_user(query.from_user)} reactivated event #{event_id}.")
     await _change_published_state(
