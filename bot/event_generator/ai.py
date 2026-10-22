@@ -24,6 +24,7 @@ Required JSON structure:
 {{
   "title": "Title of the event or game(s). E.g. 'Catan', 'Catan & Carcassonne', or 'D&D 5e: Il Tesoro della Regina'",
   "games": ["List of individual game titles to search on BoardGameGeek for box art, e.g. ['Catan'] or ['Catan', 'Carcassonne']"],
+  "bgg_ids": {{"<each title exactly as in games>": "its BoardGameGeek numeric ID (e.g. 13 for Catan) or null"}},
   "date": "Italian date string, e.g. 'Venerdì 10-10-2026 21:00' or 'Domenica 04 Ottobre 2026 21:00'",
   "normalized_date": "Strict DD-MM-YYYY format, e.g. '10-10-2026'",
   "system": "Game system or category, e.g. 'Board Game', 'Giochi da Tavolo', 'D&D 5e', 'Call of Cthulhu'",
@@ -40,7 +41,8 @@ CRITICAL RULES:
 1. "description" MUST BE CONCISE: maximum 350-400 characters!
    The entire Telegram post (including title, host, date, seats, and description) MUST fit within Telegram's strict {CAPTION_LIMIT}-character caption limit.
 2. "games" must contain only clean game names without dates, hosts, or extra words (e.g. ["Root", "Wingspan"]).
-3. Return ONLY valid JSON, with no markdown outside ```json blocks.
+3. "bgg_ids" are checked against BoardGameGeek before use: give an ID only if you know it, null is better than a guess.
+4. Return ONLY valid JSON, with no markdown outside ```json blocks.
 
 User Instructions:
 {prompt_text}
@@ -62,7 +64,23 @@ def normalize_generated_event(data):
             data["games"] = [data["title"]]
         else:
             data["games"] = []
+    data["bgg_ids"] = normalize_bgg_ids(data.get("bgg_ids"))
     return data
+
+
+def normalize_bgg_ids(value):
+    """{game: positive int}; anything else is dropped."""
+    if not isinstance(value, dict):
+        return {}
+    ids = {}
+    for game, bgg_id in value.items():
+        try:
+            bgg_id = int(bgg_id)
+        except (TypeError, ValueError):
+            continue
+        if bgg_id > 0:
+            ids[str(game)] = bgg_id
+    return ids
 
 
 def generate_event_data_with_ai(prompt_text: str) -> dict | None:

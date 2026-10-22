@@ -49,6 +49,14 @@ class TestProcessEventGeneration(TempDBMixin, unittest.IsolatedAsyncioTestCase):
              patch("builtins.open", MagicMock()):
             yield mock_collage
 
+    async def test_process_event_generation_passes_bgg_id_hints(self):
+        ev_data = {**generated_event("Catan & Wingspan", ["Catan", "Wingspan"]), "bgg_ids": {"Catan": 13}}
+        with self.pipeline(ev_data, [b"IMG_1", None], "single.jpg"), \
+             patch("bot.event_generator.pipeline.fetch_bgg_game_image", side_effect=[b"IMG_1", None]) as fetch:
+            await process_event_generation("Catan e Wingspan", self.context)
+        self.assertCountEqual([(c.args[0], c.kwargs["bgg_id"]) for c in fetch.call_args_list],
+                              [("Catan", 13), ("Wingspan", None)])
+
     async def test_process_event_generation_single_game_no_collage(self):
         with self.pipeline(generated_event("Catan", ["Catan"]), [b"SINGLE_IMG_BYTES"], "test.jpg") as mock_collage:
             success, _msg = await process_event_generation("Catan, 10 ottobre", self.context)

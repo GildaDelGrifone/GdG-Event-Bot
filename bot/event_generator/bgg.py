@@ -33,6 +33,8 @@ GAME_DESCRIPTION_RE = re.compile(
     re.I,
 )
 STOPWORDS = {"the", "of", "and", "a", "an", "il", "la", "lo", "le", "gli", "di", "del", "della", "e", "de"}
+BGG_GAME_SUBTYPES = {"boardgame", "boardgameexpansion"}
+BGG_HEADERS = {"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}
 GEMINI_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 VERIFY_IMAGE_PROMPT = (
     "Is this image the box cover, cover art or components of the tabletop game '{game}'? Answer only YES or NO."
@@ -95,12 +97,11 @@ def fetch_bgg_api_image(game_name: str, token: str | None = None, timeout: int =
         if not object_id:
             return None
 
-        det_resp = requests.get(f"{BGG_DETAIL_URL}{object_id}", headers=headers, timeout=timeout)
-        if det_resp.status_code != 200:
-            logger.warning(f"BGG item detail fetch for ID {object_id} returned {det_resp.status_code}")
+        item = bgg_item_by_id(object_id, timeout, headers=headers)
+        if item is None:
             return None
 
-        image_url = bgg_image_url(det_resp.json().get("item", {}))
+        image_url = bgg_image_url(item)
         if not image_url:
             logger.info(f"No image URL found in BGG item for '{q}' (ID: {object_id})")
             return None
@@ -114,6 +115,48 @@ def fetch_bgg_api_image(game_name: str, token: str | None = None, timeout: int =
     except Exception as e:
         logger.error(f"Error fetching BGG image for '{q}': {e}")
         return None
+
+
+def bgg_item_by_id(object_id, timeout: int = 10, headers: dict = BGG_HEADERS) -> dict | None:
+    """BGG item detail; unlike search, it answers without a token."""
+    try:
+        resp = requests.get(f"{BGG_DETAIL_URL}{object_id}", headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            logger.warning(f"BGG item detail fetch for ID {object_id} returned {resp.status_code}")
+            return None
+        return resp.json().get("item") or None
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"BGG item detail fetch for ID {object_id} failed: {e}")
+        return None
+
+
+def _normalize_name(name: str) -> str:
+    return " ".join(re.findall(r"\w+", name.lower()))
+
+
+def bgg_item_matches(item: dict, game_name: str) -> bool:
+    """The item is a board game named game_name, in any language, optionally followed by a ': subtitle'."""
+    if item.get("subtype") not in BGG_GAME_SUBTYPES:
+        return False
+    wanted = _normalize_name(game_name)
+    names = [item.get("name") or ""] + [alt.get("name") or "" for alt in item.get("alternatenames") or []]
+    return any(wanted in (_normalize_name(name), _normalize_name(re.split(r"[:–—]|\s-\s", name)[0]))
+               for name in names if name)
+
+
+def fetch_bgg_image_by_id(object_id, game_name: str, timeout: int = 10) -> bytes | None:
+    """BGG box art for a known ID, used only if BGG's own names for that ID match game_name."""
+    item = bgg_item_by_id(object_id, timeout)
+    if item is None:
+        return None
+    if not bgg_item_matches(item, game_name):
+        logger.info(f"BGG ID {object_id} is '{item.get('name')}', not '{game_name}'; ignored")
+        return None
+    image_url = bgg_image_url(item)
+    img = _download_image(image_url, {"User-Agent": DEFAULT_USER_AGENT}, timeout) if image_url else None
+    if img:
+        logger.info(f"Retrieved game image for '{game_name}' from BoardGameGeek ID {object_id}")
+    return img
 
 
 def _download_image(url: str, headers: dict, timeout: int) -> bytes | None:
@@ -164,6 +207,12 @@ def rank_wikidata_entities(entities, query):
     return exact + [entity for entity in entities if entity not in exact]
 
 
+def wikidata_bgg_ids(entity: dict) -> list[str]:
+    """BoardGameGeek IDs (P2339) of a Wikidata item."""
+    claims = entity.get("claims", {}).get("P2339", [])
+    return [v for v in (c.get("mainsnak", {}).get("datavalue", {}).get("value") for c in claims) if v]
+
+
 def wikidata_image_url(entity: dict, timeout: int) -> str | None:
     """Lead image of the en/it Wikipedia article (usually the box art), else the Commons image (P18)."""
     sitelinks = entity.get("sitelinks", {})
@@ -181,7 +230,8 @@ def wikidata_image_url(entity: dict, timeout: int) -> str | None:
 
 
 def fetch_wikidata_game_image(game_name: str, timeout: int = 10) -> bytes | None:
-    """Looks the game up among Wikidata items that have a BoardGameGeek ID (P2339), so homonyms are skipped."""
+    """Looks the game up among Wikidata items that have a BoardGameGeek ID (P2339), so homonyms are skipped.
+    The BGG box art for that ID comes first, the en/it Wikipedia or Commons image second."""
     if not game_name or not game_name.strip():
         return None
     q = game_name.strip()
@@ -206,6 +256,10 @@ def fetch_wikidata_game_image(game_name: str, timeout: int = 10) -> bytes | None
         entities = resp.json().get("entities", {})
 
         for entity in rank_wikidata_entities([entities[i] for i in ids if i in entities], q):
+            for bgg_id in wikidata_bgg_ids(entity):
+                img = fetch_bgg_image_by_id(bgg_id, q, timeout)
+                if img:
+                    return img
             img_url = wikidata_image_url(entity, timeout)
             img = _download_image(img_url, WIKIMEDIA_HEADERS, timeout) if img_url else None
             if img:
@@ -339,12 +393,13 @@ def fetch_fallback_game_image(game_name: str, timeout: int = 10) -> bytes | None
     return None
 
 
-def fetch_bgg_game_image(game_name: str, timeout: int = 10, token: str | None = None) -> bytes | None:
+def fetch_bgg_game_image(game_name: str, timeout: int = 10, token: str | None = None,
+                         bgg_id: int | None = None) -> bytes | None:
     """
     Fetches the game image.
     If BGG_API_TOKEN is configured in environment (or provided), queries BoardGameGeek API first.
-    If BGG_API_TOKEN is not configured or BGG returns no result / error,
-    falls back to Wikipedia and web search.
+    Then bgg_id (the AI's guess, checked against BGG's names) is tried,
+    then Wikidata/Wikipedia and the Gemini-verified web search.
     """
     if not game_name or not game_name.strip():
         return None
@@ -357,6 +412,11 @@ def fetch_bgg_game_image(game_name: str, timeout: int = 10, token: str | None = 
         if img:
             return img
         logger.info(f"BGG fetch for '{q}' failed or returned no image; falling back to web search")
+
+    if isinstance(bgg_id, int) and not isinstance(bgg_id, bool) and bgg_id > 0:
+        img = fetch_bgg_image_by_id(bgg_id, q, timeout)
+        if img:
+            return img
 
     return fetch_fallback_game_image(q, timeout=timeout)
 

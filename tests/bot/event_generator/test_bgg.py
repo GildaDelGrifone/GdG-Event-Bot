@@ -4,7 +4,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from bot.event_generator.bgg import (
-    bgg_image_url, fetch_bgg_game_image, image_matches_game, mentions_game, pick_best_bgg_item, rank_wikidata_entities,
+    bgg_image_url, bgg_item_matches, fetch_bgg_game_image, image_matches_game, mentions_game, pick_best_bgg_item,
+    rank_wikidata_entities,
 )
 from core.ai_parser import GeminiQuotaError
 from tests.support.config import patched_config
@@ -29,17 +30,24 @@ def wikidata_search(*ids):
     return http_response(json={"query": {"search": [{"title": i} for i in ids]}})
 
 
+def bgg_item(name, alternates=(), subtype="boardgame", image="https://cf.geekdo-images.com/box.jpg"):
+    return http_response(json={"item": {
+        "name": name, "subtype": subtype, "alternatenames": [{"name": n} for n in alternates],
+        "images": {"original": image},
+    }})
+
+
 def bing_result(murl, title, purl):
     meta = json.dumps({"murl": murl, "t": title, "purl": purl})
     return f'<a class="iusc" m="{html.escape(meta)}"></a>'
 
 
 class TestFetchGameImage(unittest.TestCase):
-    def _fetch(self, game, responses, token="test_token"):
+    def _fetch(self, game, responses, token="test_token", bgg_id=None):
         """Runs fetch_bgg_game_image(game) with requests.get answering `responses` in order; returns (result, get)."""
         with patched_config(BGG_API_TOKEN=token), \
              patch("bot.event_generator.bgg.requests.get", side_effect=responses) as mock_get:
-            return fetch_bgg_game_image(game), mock_get
+            return fetch_bgg_game_image(game, bgg_id=bgg_id), mock_get
 
     def test_fetch_bgg_game_image_exact_match(self):
         result, mock_get = self._fetch("Catan", [
@@ -82,6 +90,56 @@ class TestFetchGameImage(unittest.TestCase):
         with patched_config(BGG_API_TOKEN="test_token"), patch("bot.event_generator.bgg.requests.get") as mock_get:
             mock_get.return_value.status_code = 404
             self.assertIsNone(fetch_bgg_game_image("NonexistentGame"))
+
+    def test_fetch_game_image_bgg_id_hint_without_token(self):
+        result, mock_get = self._fetch("Champions of Midgard", [
+            bgg_item("Champions of Midgard", image="//cf.geekdo-images.com/midgard.jpg"),
+            http_response(content=IMG),
+        ], token=None, bgg_id=172287)
+        self.assertEqual(result, IMG)
+        self.assertIn("objectid=172287", mock_get.call_args_list[0][0][0])
+        self.assertNotIn("Authorization", mock_get.call_args_list[0][1]["headers"])
+        self.assertEqual(mock_get.call_args_list[1][0][0], "https://cf.geekdo-images.com/midgard.jpg")
+
+    def test_fetch_game_image_wrong_bgg_id_hint_falls_back(self):
+        with patched_config(GEMINI_API_KEY=None):
+            result, mock_get = self._fetch("Sky Team", [
+                bgg_item("Vossheim's Holdouts"),
+                wikidata_search(),
+                http_response(json={"query": {"search": []}}),
+            ], token=None, bgg_id=373103)
+        self.assertIsNone(result)
+        # No image download for the wrong game
+        self.assertEqual(mock_get.call_count, 3)
+
+    def test_fetch_game_image_wikidata_bgg_id_first(self):
+        result, mock_get = self._fetch("Root", [
+            wikidata_search("Q101242941"),
+            http_response(json={"entities": {"Q101242941": {
+                "id": "Q101242941", "labels": {"en": {"value": "Root"}},
+                "sitelinks": {"enwiki": {"title": "Root (board game)"}},
+                "claims": {"P2339": [{"mainsnak": {"datavalue": {"value": "237182"}}}]},
+            }}}),
+            bgg_item("Root", image="https://cf.geekdo-images.com/root_box.jpg"),
+            http_response(content=IMG),
+        ], token=None)
+        self.assertEqual(result, IMG)
+        self.assertIn("objectid=237182", mock_get.call_args_list[2][0][0])
+        self.assertEqual(mock_get.call_args_list[3][0][0], "https://cf.geekdo-images.com/root_box.jpg")
+
+    def test_fetch_game_image_wikidata_bgg_unavailable_uses_wikipedia(self):
+        result, mock_get = self._fetch("Root", [
+            wikidata_search("Q101242941"),
+            http_response(json={"entities": {"Q101242941": {
+                "id": "Q101242941", "sitelinks": {"enwiki": {"title": "Root (board game)"}},
+                "claims": {"P2339": [{"mainsnak": {"datavalue": {"value": "237182"}}}]},
+            }}}),
+            http_response(status_code=401),
+            http_response(json={"originalimage": {"source": "https://upload.wikimedia.org/root.jpg"}}),
+            http_response(content=IMG),
+        ], token=None)
+        self.assertEqual(result, IMG)
+        self.assertEqual(mock_get.call_args_list[4][0][0], "https://upload.wikimedia.org/root.jpg")
 
     def test_fetch_game_image_fallback_wikidata(self):
         result, mock_get = self._fetch("Terraforming Mars", [
@@ -198,6 +256,20 @@ class TestBggHelpers(unittest.TestCase):
         self.assertTrue(mentions_game("Go (game)", "Go"))
         self.assertFalse(mentions_game("Lost (TV Series 2004–2010) - IMDb", "Lost Ruins of Arnak"))
         self.assertFalse(mentions_game("Catania", "Catan"))
+
+    def test_bgg_item_matches(self):
+        def item(name, alternates=(), subtype="boardgame"):
+            return {"name": name, "subtype": subtype, "alternatenames": [{"name": n} for n in alternates]}
+        self.assertTrue(bgg_item_matches(item("CATAN"), "Catan"))
+        self.assertTrue(bgg_item_matches(item("Heat: Pedal to the Metal"), "Heat"))
+        self.assertTrue(bgg_item_matches(item("Dune: Imperium"), "Dune Imperium"))
+        self.assertTrue(bgg_item_matches(item("Catan: Seafarers", subtype="boardgameexpansion"), "Catan: Seafarers"))
+        self.assertTrue(bgg_item_matches(item("The Lord of the Rings: Duel for Middle-earth",
+                                              ["Il Signore degli Anelli: Duello per la Terra di Mezzo"]),
+                                         "Il Signore degli Anelli: Duello per la Terra di Mezzo"))
+        self.assertFalse(bgg_item_matches(item("Terraforming Mars"), "Terraforming Mars: Ares Expedition"))
+        self.assertFalse(bgg_item_matches(item("Vossheim's Holdouts"), "Sky Team"))
+        self.assertFalse(bgg_item_matches(item("Catan", subtype="videogame"), "Catan"))
 
     def test_rank_wikidata_entities(self):
         spin_off = {"id": "Q1", "labels": {"en": {"value": "Catan: Seafarers"}}}

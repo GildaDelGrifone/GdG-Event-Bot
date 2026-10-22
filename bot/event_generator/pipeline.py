@@ -64,7 +64,7 @@ async def _send_generated_preview(bot, warning_block, final_text, image_path, ke
 
 
 async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
-    """AI fields -> BoardGameGeek covers -> caption-safe post -> pending DB row -> admin approval card."""
+    """AI fields (+ guessed BGG IDs) -> BoardGameGeek covers -> caption-safe post -> pending DB row -> admin approval card."""
     try:
         event_data = await asyncio.to_thread(generate_event_data_with_ai, prompt_text)
     except GeminiQuotaError as e:
@@ -75,7 +75,9 @@ async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAU
         return False, GENERATE_PARSE_FAILED
 
     games = event_data.get("games", [])
-    covers = await asyncio.gather(*(asyncio.to_thread(fetch_bgg_game_image, game) for game in games))
+    bgg_ids = event_data.get("bgg_ids") or {}
+    covers = await asyncio.gather(*(asyncio.to_thread(fetch_bgg_game_image, game, bgg_id=bgg_ids.get(game))
+                                    for game in games))
     images = [img for img in covers if img]
     image_path = await asyncio.to_thread(_save_event_image, games, images, event_data.get("normalized_date"))
 
