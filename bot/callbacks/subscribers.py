@@ -1,11 +1,13 @@
 import logging
 
 from telegram import ForceReply
+from telegram.error import TelegramError
 
 from core.db import get_event, get_reservations_for_event, get_reservation, admin_add_seat, admin_remove_seat
 from utils.templates.common import POPUP_CLOSED, POPUP_EVENT_NOT_FOUND
 from utils.templates.subscribers import SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel
 from bot.common.auth import describe_user
+from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_subscribers_management_keyboard
 from bot.service.notices import send_admin_action_notice
 from bot.service.posts import update_event_messages
@@ -85,8 +87,9 @@ async def _adjust_seat(query, context, payload, action):
     text, keyboard = _render_panel(event_id, event)
     try:
         await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
-    except Exception:
-        pass
+    except TelegramError as e:
+        if not is_not_modified_error(e):
+            logger.warning(f"Could not refresh subscribers panel: {e}")
 
 
 async def handle_seat_increment(query, context, payload):
@@ -115,5 +118,5 @@ async def handle_close_panel(query, context, payload):
     logger.info(f"{describe_user(query.from_user)} closed subscribers management panel.")
     try:
         await query.message.delete()
-    except Exception:
-        pass
+    except TelegramError as e:
+        logger.debug(f"Could not delete subscribers panel: {e}")

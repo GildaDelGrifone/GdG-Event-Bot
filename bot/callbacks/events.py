@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from telegram.error import TelegramError
+
 from core import config
 from core.db import (
     delete_event, get_event, update_event_status, update_telegram_message_info,
@@ -82,8 +84,8 @@ async def _publish_to_channel(context, query, event_id, event):
                 chat_id=query.message.chat_id,
                 text=format_channel_publish_error(event_id, e)
             )
-        except Exception:
-            pass
+        except TelegramError as e:
+            logger.debug(f"Could not report channel publish error to admin chat: {e}")
 
 
 async def _send_story_preview(context, chat_id, event):

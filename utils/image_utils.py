@@ -110,8 +110,8 @@ def build_horizontal_collage(images, max_per_row=None):
     for im in images:
         try:
             im = ImageOps.exif_transpose(im)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not apply EXIF orientation: {e}")
         if im.mode != 'RGB':
             im = im.convert('RGB')
         processed_images.append(im)

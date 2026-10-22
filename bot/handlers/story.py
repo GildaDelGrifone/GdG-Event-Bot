@@ -3,6 +3,7 @@ import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import TelegramError
 
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import command_argument, resolve_message, send_image_or_error
@@ -55,8 +56,8 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
         )
         try:
             await status_msg.delete()
-        except Exception:
-            pass
+        except TelegramError as e:
+            logger.debug(f"Could not delete story progress message: {e}")
     else:
         try:
             await status_msg.edit_text(STORY_GENERATION_ERROR)

@@ -19,8 +19,8 @@ def _recap_day(manual_date, now):
     if manual_date:
         try:
             return datetime.strptime(manual_date, "%d-%m-%Y")
-        except Exception:
-            pass
+        except ValueError as e:
+            logger.debug(f"Invalid manual recap date, using today: {e}")
     return now
 
 

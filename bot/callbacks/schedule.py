@@ -1,11 +1,14 @@
 import logging
 
+from telegram.error import TelegramError
+
 from core.db import get_scheduled_event, update_scheduled_event_days, delete_scheduled_event
 from utils.templates.common import POPUP_CLOSED
 from utils.templates.reposts import (
     POPUP_SCHEDULE_DELETED, POPUP_SCHEDULE_NOT_FOUND, SCHEDULE_DELETED_TEXT, format_schedule_day_toggled,
     format_schedule_repost_message,
 )
+from bot.common.messages import is_not_modified_error
 from bot.keyboards import SCHEDULE_DAY_NAMES, get_schedule_repost_keyboard
 
 logger = logging.getLogger(__name__)
@@ -56,13 +59,14 @@ async def handle_delete_schedule(query, context, payload):
             await query.edit_message_caption(caption=text, reply_markup=None)
         else:
             await query.edit_message_text(text=text, reply_markup=None)
-    except Exception:
-        pass
+    except TelegramError as e:
+        if not is_not_modified_error(e):
+            logger.warning(f"Could not edit deleted schedule card: {e}")
 
 
 async def handle_close_schedule(query, context, payload):
     await query.answer(POPUP_CLOSED)
     try:
         await query.message.delete()
-    except Exception:
-        pass
+    except TelegramError as e:
+        logger.debug(f"Could not delete schedule card: {e}")

@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from telegram.error import TelegramError
+
 from core import config
 from core.eventbrite import eventbrite_venue_ids
 from bot.common.auth import describe_user
@@ -18,8 +20,8 @@ async def handle_venue_close(query, context, payload):
     await query.answer(POPUP_CLOSED)
     try:
         await query.message.delete()
-    except Exception:
-        pass
+    except TelegramError as e:
+        logger.debug(f"Could not delete venue picker: {e}")
 
 
 async def handle_venue_pick(query, context, payload):

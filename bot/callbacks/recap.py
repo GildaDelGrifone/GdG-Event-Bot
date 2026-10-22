@@ -2,6 +2,8 @@ import asyncio
 import logging
 from datetime import datetime
 
+from telegram.error import TelegramError
+
 from core import config
 from core.ai_parser import generate_wordpress_article, GeminiQuotaError
 from core.db import get_pending_events_for_recap, update_events_wp_info
@@ -15,7 +17,7 @@ from utils.templates.wordpress import (
     format_wordpress_draft_created,
 )
 from bot.common.auth import describe_user
-from bot.common.messages import send_image_or_error
+from bot.common.messages import is_not_modified_error, send_image_or_error
 from bot.common.previews import notify_quota_depleted
 from bot.keyboards import get_wp_publish_keyboard
 from bot.state import remember_published_recap
@@ -125,5 +127,6 @@ async def handle_publish_wordpress(query, context, payload):
         suffix = ARTICLE_PUBLISH_ERROR_SUFFIX
     try:
         await query.edit_message_text(text=f"{query.message.text}{suffix}")
-    except Exception:
-        pass
+    except TelegramError as e:
+        if not is_not_modified_error(e):
+            logger.warning(f"Could not update WordPress card: {e}")
