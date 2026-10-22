@@ -14,7 +14,7 @@ from bot.common.parsing import extract_event_id_from_reply
 from bot.handlers.albums import extract_image_bytes_from_update
 from bot.handlers.extraction import handle_event_extraction
 from utils.templates import (
-    NO_TEXT_IN_REPLIED_MESSAGE, REPOST_DONE, REPOST_INVALID_DATE, REPOST_MISSING_PARAMS, REPOST_NO_REPLY, REPOST_USAGE,
+    NO_TEXT_IN_REPLIED_MESSAGE, REPOST_DONE, REPOST_INVALID_DATE, REPOST_MISSING_PARAMS, REPOST_NO_REPLY,
     SCHEDULE_INVOKE_USAGE, SCHEDULED_EVENT_NO_TEXT, format_scheduled_event_invoked, format_scheduled_event_not_found,
 )
 
