@@ -1,8 +1,14 @@
+import html
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from bot.event_generator.bgg import bgg_image_url, fetch_bgg_game_image, pick_best_bgg_item
+from bot.event_generator.bgg import (
+    bgg_image_url, fetch_bgg_game_image, image_matches_game, mentions_game, pick_best_bgg_item, rank_wikidata_entities,
+)
+from core.ai_parser import GeminiQuotaError
 from tests.support.config import patched_config
+from tests.support.images import image_bytes
 
 
 def http_response(status_code=200, json=None, content=None, text=None):
@@ -14,6 +20,18 @@ def http_response(status_code=200, json=None, content=None, text=None):
     if text is not None:
         response.text = text
     return response
+
+
+IMG = b"I" * 1200
+
+
+def wikidata_search(*ids):
+    return http_response(json={"query": {"search": [{"title": i} for i in ids]}})
+
+
+def bing_result(murl, title, purl):
+    meta = json.dumps({"murl": murl, "t": title, "purl": purl})
+    return f'<a class="iusc" m="{html.escape(meta)}"></a>'
 
 
 class TestFetchGameImage(unittest.TestCase):
@@ -65,31 +83,101 @@ class TestFetchGameImage(unittest.TestCase):
             mock_get.return_value.status_code = 404
             self.assertIsNone(fetch_bgg_game_image("NonexistentGame"))
 
-    def test_fetch_game_image_fallback_wikipedia(self):
-        result, mock_get = self._fetch("Catan", [
-            http_response(json={"query": {"search": [{"title": "Catan"}]}}),
-            http_response(json={"thumbnail": {"source": "https://upload.wikimedia.org/catan.jpg"}}),
-            http_response(content=b"X" * 600),
+    def test_fetch_game_image_fallback_wikidata(self):
+        result, mock_get = self._fetch("Terraforming Mars", [
+            wikidata_search("Q116278175", "Q36718832"),
+            http_response(json={"entities": {
+                "Q116278175": {"id": "Q116278175", "labels": {"en": {"value": "Terraforming Mars: Ares Expedition"}}},
+                # No label, only the sitelink names it
+                "Q36718832": {"id": "Q36718832", "labels": {},
+                              "sitelinks": {"enwiki": {"title": "Terraforming Mars (board game)"}}},
+            }}),
+            http_response(json={"originalimage": {"source": "https://upload.wikimedia.org/tm_box.jpg"},
+                                "thumbnail": {"source": "https://upload.wikimedia.org/tm_thumb.jpg"}}),
+            http_response(content=IMG),
         ], token=None)
-        self.assertEqual(result, b"X" * 600)
-        self.assertEqual(mock_get.call_count, 3)
+        self.assertEqual(result, IMG)
+        self.assertIn("haswbstatement:P2339", mock_get.call_args_list[0].kwargs["params"]["srsearch"])
+        self.assertEqual(mock_get.call_args_list[1].kwargs["params"]["ids"], "Q116278175|Q36718832")
+        self.assertIn("Terraforming_Mars_%28board_game%29", mock_get.call_args_list[2][0][0])
+        self.assertEqual(mock_get.call_args_list[3][0][0], "https://upload.wikimedia.org/tm_box.jpg")
 
-    def test_fetch_game_image_fallback_bing_when_wikipedia_empty(self):
-        result, _mock_get = self._fetch("Champions of Midgard", [
-            http_response(json={"query": {"search": []}}),
-            http_response(text='<a class="thumb" murl="https://example.com/midgard.jpg"></a>'),
-            http_response(content=b"Y" * 1200),
+    def test_fetch_game_image_wikidata_commons_image_when_no_article(self):
+        result, mock_get = self._fetch("Root", [
+            wikidata_search("Q101242941"),
+            http_response(json={"entities": {"Q101242941": {"id": "Q101242941", "claims": {
+                "P18": [{"mainsnak": {"datavalue": {"value": "Root game box.jpg"}}}],
+            }}}}),
+            http_response(content=IMG),
         ], token=None)
-        self.assertEqual(result, b"Y" * 1200)
+        self.assertEqual(result, IMG)
+        self.assertEqual(mock_get.call_args_list[2][0][0],
+                         "https://commons.wikimedia.org/wiki/Special:FilePath/Root_game_box.jpg?width=1000")
+
+    def test_fetch_game_image_fallback_wikipedia_skips_pages_not_about_games(self):
+        result, mock_get = self._fetch("Catan", [
+            wikidata_search(),
+            http_response(json={"query": {"search": [{"title": "Catania"}, {"title": "Catan (film)"}, {"title": "Catan"}]}}),
+            http_response(json={"description": "2019 film", "thumbnail": {"source": "https://upload.wikimedia.org/film.jpg"}}),
+            http_response(json={"description": "Multiplayer board game",
+                                "thumbnail": {"source": "https://upload.wikimedia.org/catan.jpg"}}),
+            http_response(content=IMG),
+        ], token=None)
+        self.assertEqual(result, IMG)
+        # 'Catania' is skipped by name without fetching its summary
+        self.assertIn("Catan_%28film%29", mock_get.call_args_list[2][0][0])
+        self.assertEqual(mock_get.call_args_list[4][0][0], "https://upload.wikimedia.org/catan.jpg")
+
+    def test_fetch_game_image_fallback_bing_verified_by_gemini(self):
+        bing_page = (bing_result("https://spam.example/chair.jpg", "Office chair", "https://spam.example/chair")
+                     + bing_result("https://shop.example/midgard_bad.jpg", "Champions of Midgard review", "https://blog.example/cm")
+                     + bing_result("https://cf.geekdo-images.com/midgard.jpg", "Champions of Midgard",
+                                   "https://boardgamegeek.com/boardgame/172287"))
+        with patched_config(GEMINI_API_KEY="key"), \
+             patch("bot.event_generator.bgg.image_matches_game", side_effect=[False, True]) as verify:
+            result, mock_get = self._fetch("Champions of Midgard", [
+                wikidata_search(),
+                http_response(json={"query": {"search": []}}),
+                http_response(text=bing_page),
+                http_response(content=b"WRONG" * 300),
+                http_response(content=IMG),
+            ], token=None)
+        self.assertEqual(result, IMG)
+        self.assertIn("%22Champions%20of%20Midgard%22%20board%20game", mock_get.call_args_list[2][0][0])
+        # The chair is filtered out unseen; the BoardGameGeek page is tried before the blog
+        self.assertEqual([c[0][0] for c in mock_get.call_args_list[3:]],
+                         ["https://cf.geekdo-images.com/midgard.jpg", "https://shop.example/midgard_bad.jpg"])
+        self.assertEqual(verify.call_count, 2)
+
+    def test_fetch_game_image_bing_all_rejected_returns_none(self):
+        with patched_config(GEMINI_API_KEY="key"), \
+             patch("bot.event_generator.bgg.image_matches_game", return_value=False):
+            result, _mock_get = self._fetch("Champions of Midgard", [
+                wikidata_search(),
+                http_response(json={"query": {"search": []}}),
+                http_response(text='<a class="thumb" murl="https://example.com/champions-of-midgard.jpg"></a>'),
+                http_response(content=IMG),
+            ], token=None)
+        self.assertIsNone(result)
+
+    def test_fetch_game_image_bing_skipped_without_gemini_key(self):
+        with patched_config(GEMINI_API_KEY=None):
+            result, mock_get = self._fetch("Champions of Midgard", [
+                wikidata_search(),
+                http_response(json={"query": {"search": []}}),
+            ], token=None)
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 2)
 
     def test_fetch_game_image_bgg_error_falls_back_to_web(self):
         result, _mock_get = self._fetch("Monopoly", [
             http_response(status_code=401),
-            http_response(json={"query": {"search": [{"title": "Monopoly"}]}}),
+            wikidata_search("Q131457"),
+            http_response(json={"entities": {"Q131457": {"id": "Q131457", "sitelinks": {"enwiki": {"title": "Monopoly (game)"}}}}}),
             http_response(json={"thumbnail": {"source": "https://upload.wikimedia.org/mono.jpg"}}),
-            http_response(content=b"M" * 600),
+            http_response(content=IMG),
         ], token="bad_token")
-        self.assertEqual(result, b"M" * 600)
+        self.assertEqual(result, IMG)
 
 
 class TestBggHelpers(unittest.TestCase):
@@ -103,6 +191,47 @@ class TestBggHelpers(unittest.TestCase):
         self.assertEqual(bgg_image_url({"images": {"original": "//cf.geekdo.com/a.jpg"}}), "https://cf.geekdo.com/a.jpg")
         self.assertEqual(bgg_image_url({"imageurl": "https://x/b.jpg"}), "https://x/b.jpg")
         self.assertIsNone(bgg_image_url({}))
+
+    def test_mentions_game(self):
+        self.assertTrue(mentions_game("Heat: Pedal to the Metal", "Heat"))
+        self.assertTrue(mentions_game("Root (board game)", "root"))
+        self.assertTrue(mentions_game("Go (game)", "Go"))
+        self.assertFalse(mentions_game("Lost (TV Series 2004–2010) - IMDb", "Lost Ruins of Arnak"))
+        self.assertFalse(mentions_game("Catania", "Catan"))
+
+    def test_rank_wikidata_entities(self):
+        spin_off = {"id": "Q1", "labels": {"en": {"value": "Catan: Seafarers"}}}
+        by_alias = {"id": "Q2", "aliases": {"en": [{"value": "Catan"}]}}
+        by_sitelink = {"id": "Q3", "sitelinks": {"itwiki": {"title": "Catan (gioco)"}}}
+        self.assertEqual(rank_wikidata_entities([spin_off, by_alias], "catan"), [by_alias, spin_off])
+        self.assertEqual(rank_wikidata_entities([spin_off, by_sitelink], "Catan"), [by_sitelink, spin_off])
+
+
+class TestImageMatchesGame(unittest.TestCase):
+    def _verify(self, img=None, answer=None, error=None):
+        with patch("bot.event_generator.bgg.generate_from_image", return_value=answer, side_effect=error) as gen:
+            return image_matches_game(img or image_bytes(10, 10, fmt="PNG"), "Catan"), gen
+
+    def test_answers(self):
+        self.assertTrue(self._verify(answer=" yes.")[0])
+        self.assertFalse(self._verify(answer="NO")[0])
+        self.assertFalse(self._verify(answer=None)[0])
+
+    def test_sends_detected_mime_type(self):
+        _ok, gen = self._verify(answer="YES")
+        prompt, _img, mime_type = gen.call_args[0]
+        self.assertIn("'Catan'", prompt)
+        self.assertEqual(mime_type, "image/png")
+
+    def test_errors_and_unreadable_images_count_as_no(self):
+        self.assertFalse(self._verify(error=GeminiQuotaError("429"))[0])
+        self.assertFalse(self._verify(error=RuntimeError("boom"))[0])
+        ok, gen = self._verify(img=b"<html>not an image</html>", answer="YES")
+        self.assertFalse(ok)
+        gen.assert_not_called()
+        ok, gen = self._verify(img=image_bytes(10, 10, fmt="GIF"), answer="YES")
+        self.assertFalse(ok)
+        gen.assert_not_called()
 
 
 if __name__ == "__main__":

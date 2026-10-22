@@ -3,6 +3,7 @@ import logging
 import re
 
 from google import genai
+from google.genai import types
 
 from core import config
 
@@ -53,6 +54,17 @@ def generate_text(prompt):
     """Runs prompt on config.GEMINI_MODEL; quota/credit failures surface as GeminiQuotaError."""
     try:
         return _gemini_client().models.generate_content(model=config.GEMINI_MODEL, contents=prompt).text
+    except Exception as e:
+        if is_quota_error(e):
+            raise GeminiQuotaError(str(e)) from e
+        raise
+
+
+def generate_from_image(prompt, image_bytes, mime_type="image/jpeg"):
+    """Like generate_text, with one image attached before the prompt."""
+    try:
+        contents = [types.Part.from_bytes(data=image_bytes, mime_type=mime_type), prompt]
+        return _gemini_client().models.generate_content(model=config.GEMINI_MODEL, contents=contents).text
     except Exception as e:
         if is_quota_error(e):
             raise GeminiQuotaError(str(e)) from e

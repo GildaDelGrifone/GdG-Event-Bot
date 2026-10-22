@@ -6,6 +6,7 @@ from core.ai_parser import (
     GeminiQuotaError,
     _apply_seat_safety_net,
     coerce_bool,
+    generate_from_image,
     generate_text,
     generate_wordpress_article,
     is_quota_error,
@@ -57,6 +58,17 @@ class TestGeminiErrors(unittest.TestCase):
         with gemini_returning(error=Exception("429 quota exceeded")):
             with self.assertRaises(GeminiQuotaError):
                 generate_text("prompt")
+
+    def test_generate_from_image_sends_image_and_maps_quota_errors(self):
+        with gemini_returning(text="YES") as model:
+            self.assertEqual(generate_from_image("prompt", b"PNGBYTES", "image/png"), "YES")
+        image_part, prompt = model.generate_content.call_args.kwargs["contents"]
+        self.assertEqual(image_part.inline_data.data, b"PNGBYTES")
+        self.assertEqual(image_part.inline_data.mime_type, "image/png")
+        self.assertEqual(prompt, "prompt")
+        with gemini_returning(error=Exception("RESOURCE_EXHAUSTED")):
+            with self.assertRaises(GeminiQuotaError):
+                generate_from_image("prompt", b"PNGBYTES")
 
 
 class TestAiParserHelpers(unittest.TestCase):

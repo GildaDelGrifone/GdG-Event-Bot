@@ -7,7 +7,7 @@ Questa guida illustra le funzionalità principali del Bot e spiega come utilizza
 ## 🌟 Funzionalità Principali
 
 - **Creazione Eventi Intelligente:** Il bot legge i messaggi testuali (anche con locandine allegate) e struttura automaticamente i dati dell'evento grazie all'IA.
-- **Generazione Automatica Eventi:** Creazione rapida di eventi da istruzioni libere con `/event_generate`, con recupero automatico delle scatole dei giochi (da BoardGameGeek, o da Wikipedia/ricerca web se BoardGameGeek non è configurato o non risponde) e composizione di collage per più giochi.
+- **Generazione Automatica Eventi:** Creazione rapida di eventi da istruzioni libere con `/event_generate`, con recupero automatico delle scatole dei giochi (da BoardGameGeek, o da Wikidata/Wikipedia e infine da una ricerca web verificata dall'IA se BoardGameGeek non è configurato o non risponde; meglio nessuna immagine che una sbagliata) e composizione di collage per più giochi.
 - **Prenotazioni Live (Inline):** Gli utenti possono prenotare o disdire il proprio posto direttamente dai pulsanti interattivi sotto i messaggi del canale Telegram.
 - **Prevenzione Conflitti:** Il bot avvisa automaticamente gli utenti se si prenotano a più di un evento nello stesso giorno.
 - **Prenotazioni anche su Eventbrite (opzionale):** Un evento può essere pubblicato anche su Eventbrite, così chi non usa Telegram può prenotare da lì. I posti sono unici: una prenotazione su una delle due piattaforme aggiorna subito la disponibilità dell'altra.
@@ -23,7 +23,7 @@ Gli amministratori gestiscono il bot tramite il **Gruppo Admin**.
 - **Modalità Automatica:** Invia o inoltra semplicemente il messaggio di proposta (testo ed eventuale immagine) all'interno del Gruppo Admin. Il bot lo leggerà e genererà una scheda di anteprima (Draft).
 - **Generazione con AI e BoardGameGeek (`/event_generate`):** Invia nel Gruppo Admin un messaggio con istruzioni libere (es. giochi, data, host, posti):
   `/event_generate Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`
-  Il bot interpreterà la richiesta tramite l'IA, scaricherà le locandine dei giochi (da BoardGameGeek se il bot ha il token `BGG_API_TOKEN`, altrimenti da Wikipedia o dalla ricerca web; componendo automaticamente un collage se sono presenti più giochi), genererà una sinossi rispettando il limite di 1024 caratteri della didascalia Telegram e sottoporrà la bozza a revisione admin.
+  Il bot interpreterà la richiesta tramite l'IA, scaricherà le locandine dei giochi (da BoardGameGeek se il bot ha il token `BGG_API_TOKEN`, altrimenti da Wikidata/Wikipedia o da una ricerca web in cui l'IA conferma che l'immagine è proprio quel gioco; componendo automaticamente un collage se sono presenti più giochi), genererà una sinossi rispettando il limite di 1024 caratteri della didascalia Telegram e sottoporrà la bozza a revisione admin.
 - **Protezione del Canale Eventi Pubblico:** Se un utente o un amministratore invia *manualmente* una proposta di evento in modo diretto nel canale pubblico degli eventi, **il bot la cancellerà istantaneamente** per mantenere il canale pulito e standardizzato. Il messaggio originale verrà inoltrato automaticamente nel Gruppo Admin, dove potrà essere processato, revisionato dall'IA e infine pubblicato ufficialmente.
 - **Modalità Manuale:** Se il bot è disabilitato o non ha catturato un messaggio, puoi forzare la lettura rispondendo al messaggio originale con il comando:
   `/event_process` (oppure `/ep`)

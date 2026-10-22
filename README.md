@@ -91,7 +91,7 @@ GEMINI_MODEL=gemini-3.1-flash-lite
 
 # BoardGameGeek API (Optional)
 # With a token /event_generate asks BoardGameGeek for the box covers first. Without it (or when BGG answers 401 / finds nothing)
-# the images come from Wikipedia, then a web image search.
+# the images come from Wikidata/Wikipedia, then a web image search whose results Gemini must confirm.
 # BGG_API_TOKEN=your_bgg_api_token_here
 
 # WordPress REST API Configuration
@@ -174,7 +174,7 @@ python3 main.py
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
 - **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Publish + Eventbrite]` (publishes on Telegram, then on Eventbrite); in Eventbrite-only mode (`/bot_eventbrite_only_toggle`, `EVENTBRITE_ONLY_MODE`) the card shows only `[Discard]`, `[🚀 Telegram + EB]` and `[🎟️ Solo Eventbrite]` (approves the event without any channel post and publishes it on Eventbrite only) and no Instagram story is generated. An approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates are refused; events with no free seats (e.g. `0/0 Completo`) are published sold out (visible, nothing bookable until a seat frees up); unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).
-- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches the box images (from BoardGameGeek when `BGG_API_TOKEN` is set, otherwise from Wikipedia and a web image search), stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
+- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches the box images (from BoardGameGeek when `BGG_API_TOKEN` is set, otherwise from Wikidata/Wikipedia, then a web image search whose results Gemini confirms show that game), stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
 
 ### 2. Live Seat Booking & Same-Day Conflict Warnings
 - Users click `[➕ Prenota]` on a channel post or discussion group reply to reserve a seat (or see `[🚫 Esauriti]` if full).
