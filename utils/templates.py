@@ -797,3 +797,99 @@ def format_eb_reactivated(event_id):
 
 def format_eb_publish_in_progress(event_id):
     return f"⏳ Pubblicazione su Eventbrite già in corso per #{event_id}"
+
+
+# ---------------------------------------------------------------------------
+# Booking notices, admin action notices, Eventbrite poller and nightly cleanup
+# ---------------------------------------------------------------------------
+EVENTBRITE_TAKEN = "😕 L'ultimo posto è appena stato prenotato su Eventbrite: la tua prenotazione non è stata registrata."
+CONFLICT_WARNING_FOOTER = (
+    "\n\n<i>La tua prenotazione è stata registrata regolarmente. "
+    "Se necessario, ricordati di liberare il posto dall'evento a cui non parteciperai!</i>"
+)
+
+
+def format_seats_count(count):
+    return f"{count} posto" if count == 1 else f"{count} posti"
+
+
+def format_conflict_warning(user_tag, count, items):
+    if count == 1:
+        header = f"⚠️ <b>Attenzione {user_tag}:</b> risulti già iscritto a un altro evento per la stessa data:\n"
+    else:
+        header = f"⚠️ <b>Attenzione {user_tag}:</b> risulti già iscritto ad altri {count} eventi per la stessa data:\n"
+    return header + "\n".join(items) + CONFLICT_WARNING_FOOTER
+
+
+def format_conflict_item(event_link, system=None):
+    system_str = f" (<i>{html.escape(system)}</i>)" if system else ""
+    return f"• {event_link}{system_str}"
+
+
+def format_booking_notice(user_mention, event_link):
+    return f"✅ {user_mention} ha prenotato 1 posto per: {event_link}"
+
+
+def format_unbooking_notice(user_mention, event_link):
+    return f"❌ {user_mention} ha liberato 1 posto per: {event_link}"
+
+
+def format_admin_action_notice(admin_suffix, icon, verb, user_tag, event_link):
+    return (
+        f"🛠️ <b>Operazione effettuata da un admin degli eventi{admin_suffix}:</b>\n"
+        f"{icon} {verb} per {user_tag} per: {event_link}"
+    )
+
+
+def format_seats_added_verb(seats):
+    return "Aggiunto 1 posto" if seats == 1 else f"Aggiunti {seats} posti"
+
+
+def format_seats_removed_verb(seats):
+    return "Rimosso 1 posto" if seats == 1 else f"Rimossi {seats} posti"
+
+
+def format_eb_poll_event_cancelled(event_id, telegram_cancelled):
+    if telegram_cancelled:
+        return f"✅ Evento #{event_id} annullato su Eventbrite (iscritti avvisati da Eventbrite)"
+    return f"⚠️ Evento #{event_id} annullato su Eventbrite ma attivo su Telegram"
+
+
+def format_eb_poll_booked(name, seats_label, event_link):
+    return f"🎟️ {html.escape(name)} ha prenotato {seats_label} tramite Eventbrite per: {event_link}"
+
+
+def format_eb_poll_released(name, seats_label, event_link):
+    return f"❌ {html.escape(name)} ha liberato {seats_label} (Eventbrite) per: {event_link}"
+
+
+def format_eb_overbooking(event_id, booked, max_seats, last_telegram_user=None):
+    who = f" Ultima prenotazione Telegram: {last_telegram_user}." if last_telegram_user else ""
+    return (
+        f"⚠️ Overbooking su #{event_id}: {booked}/{max_seats} "
+        f"(prenotazione Eventbrite arrivata in contemporanea).{who}"
+    )
+
+
+def format_cleanup_label(event_id, title):
+    return f"#{event_id} {title or 'Senza titolo'}"
+
+
+def format_cleanup_pending_orders(label):
+    return f"{label} (ordini ancora da annullare)"
+
+
+def format_cleanup_refused(label, reason):
+    return f"{label} (Eventbrite ha rifiutato: {reason})"
+
+
+def format_cleanup_failed(label, error):
+    return f"{label} (errore: {error})"
+
+
+def format_cleanup_deleted(count, labels):
+    return f"🧹 Eliminati da Eventbrite {count} eventi annullati: {', '.join(labels)}"
+
+
+def format_cleanup_kept(labels):
+    return f"⚠️ Non eliminati da Eventbrite: {', '.join(labels)}"

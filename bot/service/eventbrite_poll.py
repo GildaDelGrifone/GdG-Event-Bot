@@ -8,7 +8,6 @@ Budget: about one call per tracked event per poll. With 10 events every 2 minute
 the periodic full checks), under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application.
 """
 import asyncio
-import html
 import logging
 import time
 from datetime import datetime
@@ -25,7 +24,10 @@ from core.db import (
     set_eventbrite_info,
 )
 from core.eventbrite import EventbriteError, eventbrite_enabled, fetch_active_orders, get_event as get_eventbrite_event
-from utils.templates import format_event_title_link
+from utils.templates import (
+    format_eb_overbooking, format_eb_poll_booked, format_eb_poll_event_cancelled, format_eb_poll_released,
+    format_event_title_link, format_seats_count,
+)
 from bot.service.eventbrite import finish_eventbrite_cancellation, is_gone, notify_admin, unlink_deleted_eventbrite_event
 from bot.service.notices import send_discussion_notice
 from bot.service.posts import update_event_messages
@@ -59,7 +61,7 @@ def _full_sync_due(event_id, now):
 
 
 def _seats_label(count):
-    return f"{count} posto" if count == 1 else f"{count} posti"
+    return format_seats_count(count)
 
 
 def _diff_orders(event_id, orders):
@@ -85,12 +87,8 @@ async def _check_cancellation(ctx, event, eb_event):
     if eb_event.get('status') != 'canceled' or event.get('eventbrite_status') == 'canceled':
         return
     set_eventbrite_info(event['id'], eventbrite_status='canceled')
-    if event['status'] == 'cancelled' or event.get('eventbrite_status') == 'closed':  # a cancellation we started
-        await notify_admin(ctx, config.ADMIN_CHAT_ID,
-                           f"✅ Evento #{event['id']} annullato su Eventbrite (iscritti avvisati da Eventbrite)", event_id=event['id'])
-    else:
-        await notify_admin(ctx, config.ADMIN_CHAT_ID,
-                           f"⚠️ Evento #{event['id']} annullato su Eventbrite ma attivo su Telegram", event_id=event['id'])
+    telegram_cancelled = event['status'] == 'cancelled' or event.get('eventbrite_status') == 'closed'  # a cancellation we started
+    await notify_admin(ctx, config.ADMIN_CHAT_ID, format_eb_poll_event_cancelled(event['id'], telegram_cancelled), event_id=event['id'])
 
 
 async def _announce(ctx, event, changes):
@@ -98,9 +96,9 @@ async def _announce(ctx, event, changes):
     for name, old, new, _overbooked in changes:
         delta = new - old
         if delta > 0:
-            text = f"🎟️ {html.escape(name)} ha prenotato {_seats_label(delta)} tramite Eventbrite per: {title}"
+            text = format_eb_poll_booked(name, _seats_label(delta), title)
         elif delta < 0:
-            text = f"❌ {html.escape(name)} ha liberato {_seats_label(-delta)} (Eventbrite) per: {title}"
+            text = format_eb_poll_released(name, _seats_label(-delta), title)
         else:
             continue
         if event.get('telegram_message_id'):
@@ -151,15 +149,13 @@ async def _poll_event(ctx, event):
             max_seats = current.get('max_seats')
             telegram = [r for r in get_reservations_for_event(event_id) if r.get('source') != 'eventbrite']
             latest = telegram[-1] if telegram else None
-            who = ""
+            last_user = None
             if latest:
-                name = f"@{latest['username']}" if latest.get('username') else latest.get('full_name') or 'sconosciuto'
-                who = f" Ultima prenotazione Telegram: {name}."
+                last_user = f"@{latest['username']}" if latest.get('username') else latest.get('full_name') or 'sconosciuto'
             await notify_admin(
                 ctx,
                 config.ADMIN_CHAT_ID,
-                f"⚠️ Overbooking su #{event_id}: {current.get('booked_seats')}/{max_seats} "
-                f"(prenotazione Eventbrite arrivata in contemporanea).{who}",
+                format_eb_overbooking(event_id, current.get('booked_seats'), max_seats, last_user),
                 event_id=event_id,
             )
     # Every order was cancelled from the dashboard: the cancel API now works, so finish the job

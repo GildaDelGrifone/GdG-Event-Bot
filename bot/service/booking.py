@@ -1,9 +1,11 @@
-import html
 import logging
 
 from core import config
 from core.db import get_event, book_seat, unbook_seat, get_user_conflicting_events
-from utils.templates import format_event_title_link
+from utils.templates import (
+    EVENTBRITE_TAKEN, format_booking_notice, format_conflict_item, format_conflict_warning, format_event_title_link,
+    format_unbooking_notice,
+)
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import describe_telegram_user, format_user_mention, get_user_display_name_and_username
 from bot.service.eventbrite import reserve_on_eventbrite
@@ -12,28 +14,10 @@ from bot.service.posts import update_event_messages
 
 logger = logging.getLogger(__name__)
 
-EVENTBRITE_TAKEN = "😕 L'ultimo posto è appena stato prenotato su Eventbrite: la tua prenotazione non è stata registrata."
-
 
 def format_conflict_warning_message(user, conflicting_events):
-    user_tag = format_user_mention(user)
-    count = len(conflicting_events)
-    if count == 1:
-        header = f"⚠️ <b>Attenzione {user_tag}:</b> risulti già iscritto a un altro evento per la stessa data:\n"
-    else:
-        header = f"⚠️ <b>Attenzione {user_tag}:</b> risulti già iscritto ad altri {count} eventi per la stessa data:\n"
-
-    items = []
-    for ev in conflicting_events:
-        sys_val = ev.get('system')
-        sys_str = f" (<i>{html.escape(sys_val)}</i>)" if sys_val else ""
-        items.append(f"• {format_event_title_link(ev)}{sys_str}")
-
-    footer = (
-        "\n\n<i>La tua prenotazione è stata registrata regolarmente. "
-        "Se necessario, ricordati di liberare il posto dall'evento a cui non parteciperai!</i>"
-    )
-    return header + "\n".join(items) + footer
+    items = [format_conflict_item(format_event_title_link(ev), ev.get('system')) for ev in conflicting_events]
+    return format_conflict_warning(format_user_mention(user), len(conflicting_events), items)
 
 
 async def send_conflict_warning(context, event, user, conflicting_events, notify_chat, reply_to_message_id=None):
@@ -106,7 +90,7 @@ async def handle_seat_booking(event_id, user, query, context):
     await update_event_messages(context, event_id, event=event, current_query=query)
 
     notify_chat, reply_id = _notification_target(query, event)
-    text = f"✅ {format_user_mention(user)} ha prenotato 1 posto per: {format_event_title_link(event)}"
+    text = format_booking_notice(format_user_mention(user), format_event_title_link(event))
     await send_with_reply_fallback(context.bot, notify_chat, text, reply_id, log=logger, label="booking notification")
     await _warn_on_same_day_conflicts(context, event_id, event, user, notify_chat, reply_id)
 
@@ -123,5 +107,5 @@ async def handle_seat_unbooking(event_id, user, query, context):
     await update_event_messages(context, event_id, event=event, current_query=query)
 
     notify_chat, reply_id = _notification_target(query, event)
-    text = f"❌ {format_user_mention(user)} ha liberato 1 posto per: {format_event_title_link(event)}"
+    text = format_unbooking_notice(format_user_mention(user), format_event_title_link(event))
     await send_with_reply_fallback(context.bot, notify_chat, text, reply_id, log=logger, label="unbooking notification")

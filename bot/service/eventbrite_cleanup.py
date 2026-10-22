@@ -8,6 +8,10 @@ from core import config
 from core.db import clear_eventbrite_info, get_eventbrite_cleanup_candidates
 from core.eventbrite import EventbriteError, delete_eventbrite_event, eventbrite_enabled
 from bot.service.eventbrite import refresh_admin_card
+from utils.templates import (
+    format_cleanup_deleted, format_cleanup_failed, format_cleanup_kept, format_cleanup_label, format_cleanup_pending_orders,
+    format_cleanup_refused,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +19,7 @@ RATE_LIMIT_ERROR = "HIT_RATE_LIMIT"
 
 
 def _label(event):
-    return f"#{event['id']} {event.get('title') or 'Senza titolo'}"
+    return format_cleanup_label(event['id'], event.get('title'))
 
 
 def _already_gone(error):
@@ -27,9 +31,9 @@ async def _send_summary(bot, deleted, kept):
         return
     parts = []
     if deleted:
-        parts.append(f"🧹 Eliminati da Eventbrite {len(deleted)} eventi annullati: {', '.join(deleted)}")
+        parts.append(format_cleanup_deleted(len(deleted), deleted))
     if kept:
-        parts.append(f"⚠️ Non eliminati da Eventbrite: {', '.join(kept)}")
+        parts.append(format_cleanup_kept(kept))
     try:
         await bot.send_message(chat_id=config.ADMIN_CHAT_ID, text="\n".join(parts))
     except Exception as e:
@@ -49,7 +53,7 @@ async def delete_cancelled_eventbrite_events(bot, today=None):
     for event in get_eventbrite_cleanup_candidates((now.year, now.month, now.day)):
         label = _label(event)
         if event.get('eventbrite_status') == 'closed':
-            kept.append(f"{label} (ordini ancora da annullare)")
+            kept.append(format_cleanup_pending_orders(label))
             continue
         try:
             try:
@@ -67,9 +71,9 @@ async def delete_cancelled_eventbrite_events(bot, today=None):
                 logger.warning("Eventbrite rate limit hit; stopping the cleanup (it will retry tomorrow night).")
                 break
             logger.warning(f"Eventbrite refused to delete the event of #{event['id']}: {e}")
-            kept.append(f"{label} (Eventbrite ha rifiutato: {e.error})")
+            kept.append(format_cleanup_refused(label, e.error))
         except Exception as e:
             logger.error(f"Eventbrite cleanup failed for event #{event['id']}: {e}")
-            kept.append(f"{label} (errore: {e})")
+            kept.append(format_cleanup_failed(label, e))
 
     await _send_summary(bot, deleted, kept)
