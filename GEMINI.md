@@ -582,15 +582,27 @@ GdG-Event-Bot/
 ---
 
 ## 6. Templates & Character Limit Handling
-Defined in `utils/templates/` (see the module docstrings):
-- **`format_event_title_link(event)`:** Centralized title formatter ensuring all event titles across notifications and lists are HTML escaped and bolded (`<b>{escaped_title}</b>`), and hyperlinked to the event's public channel message (`<a href="{link}"><b>{escaped_title}</b></a>`) whenever a link exists.
-- **Instagram Story Text:** Standardized Italian text block.
-- **Public Event Post:** Standardized channel post with emoji formatting.
-- **Full Recap Template (`recap_generate_text`):** Header + Event list with bold titles + Footer.
-- **Recap Discussion Comment (`recap_links_text`):** Header + list of active events with bold hyperlinked titles to channel posts.
-- **Slim Recap Template:** Automatically activated if the full recap exceeds Telegram's 1024-character caption limit. Has minimal fixed headers/footers.
-- **Discussion Booking Message (`format_discussion_booking_message`):** `👇 Gestisci qui la tua prenotazione!`, plus `🎟️ Prenota anche su Eventbrite: <link>` when the event is live on Eventbrite. Also `ASSOCIATION_ADDRESS` (reused by the Eventbrite description) and `EVENTBRITE_ROW_PREFIX` (`🎟️ `, prepended to Eventbrite subscribers by `format_reservation_subscriber_display`).
-- **Repost Schedule Card (`format_schedule_repost_message`):** Management card for a `scheduled_events` row (active weekdays, specific date, `/event_schedule` usage). Shared by `/event_schedule` and the weekday toggle callbacks.
+Every user-facing Telegram text lives in the `utils/templates/` package, one module per area. Callers import from the specific module (`from utils.templates.common import POPUP_CLOSED`); `__init__.py` re-exports nothing. Wording is changed there, never at the call site. Logging, exceptions, `callback_data`, URLs and the LLM prompt are not templates and stay in the code. Texts are either constants or `format_*` helpers; helpers take raw values and `html.escape` them themselves when the message goes out with `parse_mode="HTML"`.
+
+| Module | What it holds |
+|---|---|
+| `common.py` | `format_event_title_link` (escaped, bold, linked to the channel post), `ASSOCIATION_ADDRESS`, `EVENTBRITE_ROW_PREFIX`, generic replies and popups (`UNAUTHORIZED_REPLY`, `POPUP_EVENT_NOT_FOUND`, `POPUP_CLOSED`, `NO_TEXT_IN_REPLIED_MESSAGE`), `format_seats_count`, `format_admin_failure/success` |
+| `event.py` | `format_public_event_message` (channel post), `format_instagram_story`, `format_event_seats`, `format_discussion_booking_message` (`👇 Gestisci qui la tua prenotazione!`, plus the Eventbrite link when the event is `live`) |
+| `recap.py` | `recap_generate_text` (full recap; switches to the slim variant when it exceeds the 1024-character caption limit), `recap_links_text` (discussion comment with linked titles), `/recap_generate` and recap-job messages |
+| `subscribers.py` | `format_reservation_subscriber_display`, `format_event_participants_message`, the subscribers management panel (`format_subscribers_panel`), `/event_sub_add` / `/event_sub_remove` usage and the add-subscriber prompt (`ADD_SUBSCRIBER_PROMPT_MARKER` is matched by `handle_admin_reply`) |
+| `reposts.py` | `format_schedule_repost_message`, `REPOST_UPDATE_REMINDER`, `/event_repost` and `/event_schedule*` replies, the daily digest and list entries, schedule popups |
+| `control.py` | `/bot_pause`, `/bot_resume`, `/bot_status`, Eventbrite-only mode and the venue picker texts |
+| `eventbrite.py` | admin messages for publish/cancel/reactivate/logo/sync, poller notices (bookings, releases, overbooking), nightly-cleanup summary, `/event_publish_eventbrite` replies |
+| `booking.py` | booking/unbooking notices, same-day conflict warning, admin seat-action notice, cancellation/reactivation status notice |
+| `edit.py` | `/event_edit_*` replies and errors |
+| `approval.py` | status suffixes of the admin card (`APPROVED_SUFFIX`, …; the suffix swap in `bot/callbacks/events.py` strips them by exact match), preview warnings, approval/cancellation popups, story captions |
+| `public.py` | `/event_process`, `/event_next`, `/event_subs` and `/start` texts |
+| `wordpress.py` | recap approval card suffixes and WordPress article messages |
+| `generator.py` | `/event_generate` usage, progress and results |
+| `keyboards.py` | every inline button label (`BUTTON_*`) and the label formatters used by `bot/keyboards.py` |
+| `commands.py` | `DEFAULT_COMMAND_DESCRIPTIONS` / `ADMIN_COMMAND_DESCRIPTIONS`, the (command, description) pairs `main.post_init` registers |
+
+`tests/utils/test_templates.py` checks the formatters and that every text constant of every module is a non-empty string.
 
 ---
 
