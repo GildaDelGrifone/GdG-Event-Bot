@@ -307,7 +307,7 @@ def _update_capacity(event, eb_seats, quantity):
 
 
 def _push_capacity(event, force=False):
-    eb_id, tc_id = event['eventbrite_event_id'], event.get('eventbrite_ticket_class_id')
+    tc_id = event.get('eventbrite_ticket_class_id')
     if not tc_id:
         logger.warning(f"Event #{event['id']} has no Eventbrite ticket class; capacity not pushed.")
         return

@@ -116,7 +116,7 @@ class TestEventNextCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         far = (datetime.now() + timedelta(days=40)).strftime("%d-%m-%Y")
 
         empty = await self._event_next(ADMIN_CHAT, text=f"/event_next {far}")
-        self.assertIn(f"Nessun evento in programma per", empty.call_args[0][0])
+        self.assertIn("Nessun evento in programma per", empty.call_args[0][0])
         self.assertIn(far, empty.call_args[0][0])
         invalid = await self._event_next(ADMIN_CHAT, text="/event_next boh")
         self.assertIn("Data non valida", invalid.call_args[0][0])

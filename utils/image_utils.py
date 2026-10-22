@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 import io
-from PIL import Image, ImageFilter, ImageOps, ImageDraw, ImageFont
+from PIL import Image, ImageFilter, ImageOps, ImageFont
 from pilmoji import Pilmoji
 import logging
 import tempfile
@@ -391,12 +391,10 @@ def create_story_image(event_data, original_image_path, output_dir):
                 # Try to load downloaded Roboto fonts, fallback to default if missing
                 font_bold = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Bold.ttf"), 50)
                 font_regular = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Regular.ttf"), 40)
-                font_desc = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Regular.ttf"), 35)
             except Exception:
                 logger.warning("Could not load custom fonts, using default.")
                 font_bold = ImageFont.load_default()
                 font_regular = ImageFont.load_default()
-                font_desc = ImageFont.load_default()
 
             margin = 60
             y = y_text_start

@@ -401,7 +401,8 @@ All maintenance utilities are located in the `scripts/` directory:
   - `images.py`: in-memory and on-disk test images.
 - **Running the test suite:**
   ```bash
-  pip install -r requirements.txt pytest
+  pip install -r requirements.txt -r requirements-dev.txt
   python3 -m pytest tests                      # or: python3 -m unittest discover -s tests -t .
+  python3 -m pyflakes bot core utils scripts tests main.py
   ```
-  The suite needs no real tokens or network access. Tests never touch the real database or `data/` folder.
+  The suite needs no real tokens or network access. GitHub Actions (`.github/workflows/ci.yml`) runs both commands on every push and pull request. Tests never touch the real database or `data/` folder.

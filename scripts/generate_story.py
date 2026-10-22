@@ -178,14 +178,14 @@ def generate_event_story(event_id, output_dir=None, custom_image=None):
             print("   ℹ️  Nessuna immagine associata all'evento (layout solo testo).")
 
     dest_dir = output_dir or DATA_DIR
-    print(f"\n⏳ Generazione immagine Storia Instagram (1080x1920)...")
+    print("\n⏳ Generazione immagine Storia Instagram (1080x1920)...")
     story_path = create_story_image(event, image_path, dest_dir)
 
     if story_path and os.path.exists(story_path):
         size_kb = os.path.getsize(story_path) / 1024
-        print(f"✅ Storia generata con successo!")
+        print("✅ Storia generata con successo!")
         print(f"   File:       {story_path}")
-        print(f"   Dimensioni: 1080x1920 px")
+        print("   Dimensioni: 1080x1920 px")
         print(f"   Peso:       {size_kb:.1f} KB")
         return story_path, event
     else:

@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from telegram import Bot
 from telegram.request import HTTPXRequest
-from telegram.error import RetryAfter, TimedOut, NetworkError, BadRequest, TelegramError
+from telegram.error import RetryAfter, TimedOut, NetworkError, BadRequest
 
 from core.config import (
     TELEGRAM_BOT_TOKEN,

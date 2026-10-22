@@ -128,7 +128,7 @@ def unzip_date_range(start_str, end_str, data_dir, delete_zip=False):
                     total_extracted += extracted
 
     if total_extracted == 0:
-        print(f"ℹ️  No archives found in the specified date range.")
+        print("ℹ️  No archives found in the specified date range.")
     else:
         print(f"\n🎉 Finished: Extracted {total_extracted} files across {days_with_archives} archive(s).")
     return total_extracted
