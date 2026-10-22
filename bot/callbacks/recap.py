@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 
@@ -39,7 +40,7 @@ def _recap_day_name(date_str):
 
 async def _generate_article(bot, chat_id, recap_text, events):
     try:
-        return generate_wordpress_article(recap_text, events)
+        return await asyncio.to_thread(generate_wordpress_article, recap_text, events)
     except GeminiQuotaError as e:
         await notify_quota_depleted(bot, chat_id, e, "WP article generation")
         return None
@@ -48,7 +49,7 @@ async def _generate_article(bot, chat_id, recap_text, events):
 async def _create_wordpress_draft(bot, chat_id, date_str, day_str, events, collage_path):
     for ev in events:
         if ev.get('image_path'):
-            media_info = upload_media(ev['image_path'])
+            media_info = await asyncio.to_thread(upload_media, ev['image_path'])
             if media_info:
                 ev['wp_media_url'] = media_info.get('source_url')
 
@@ -56,10 +57,10 @@ async def _create_wordpress_draft(bot, chat_id, date_str, day_str, events, colla
     if not wp_content:
         return
 
-    collage_info = upload_media(collage_path) if collage_path else None
+    collage_info = await asyncio.to_thread(upload_media, collage_path) if collage_path else None
     media_id = collage_info.get('id') if collage_info else None
 
-    wp_link, post_id = publish_article(f"Eventi della Serata: {day_str} {date_str}", wp_content, media_id=media_id)
+    wp_link, post_id = await asyncio.to_thread(publish_article, f"Eventi della Serata: {day_str} {date_str}", wp_content, media_id=media_id)
     if not (wp_link and post_id):
         await bot.send_message(chat_id=chat_id, text=WORDPRESS_CREATE_ERROR)
         return
@@ -77,9 +78,10 @@ async def _run_post_recap_pipeline(bot, chat_id, date_str, events):
     await bot.send_message(chat_id=chat_id, text=WORDPRESS_DRAFT_PROGRESS)
     day_str = _recap_day_name(date_str)
 
-    collage_path = create_collage([ev['image_path'] for ev in events if ev.get('image_path')], config.DATA_DIR, date_str)
+    collage_path = await asyncio.to_thread(create_collage, [ev['image_path'] for ev in events if ev.get('image_path')], config.DATA_DIR, date_str)
+    story_path = await asyncio.to_thread(create_recap_story_image, events, collage_path, date_str, config.DATA_DIR)
     await send_image_or_error(
-        bot, chat_id, create_recap_story_image(events, collage_path, date_str, config.DATA_DIR),
+        bot, chat_id, story_path,
         caption=RECAP_STORY_CAPTION,
         error_text=RECAP_STORY_ERROR,
     )
@@ -115,7 +117,7 @@ async def handle_publish_wordpress(query, context, payload):
     post_id = int(payload)
     admin_identifier = describe_user(query.from_user)
 
-    if update_article_status(post_id, "publish"):
+    if await asyncio.to_thread(update_article_status, post_id, "publish"):
         logger.info(f"{admin_identifier} published WordPress article #{post_id}.")
         suffix = ARTICLE_PUBLISHED_SUFFIX
     else:

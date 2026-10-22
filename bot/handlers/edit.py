@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -73,7 +74,7 @@ async def _edit_image(update, event_id, current_event, value):
         raise EditInputError(EDIT_IMAGE_MISSING)
 
     old_image_path = current_event.get("image_path")
-    new_image_path = save_image_locally(image_bytes, config.DATA_DIR, current_event.get("normalized_date"))
+    new_image_path = await asyncio.to_thread(save_image_locally, image_bytes, config.DATA_DIR, current_event.get("normalized_date"))
     if not new_image_path:
         raise EditInputError(EDIT_IMAGE_SAVE_ERROR)
 

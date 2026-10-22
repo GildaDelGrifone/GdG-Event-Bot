@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -65,7 +66,7 @@ async def _send_generated_preview(bot, warning_block, final_text, image_path, ke
 async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
     """AI fields -> BoardGameGeek covers -> caption-safe post -> pending DB row -> admin approval card."""
     try:
-        event_data = generate_event_data_with_ai(prompt_text)
+        event_data = await asyncio.to_thread(generate_event_data_with_ai, prompt_text)
     except GeminiQuotaError as e:
         await notify_quota_depleted(context.bot, config.ADMIN_CHAT_ID, e, "/event_generate")
         return False, GENERATE_QUOTA_DEPLETED
@@ -74,8 +75,9 @@ async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAU
         return False, GENERATE_PARSE_FAILED
 
     games = event_data.get("games", [])
-    images = [img for img in (fetch_bgg_game_image(game) for game in games) if img]
-    image_path = _save_event_image(games, images, event_data.get("normalized_date"))
+    covers = await asyncio.gather(*(asyncio.to_thread(fetch_bgg_game_image, game) for game in games))
+    images = [img for img in covers if img]
+    image_path = await asyncio.to_thread(_save_event_image, games, images, event_data.get("normalized_date"))
 
     final_text = enforce_caption_limit(event_data, max_length=CAPTION_LIMIT)
 

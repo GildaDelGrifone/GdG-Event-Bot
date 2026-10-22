@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from core import config
@@ -58,7 +59,7 @@ async def handle_event_extraction(text, image_bytes, context, message_link=None,
         return False
 
     try:
-        event_data = parse_event_message(text)
+        event_data = await asyncio.to_thread(parse_event_message, text)
     except GeminiQuotaError as e:
         await notify_quota_depleted(context.bot, config.ADMIN_CHAT_ID, e, "event extraction")
         return False
@@ -75,7 +76,7 @@ async def handle_event_extraction(text, image_bytes, context, message_link=None,
         except Exception as e:
             logger.error(f"Errore durante l'eliminazione del messaggio originale: {e}")
 
-    image_path = save_image_locally(image_bytes, config.DATA_DIR, event_data.get('normalized_date')) if image_bytes else None
+    image_path = await asyncio.to_thread(save_image_locally, image_bytes, config.DATA_DIR, event_data.get('normalized_date')) if image_bytes else None
 
     event_id = insert_event(event_data, image_path, text, message_link, telegram_message_id)
     if not event_id:

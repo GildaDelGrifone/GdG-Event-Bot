@@ -1,3 +1,4 @@
+import asyncio
 import html
 import logging
 import os
@@ -45,7 +46,7 @@ async def event_regenerate_story_command(update: Update, context: ContextTypes.D
     logger.info(f"{describe_user(update.effective_user)} requested story regeneration for event #{event_id}.")
     status_msg = await msg.reply_text(REGENERATE_STORY_PROGRESS)
 
-    story_image_path = create_story_image(event, event.get('image_path'), config.DATA_DIR)
+    story_image_path = await asyncio.to_thread(create_story_image, event, event.get('image_path'), config.DATA_DIR)
     if story_image_path:
         await send_image_or_error(
             context.bot,

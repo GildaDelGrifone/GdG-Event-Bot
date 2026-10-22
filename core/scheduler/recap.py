@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 
@@ -58,7 +59,9 @@ async def _send_collage(bot, collage_path, caption, keyboard):
 
     try:
         logger.info("Attempting emergency recompression of recap collage...")
-        fallback_path = compress_existing_image_file(collage_path, max_dim_sum=5000, max_single_dim=3000, target_max_bytes=1_000_000)
+        fallback_path = await asyncio.to_thread(
+            compress_existing_image_file, collage_path, max_dim_sum=5000, max_single_dim=3000, target_max_bytes=1_000_000
+        )
         if fallback_path:
             await send(fallback_path)
             return True
@@ -85,7 +88,7 @@ async def generate_daily_recap(bot, manual_date=None, is_manual=False, reply_to_
         return False
 
     caption_text = recap_generate_text(day_str, date_str, events)[:CAPTION_LIMIT]
-    collage_path = create_collage([ev['image_path'] for ev in events if ev['image_path']], config.DATA_DIR, date_str)
+    collage_path = await asyncio.to_thread(create_collage, [ev['image_path'] for ev in events if ev['image_path']], config.DATA_DIR, date_str)
     keyboard = get_recap_approval_keyboard(date_str)
 
     if not (collage_path and await _send_collage(bot, collage_path, caption_text, keyboard)):
