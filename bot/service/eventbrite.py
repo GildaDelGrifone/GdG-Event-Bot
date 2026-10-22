@@ -39,12 +39,21 @@ from core.eventbrite.tickets import update_ticket_capacity, update_ticket_quanti
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_approved_event_keyboard, get_cancelled_event_keyboard
 from bot.state import runtime_state
+from utils.templates import (
+    BUTTON_EB_CANCEL_DONE, BUTTON_EB_DASHBOARD, BUTTON_EB_RECREATE, BUTTON_EB_RETRY_LOGO, DATE_NOT_UPDATED,
+    EVENTBRITE_CANCELLED_CANNOT_REACTIVATE, EVENTBRITE_MUST_BE_APPROVED, EVENTBRITE_ORDERS_STILL_ACTIVE_PREFIX,
+    EVENTBRITE_STILL_TELEGRAM_ACTIVE, NOT_CONFIGURED, format_eb_all_orders_cancelled, format_eb_already_cancelled,
+    format_eb_already_published, format_eb_cancel_failed, format_eb_cancel_incomplete, format_eb_cancelled_keep_telegram,
+    format_eb_cancelled_too, format_eb_cannot_cancel_yet, format_eb_collection_warning, format_eb_error,
+    format_eb_link_removed, format_eb_logo_not_updated, format_eb_logo_not_uploaded, format_eb_logo_uploaded,
+    format_eb_no_image, format_eb_not_active, format_eb_order_button, format_eb_orders_to_cancel, format_eb_publish_failed,
+    format_eb_publish_in_progress, format_eb_published, format_eb_reactivate_failed, format_eb_reactivated,
+    format_eb_sync_failed, format_eb_taken_offline, format_event_id_not_found,
+)
 
 logger = logging.getLogger(__name__)
 
-NOT_CONFIGURED = "❌ Eventbrite non configurato"
 MAX_ORDER_BUTTONS = 40  # keeps the admin message well under Telegram's inline keyboard limits
-DATE_NOT_UPDATED = "⚠️ Evento #{id}: data non aggiornata su Eventbrite ({reason})."
 
 
 def _eb_seats_and_quantity(event):
@@ -96,7 +105,7 @@ async def refresh_admin_card(context, event_id):
 
 
 def _logo_retry_keyboard(event_id):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🖼️ Riprova caricamento logo", callback_data=f"eb_logo_{event_id}")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_EB_RETRY_LOGO, callback_data=f"eb_logo_{event_id}")]])
 
 
 def _failure_reason(error):
@@ -117,7 +126,7 @@ def venue_name(venue_id):
 
 
 def _recreate_keyboard(event_id):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Ricrea su Eventbrite", callback_data=f"eb_recreate_{event_id}")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_EB_RECREATE, callback_data=f"eb_recreate_{event_id}")]])
 
 
 def _is_full(event):
@@ -152,7 +161,7 @@ def _assign_collection(event, leave_other=False):
         add_event_to_collection(target, eb_id)
     except Exception as e:
         logger.warning(f"Could not add Eventbrite event of #{event['id']} to collection {target}: {e}")
-        return f"⚠️ Evento #{event['id']} non aggiunto alla collezione Eventbrite ({_failure_reason(e)})"
+        return format_eb_collection_warning(event['id'], _failure_reason(e))
     return None
 
 
@@ -212,9 +221,7 @@ async def unlink_deleted_eventbrite_event(context, event_id):
         return
     clear_eventbrite_info(event_id)
     logger.info(f"The Eventbrite event of #{event_id} no longer exists; link removed.")
-    text = f"ℹ️ Evento #{event_id} eliminato su Eventbrite: collegamento rimosso."
-    if event.get('status') == 'approved':
-        text += " Puoi ripubblicarlo con [🎟️ Pubblica su Eventbrite]."
+    text = format_eb_link_removed(event_id, can_republish=event.get('status') == 'approved')
     await notify_admin(context, config.ADMIN_CHAT_ID, text, event_id=event_id)
     await refresh_admin_card(context, event_id)
 
@@ -227,26 +234,26 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
 
     event = get_event(event_id)
     if not event:
-        await notify_admin(context, admin_chat_id, f"❌ Evento #{event_id} non trovato")
+        await notify_admin(context, admin_chat_id, format_event_id_not_found(event_id))
         return
     if event.get('status') != 'approved':
-        await notify_admin(context, admin_chat_id, "❌ Eventbrite: l'evento deve essere pubblicato su Telegram (stato: approvato).", event_id=event_id)
+        await notify_admin(context, admin_chat_id, EVENTBRITE_MUST_BE_APPROVED, event_id=event_id)
         return
 
     eb_status = event.get('eventbrite_status')
     if event.get('eventbrite_event_id') and eb_status != 'draft':
         if eb_status == 'canceled':
             await notify_admin(context, admin_chat_id,
-                               "ℹ️ L'evento era stato annullato su Eventbrite e non può essere riattivato.",
+                               EVENTBRITE_CANCELLED_CANNOT_REACTIVATE,
                                reply_markup=_recreate_keyboard(event_id), event_id=event_id)
         else:
-            await notify_admin(context, admin_chat_id, f"ℹ️ Evento già pubblicato su Eventbrite: {event.get('eventbrite_url')}", event_id=event_id)
+            await notify_admin(context, admin_chat_id, format_eb_already_published(event.get('eventbrite_url')), event_id=event_id)
         return
 
     try:
         start_end = event_start_end(event)
     except ValueError as e:
-        await notify_admin(context, admin_chat_id, f"❌ Eventbrite: {e}", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_error(e), event_id=event_id)
         return
 
     try:
@@ -263,22 +270,20 @@ async def publish_event_to_eventbrite(context, event_id, admin_chat_id):
     except Exception as e:
         logger.error(f"Eventbrite publish failed for event #{event_id}: {e}")
         await notify_admin(context, admin_chat_id,
-                           f"❌ Eventbrite: pubblicazione fallita per #{event_id} ({e}). "
-                           "Riprova con [🎟️ Pubblica su Eventbrite]: riprenderà dal punto in cui si è interrotta.", event_id=event_id)
+                           format_eb_publish_failed(event_id, e), event_id=event_id)
         return
 
     if logo_error:
-        await notify_admin(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({logo_error})",
+        await notify_admin(context, admin_chat_id, format_eb_logo_not_uploaded(logo_error),
                            reply_markup=_logo_retry_keyboard(event_id), event_id=event_id)
     if collection_warning:
         await notify_admin(context, admin_chat_id, collection_warning, event_id=event_id)
-    text = f"✅ Evento pubblicato su Eventbrite: {result['url']}"
-    if result.get('sold_out'):
-        text += "\nℹ️ Evento esaurito: pubblicato senza biglietti acquistabili (si riaprono se si libera un posto)."
+    venue = None
     if len(eventbrite_venue_ids()) > 1:
         venue_id = (get_event(event_id) or {}).get('eventbrite_venue_id')
         if venue_id:
-            text += f"\n📍 Sede: {await asyncio.to_thread(venue_name, venue_id)}"
+            venue = await asyncio.to_thread(venue_name, venue_id)
+    text = format_eb_published(result['url'], sold_out=result.get('sold_out'), venue=venue)
     await notify_admin(context, admin_chat_id, text, event_id=event_id)
     await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
@@ -394,14 +399,14 @@ async def sync_eventbrite(context, event, content_changed=False, image_changed=F
         for warning in warnings:
             await notify_admin(context, config.ADMIN_CHAT_ID, warning, event_id=event['id'])
         if logo_error:
-            await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Logo non aggiornato su Eventbrite per #{event['id']} ({logo_error})",
+            await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_logo_not_updated(event['id'], logo_error),
                                reply_markup=_logo_retry_keyboard(event['id']), event_id=event['id'])
     except Exception as e:
         if is_gone(e):
             await unlink_deleted_eventbrite_event(context, event['id'])
             return
         logger.error(f"Eventbrite sync failed for event #{event.get('id')}: {e}")
-        await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Sync Eventbrite fallita per #{event.get('id')}: {e}", event_id=event['id'])
+        await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_sync_failed(event.get('id'), e), event_id=event['id'])
 
 
 def _retry_logo_blocking(event):
@@ -415,20 +420,20 @@ async def retry_logo_on_eventbrite(context, event_id, admin_chat_id):
         return
     event = get_event(event_id)
     if not event or not event.get('eventbrite_event_id') or event.get('eventbrite_status') == 'canceled':
-        await notify_admin(context, admin_chat_id, f"❌ Evento #{event_id} non è attivo su Eventbrite", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_not_active(event_id), event_id=event_id)
         return
     image_path = event.get('image_path')
     if not (image_path and os.path.exists(image_path)):
-        await notify_admin(context, admin_chat_id, f"❌ Evento #{event_id}: nessuna immagine da caricare. Aggiungila con /event_edit_image", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_no_image(event_id), event_id=event_id)
         return
     try:
         await asyncio.to_thread(_retry_logo_blocking, event)
     except Exception as e:
         logger.warning(f"Eventbrite logo retry failed for event #{event_id}: {e}")
-        await notify_admin(context, admin_chat_id, f"⚠️ Logo non caricato su Eventbrite ({_failure_reason(e)})",
+        await notify_admin(context, admin_chat_id, format_eb_logo_not_uploaded(_failure_reason(e)),
                            reply_markup=_logo_retry_keyboard(event_id), event_id=event_id)
         return
-    await notify_admin(context, admin_chat_id, f"✅ Logo caricato su Eventbrite per l'evento #{event_id}", event_id=event_id)
+    await notify_admin(context, admin_chat_id, format_eb_logo_uploaded(event_id), event_id=event_id)
 
 
 # ---------------------------------------------------------------- cancel / reactivate
@@ -477,18 +482,12 @@ def _orders_cancel_message(event_id, eb_event_id, orders):
     """Text + keyboard with one "Cancel order" link per order: the API cannot cancel orders, the dashboard can."""
     shown = list(orders.items())[:MAX_ORDER_BUTTONS]
     rows = [
-        [InlineKeyboardButton(f"❌ {name} ({seats})", url=order_cancel_url(eb_event_id, order_id))]
+        [InlineKeyboardButton(format_eb_order_button(name, seats), url=order_cancel_url(eb_event_id, order_id))]
         for order_id, (name, seats) in shown
     ]
-    rows.append([InlineKeyboardButton("🎟️ Apri dashboard Eventbrite", url=dashboard_url(eb_event_id))])
-    rows.append([InlineKeyboardButton("🔁 Ho annullato tutto, completa", callback_data=f"eb_cancel_retry_{event_id}")])
-    text = (
-        f"⚠️ Evento #{event_id}: {len(orders)} prenotazioni Eventbrite da annullare dalla dashboard "
-        "(Eventbrite avvisa i partecipanti via email). Apri ogni ordine e premi \"Cancel order\"; "
-        "quando hai finito il bot completa l'annullamento."
-    )
-    if len(orders) > MAX_ORDER_BUTTONS:
-        text += f" (… altri {len(orders) - MAX_ORDER_BUTTONS} ordini nella dashboard)"
+    rows.append([InlineKeyboardButton(BUTTON_EB_DASHBOARD, url=dashboard_url(eb_event_id))])
+    rows.append([InlineKeyboardButton(BUTTON_EB_CANCEL_DONE, callback_data=f"eb_cancel_retry_{event_id}")])
+    text = format_eb_orders_to_cancel(event_id, len(orders), hidden=len(orders) - MAX_ORDER_BUTTONS)
     return text, InlineKeyboardMarkup(rows)
 
 
@@ -505,13 +504,13 @@ async def cancel_on_eventbrite(context, event):
         outcome, orders = await asyncio.to_thread(_cancel_blocking, event)
     except Exception as e:
         logger.error(f"Eventbrite cancellation failed for event #{event_id}: {e}")
-        await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Annullamento su Eventbrite fallito per #{event_id}: {e}", event_id=event_id)
+        await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_cancel_failed(event_id, e), event_id=event_id)
         return
 
     if outcome == 'unpublished':
-        await notify_admin(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} messo offline su Eventbrite (nessuna prenotazione).", event_id=event_id)
+        await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_taken_offline(event_id), event_id=event_id)
     elif outcome == 'canceled':
-        await notify_admin(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} annullato anche su Eventbrite", event_id=event_id)
+        await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_cancelled_too(event_id), event_id=event_id)
     else:
         text, keyboard = _orders_cancel_message(event_id, event['eventbrite_event_id'], orders)
         await notify_admin(context, config.ADMIN_CHAT_ID, text, reply_markup=keyboard, event_id=event_id)
@@ -525,7 +524,7 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
     """
     if not eventbrite_enabled() or not event or event.get('eventbrite_status') != 'closed':
         if not from_poller and event and event.get('eventbrite_status') == 'canceled':
-            await notify_admin(context, admin_chat_id, f"✅ Evento #{event['id']} già annullato su Eventbrite", event_id=event['id'])
+            await notify_admin(context, admin_chat_id, format_eb_already_cancelled(event['id']), event_id=event['id'])
         return
     event_id, eb_id = event['id'], event['eventbrite_event_id']
     try:
@@ -533,13 +532,13 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
         if orders:
             if not from_poller:
                 text, keyboard = _orders_cancel_message(event_id, eb_id, orders)
-                await notify_admin(context, admin_chat_id, f"ℹ️ Restano ancora ordini attivi.\n{text}", reply_markup=keyboard, event_id=event_id)
+                await notify_admin(context, admin_chat_id, EVENTBRITE_ORDERS_STILL_ACTIVE_PREFIX + text, reply_markup=keyboard, event_id=event_id)
             return
         cancelled = await asyncio.to_thread(_try_cancel, event_id, eb_id)
     except Exception as e:
         logger.error(f"Could not complete the Eventbrite cancellation of event #{event_id}: {e}")
         if not from_poller:
-            await notify_admin(context, admin_chat_id, f"⚠️ Annullamento su Eventbrite non completato per #{event_id}: {e}", event_id=event_id)
+            await notify_admin(context, admin_chat_id, format_eb_cancel_incomplete(event_id, e), event_id=event_id)
         return
 
     if cancelled:
@@ -549,13 +548,13 @@ async def finish_eventbrite_cancellation(context, event, admin_chat_id, from_pol
             except Exception as e:
                 logger.warning(f"Could not delete the order-links message of event #{event_id}: {e}")
         await notify_admin(context, admin_chat_id,
-                           f"✅ Tutte le prenotazioni annullate: evento #{event_id} annullato anche su Eventbrite", event_id=event_id)
+                           format_eb_all_orders_cancelled(event_id), event_id=event_id)
         await refresh_admin_card(context, event_id)
     elif not from_poller:
         url = dashboard_url(eb_id)
         await notify_admin(context, admin_chat_id,
-                           f"⚠️ Eventbrite non permette ancora di annullare l'evento #{event_id}. Annullalo dalla dashboard: {url}",
-                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎟️ Apri dashboard Eventbrite", url=url)]]), event_id=event_id)
+                           format_eb_cannot_cancel_yet(event_id, url),
+                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_EB_DASHBOARD, url=url)]]), event_id=event_id)
 
 
 async def cancel_only_on_eventbrite(context, event, admin_chat_id):
@@ -566,14 +565,14 @@ async def cancel_only_on_eventbrite(context, event, admin_chat_id):
         outcome, orders = await asyncio.to_thread(_cancel_blocking, event, False)
     except Exception as e:
         logger.error(f"Eventbrite-only cancellation failed for event #{event_id}: {e}")
-        await notify_admin(context, admin_chat_id, f"⚠️ Annullamento su Eventbrite fallito per #{event_id}: {e}", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_cancel_failed(event_id, e), event_id=event_id)
         return
 
     if outcome == 'canceled':
-        await notify_admin(context, admin_chat_id, f"✅ Evento #{event_id} annullato su Eventbrite (resta attivo su Telegram)", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_cancelled_keep_telegram(event_id), event_id=event_id)
     else:
         text, keyboard = _orders_cancel_message(event_id, event['eventbrite_event_id'], orders)
-        await notify_admin(context, admin_chat_id, f"{text} L'evento resta attivo su Telegram.", reply_markup=keyboard, event_id=event_id)
+        await notify_admin(context, admin_chat_id, text + EVENTBRITE_STILL_TELEGRAM_ACTIVE, reply_markup=keyboard, event_id=event_id)
     await refresh_admin_card(context, event_id)
     # Imported here because bot.service.posts imports this module for sync_eventbrite
     from bot.service.posts import update_event_messages
@@ -603,7 +602,7 @@ async def reactivate_on_eventbrite(context, event):
 
     if status == 'canceled':
         await notify_admin(context, config.ADMIN_CHAT_ID,
-                           "ℹ️ L'evento era stato annullato su Eventbrite e non può essere riattivato.",
+                           EVENTBRITE_CANCELLED_CANNOT_REACTIVATE,
                            reply_markup=_recreate_keyboard(event_id), event_id=event_id)
         return
     if status not in ('unpublished', 'closed'):
@@ -613,11 +612,11 @@ async def reactivate_on_eventbrite(context, event):
         warning = await asyncio.to_thread(_reactivate_blocking, event)
     except Exception as e:
         logger.error(f"Eventbrite reactivation failed for event #{event_id}: {e}")
-        await notify_admin(context, config.ADMIN_CHAT_ID, f"⚠️ Riattivazione su Eventbrite fallita per #{event_id}: {e}", event_id=event_id)
+        await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_reactivate_failed(event_id, e), event_id=event_id)
         return
     if warning:
         await notify_admin(context, config.ADMIN_CHAT_ID, warning, event_id=event_id)
-    await notify_admin(context, config.ADMIN_CHAT_ID, f"✅ Evento #{event_id} riattivato anche su Eventbrite", event_id=event_id)
+    await notify_admin(context, config.ADMIN_CHAT_ID, format_eb_reactivated(event_id), event_id=event_id)
 
 
 async def recreate_on_eventbrite(context, event_id, admin_chat_id):
@@ -644,7 +643,7 @@ async def start_eventbrite_publish(context, event_id, admin_chat_id, recreate=Fa
     Eventbrite link when the publish ends (publish_event_to_eventbrite ends with update_event_messages). Failures are
     reported to the admins by the publish itself. One publish per event at a time."""
     if event_id in runtime_state.eventbrite_publishing:
-        await notify_admin(context, admin_chat_id, f"⏳ Pubblicazione su Eventbrite già in corso per #{event_id}", event_id=event_id)
+        await notify_admin(context, admin_chat_id, format_eb_publish_in_progress(event_id), event_id=event_id)
         return
     runtime_state.eventbrite_publishing.add(event_id)
     task = asyncio.create_task(_run_eventbrite_publish(context, event_id, admin_chat_id, recreate))
