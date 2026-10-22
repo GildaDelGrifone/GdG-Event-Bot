@@ -350,7 +350,11 @@ GdG-Event-Bot/
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
 │   │   ├── mentions.py   # User/subscriber mention formatting
-│   │   ├── eventbrite.py # Eventbrite publish, sync (capacity/content/logo), cancel, reactivate, recreate
+│   │   ├── eventbrite/   # Eventbrite flows; import public names from bot.service.eventbrite
+│   │   │   ├── common.py  # admin notices/card refresh, venue names, collections, unlinking deleted events
+│   │   │   ├── publish.py # publish (background task), recreate
+│   │   │   ├── sync.py    # capacity/content/logo sync, seat claim on booking, logo retry
+│   │   │   └── cancel.py  # cancel, finish cancellation, Eventbrite-only cancel, reactivate
 │   │   ├── eventbrite_poll.py # Scheduler job: poll Eventbrite orders into the shared seat pool
 │   │   └── eventbrite_cleanup.py # 23:59 job: delete cancelled events from Eventbrite (Telegram untouched)
 │   └── event_generator/  # /event_generate
@@ -440,7 +444,7 @@ GdG-Event-Bot/
   - `booking.py` handles seat booking/unbooking and same-day conflict warnings.
   - `notices.py` provides `send_admin_action_notice` and `send_discussion_notice`.
   - `mentions.format_subscriber_tag` is the single tag formatter for stored reservations (`@username`, `tg://user` link, or name).
-  - `eventbrite.py` holds the Eventbrite flows (see §2.11). `posts.update_event_messages` is the single hook point: after the Telegram sync it calls `sync_eventbrite`, and it edits the discussion reply as *text* (`format_discussion_booking_message`) so the Eventbrite link can appear. `eventbrite.py` imports `update_event_messages` inside its functions, because `posts.py` imports `sync_eventbrite` at module level (patch `bot.service.posts.update_event_messages` in tests). `eventbrite_poll.py` builds `SimpleNamespace(bot=bot)` as the context, since services only use `context.bot`.
+  - `eventbrite/` holds the Eventbrite flows (see §2.11), split into `common`, `publish`, `sync` and `cancel`; `__init__.py` re-exports the public functions, so other modules import from `bot.service.eventbrite`. In tests, patch a name in the submodule that *calls* it (e.g. `bot.service.eventbrite.publish.publish_event_to_eventbrite`); a patch on the package does not reach calls made between submodules. `posts.update_event_messages` is the single hook point: after the Telegram sync it calls `sync_eventbrite`, and it edits the discussion reply as *text* (`format_discussion_booking_message`) so the Eventbrite link can appear. `publish.py` and `cancel.py` import `update_event_messages` inside their functions, because `posts.py` imports `sync_eventbrite` at module level (patch `bot.service.posts.update_event_messages` in tests). `eventbrite_poll.py` builds `SimpleNamespace(bot=bot)` as the context, since services only use `context.bot`.
 
 
 ### 3.2. `core/` Package Architecture

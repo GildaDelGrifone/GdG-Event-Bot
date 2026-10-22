@@ -6,6 +6,8 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import core.db as db
 from bot.service import eventbrite as service
+from bot.service.eventbrite import cancel, common, publish, sync
+from bot.state import runtime_state
 from core.eventbrite import EventbriteError
 from tests.support.config import as_admin_chat, eventbrite_credentials
 from tests.support.db import TempDBMixin, create_event
@@ -18,6 +20,7 @@ PATCHED = (
     "add_event_to_collection", "remove_event_from_collection",
 )
 ADMIN = int(ADMIN_CHAT_ID)
+SUBMODULES = (common, publish, sync, cancel)
 
 
 class EventbriteServiceCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -32,9 +35,13 @@ class EventbriteServiceCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.context = make_context()
         self.mocks = {}
         for name in PATCHED:
-            patcher = patch(f"bot.service.eventbrite.{name}")
-            self.mocks[name] = patcher.start()
-            self.addCleanup(patcher.stop)
+            # One mock per name, installed in every submodule that calls it
+            self.mocks[name] = MagicMock()
+            for module in SUBMODULES:
+                if hasattr(module, name):
+                    patcher = patch.object(module, name, self.mocks[name])
+                    patcher.start()
+                    self.addCleanup(patcher.stop)
         self.mocks["create_event"].return_value = {"id": "eb1", "url": "https://eventbrite.example/e/eb1"}
         self.mocks["create_free_ticket_class"].return_value = {"id": "tc1"}
         self.mocks["publish_event"].return_value = True
@@ -887,15 +894,15 @@ if __name__ == "__main__":
 class TestBackgroundPublish(EventbriteServiceCase):
     def setUp(self):
         super().setUp()
-        patcher = patch.object(service.runtime_state, "eventbrite_publishing", set())
+        patcher = patch.object(runtime_state, "eventbrite_publishing", set())
         patcher.start()
         self.addCleanup(patcher.stop)
-        tasks = patch.object(service.runtime_state, "eventbrite_tasks", set())
+        tasks = patch.object(runtime_state, "eventbrite_tasks", set())
         tasks.start()
         self.addCleanup(tasks.stop)
 
     async def finish(self):
-        await asyncio.gather(*list(service.runtime_state.eventbrite_tasks))
+        await asyncio.gather(*list(runtime_state.eventbrite_tasks))
 
     async def test_returns_at_once_and_publishes_in_the_background(self):
         event_id = self.make_event()
@@ -905,15 +912,15 @@ class TestBackgroundPublish(EventbriteServiceCase):
             started.set()
             await release.wait()
 
-        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
+        with patch("bot.service.eventbrite.publish.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
             await service.start_eventbrite_publish(self.context, event_id, ADMIN)  # returns although the publish waits
             await started.wait()
-            self.assertIn(event_id, service.runtime_state.eventbrite_publishing)
+            self.assertIn(event_id, runtime_state.eventbrite_publishing)
             release.set()
             await self.finish()
         publish.assert_called_once_with(self.context, event_id, ADMIN)
-        self.assertEqual(service.runtime_state.eventbrite_publishing, set())
-        self.assertEqual(service.runtime_state.eventbrite_tasks, set())
+        self.assertEqual(runtime_state.eventbrite_publishing, set())
+        self.assertEqual(runtime_state.eventbrite_tasks, set())
 
     async def test_a_second_press_while_in_flight_is_refused(self):
         event_id = self.make_event()
@@ -922,7 +929,7 @@ class TestBackgroundPublish(EventbriteServiceCase):
         async def slow_publish(context, eid, chat):
             await release.wait()
 
-        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
+        with patch("bot.service.eventbrite.publish.publish_event_to_eventbrite", side_effect=slow_publish) as publish:
             await service.start_eventbrite_publish(self.context, event_id, ADMIN)
             await service.start_eventbrite_publish(self.context, event_id, ADMIN)
             release.set()
@@ -932,14 +939,14 @@ class TestBackgroundPublish(EventbriteServiceCase):
 
     async def test_the_event_is_released_when_the_publish_crashes(self):
         event_id = self.make_event()
-        with patch("bot.service.eventbrite.publish_event_to_eventbrite", side_effect=RuntimeError("boom")):
+        with patch("bot.service.eventbrite.publish.publish_event_to_eventbrite", side_effect=RuntimeError("boom")):
             await service.start_eventbrite_publish(self.context, event_id, ADMIN)
             await self.finish()
-        self.assertEqual(service.runtime_state.eventbrite_publishing, set())
+        self.assertEqual(runtime_state.eventbrite_publishing, set())
 
     async def test_recreate_goes_through_the_recreate_flow(self):
         event_id = self.make_event()
-        with patch("bot.service.eventbrite.recreate_on_eventbrite") as recreate:
+        with patch("bot.service.eventbrite.publish.recreate_on_eventbrite") as recreate:
             await service.start_eventbrite_publish(self.context, event_id, ADMIN, recreate=True)
             await self.finish()
         recreate.assert_called_once_with(self.context, event_id, ADMIN)
@@ -955,8 +962,8 @@ class TestBackgroundPublish(EventbriteServiceCase):
 class TestPublishVenue(EventbriteServiceCase):
     def setUp(self):
         super().setUp()
-        for patcher in (patch.object(service.runtime_state, "eventbrite_venue", None),
-                        patch.object(service.runtime_state, "venue_names", {"venue1": "Gilda", "v2": "To Play"})):
+        for patcher in (patch.object(runtime_state, "eventbrite_venue", None),
+                        patch.object(runtime_state, "venue_names", {"venue1": "Gilda", "v2": "To Play"})):
             patcher.start()
             self.addCleanup(patcher.stop)
         config_patch = eventbrite_credentials(EVENTBRITE_VENUE_ID_ALTERNATIVES=["v2"])
@@ -973,7 +980,7 @@ class TestPublishVenue(EventbriteServiceCase):
         self.assertEqual(db.get_event(event_id)["eventbrite_venue_id"], "venue1")
 
     async def test_the_picked_venue_is_stored_and_used_and_named_in_the_notice(self):
-        service.runtime_state.eventbrite_venue = "v2"
+        runtime_state.eventbrite_venue = "v2"
         event_id = self.make_event()
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
         self.assertEqual(self.created_venue(), "v2")
@@ -983,7 +990,7 @@ class TestPublishVenue(EventbriteServiceCase):
     async def test_a_stored_venue_survives_a_later_pick(self):
         event_id = self.make_event()
         db.set_eventbrite_info(event_id, eventbrite_venue_id="venue1")
-        service.runtime_state.eventbrite_venue = "v2"
+        runtime_state.eventbrite_venue = "v2"
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
         self.assertEqual(self.created_venue(), "venue1")
 
@@ -994,7 +1001,7 @@ class TestPublishVenue(EventbriteServiceCase):
         self.assertNotIn("venue_id", self.mocks["update_event"].call_args.args[1])
 
     async def test_a_pick_that_is_no_longer_configured_falls_back_to_the_default(self):
-        service.runtime_state.eventbrite_venue = "gone"
+        runtime_state.eventbrite_venue = "gone"
         event_id = self.make_event()
         await service.publish_event_to_eventbrite(self.context, event_id, ADMIN)
         self.assertEqual(self.created_venue(), "venue1")
