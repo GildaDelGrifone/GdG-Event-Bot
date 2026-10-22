@@ -625,3 +625,41 @@ def format_add_subscriber_prompt(event_id):
         f"✏️ {ADD_SUBSCRIBER_PROMPT_MARKER}{event_id} (es. <code>@mario</code> oppure <code>@mario 2</code>):\n"
         f"Oppure usa: <code>/event_sub_add {event_id} @username [posti]</code>"
     )
+
+
+# ---------------------------------------------------------------------------
+# Booking, status notices, recap/WordPress and schedule/venue callbacks
+# ---------------------------------------------------------------------------
+POPUP_TABLE_FULL = "I posti per questo tavolo sono esauriti!"
+POPUP_SCHEDULE_NOT_FOUND = "Evento programmato non trovato."
+POPUP_SCHEDULE_DELETED = "Programmazione eliminata."
+SCHEDULE_DELETED_TEXT = "🗑️ Programmazione reposting eliminata."
+POPUP_VENUE_GONE = "Sede non più configurata."
+POPUP_VENUE_UPDATED = "Sede aggiornata"
+RECAP_PUBLISHED_SUFFIX = "\n\n✅ RECAP PUBLISHED"
+RECAP_DISCARDED_SUFFIX = "\n\n❌ RECAP SCARTATO"
+ARTICLE_PUBLISHED_SUFFIX = "\n\n✅ ARTICOLO PUBBLICATO PUBBLICAMENTE!"
+ARTICLE_PUBLISH_ERROR_SUFFIX = "\n\n❌ Errore durante la pubblicazione dell'articolo."
+WORDPRESS_CREATE_ERROR = "❌ Errore durante la creazione dell'articolo su WordPress."
+WORDPRESS_DRAFT_PROGRESS = "⏳ Generazione della bozza su WordPress in corso..."
+RECAP_STORY_CAPTION = "✅ Immagine Storia RECAP generata (Pubblicazione IG disabilitata temporaneamente per test)."
+RECAP_STORY_ERROR = "❌ Errore durante la generazione della Storia Recap."
+
+
+def format_status_notice(icon, status_word, event_link, subscribers_label=None, tags=None):
+    text = f"{icon} <b>ATTENZIONE:</b> L'evento {event_link} è stato <b>{status_word}</b>!"
+    if tags:
+        text += f"\n\n{subscribers_label}: {tags}"
+    return text
+
+
+def format_wordpress_draft_created(wp_link):
+    return f"✅ Bozza articolo creata su WordPress:\n{wp_link}\n\nClicca qui sotto per pubblicarla pubblicamente."
+
+
+def format_schedule_day_toggled(day, active):
+    return f"{'Attivato' if active else 'Disattivato'}: {day}"
+
+
+def format_venue_selected(venue):
+    return f"📍 Sede Eventbrite per i nuovi eventi: {venue}"

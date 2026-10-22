@@ -7,13 +7,14 @@ from bot.common.auth import describe_user
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
 from bot.state import runtime_state
+from utils.templates import POPUP_CLOSED, POPUP_VENUE_GONE, POPUP_VENUE_UPDATED, format_venue_selected
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_venue_close(query, context, payload):
     """`[❌ Chiudi]` button of /bot_eventbrite_venue: removes the picker message."""
-    await query.answer("Chiuso.")
+    await query.answer(POPUP_CLOSED)
     try:
         await query.message.delete()
     except Exception:
@@ -27,13 +28,13 @@ async def handle_venue_pick(query, context, payload):
         return
     venue_ids = eventbrite_venue_ids()
     if payload not in venue_ids:
-        await query.answer("Sede non più configurata.", show_alert=True)
+        await query.answer(POPUP_VENUE_GONE, show_alert=True)
         return
     runtime_state.eventbrite_venue = payload
     logger.info(f"{describe_user(query.from_user)} set the Eventbrite venue for new events to {payload}.")
     venues = [(venue_id, await asyncio.to_thread(venue_name, venue_id)) for venue_id in venue_ids]
-    await query.answer("Sede aggiornata")
+    await query.answer(POPUP_VENUE_UPDATED)
     await query.edit_message_text(
-        f"📍 Sede Eventbrite per i nuovi eventi: {dict(venues)[payload]}",
+        format_venue_selected(dict(venues)[payload]),
         reply_markup=get_venue_keyboard(venues, payload, config.EVENTBRITE_VENUE_ID),
     )

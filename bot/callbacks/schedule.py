@@ -1,7 +1,10 @@
 import logging
 
 from core.db import get_scheduled_event, update_scheduled_event_days, delete_scheduled_event
-from utils.templates import format_schedule_repost_message
+from utils.templates import (
+    POPUP_CLOSED, POPUP_SCHEDULE_DELETED, POPUP_SCHEDULE_NOT_FOUND, SCHEDULE_DELETED_TEXT, format_schedule_day_toggled,
+    format_schedule_repost_message,
+)
 from bot.keyboards import SCHEDULE_DAY_NAMES, get_schedule_repost_keyboard
 
 logger = logging.getLogger(__name__)
@@ -17,17 +20,17 @@ async def handle_toggle_day(query, context, payload):
 
     sched_ev = get_scheduled_event(scheduled_id)
     if not sched_ev:
-        await query.answer("Evento programmato non trovato.", show_alert=True)
+        await query.answer(POPUP_SCHEDULE_NOT_FOUND, show_alert=True)
         return
 
     current_days = sched_ev.get('schedule_days') or []
     remaining = [d for d in current_days if d.strip().lower() != target_day.lower()]
     if len(remaining) < len(current_days):
         current_days = remaining
-        await query.answer(f"Disattivato: {target_day}")
+        await query.answer(format_schedule_day_toggled(target_day, active=False))
     else:
         current_days.append(target_day)
-        await query.answer(f"Attivato: {target_day}")
+        await query.answer(format_schedule_day_toggled(target_day, active=True))
 
     update_scheduled_event_days(scheduled_id, current_days)
     sched_ev['schedule_days'] = current_days
@@ -45,8 +48,8 @@ async def handle_toggle_day(query, context, payload):
 
 async def handle_delete_schedule(query, context, payload):
     delete_scheduled_event(int(payload))
-    await query.answer("Programmazione eliminata.")
-    text = "🗑️ Programmazione reposting eliminata."
+    await query.answer(POPUP_SCHEDULE_DELETED)
+    text = SCHEDULE_DELETED_TEXT
     try:
         if query.message.photo:
             await query.edit_message_caption(caption=text, reply_markup=None)
@@ -57,7 +60,7 @@ async def handle_delete_schedule(query, context, payload):
 
 
 async def handle_close_schedule(query, context, payload):
-    await query.answer("Chiuso.")
+    await query.answer(POPUP_CLOSED)
     try:
         await query.message.delete()
     except Exception:
