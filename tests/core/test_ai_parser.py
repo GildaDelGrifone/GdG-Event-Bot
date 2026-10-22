@@ -21,9 +21,9 @@ DEPLETED_ERROR = (
 
 @contextmanager
 def gemini_returning(text=None, error=None):
-    """Patches the Gemini model so generate_content returns `text` or raises `error`."""
-    with patch("core.ai_parser.genai.GenerativeModel") as model_cls:
-        model = model_cls.return_value
+    """Patches the Gemini client so models.generate_content returns `text` or raises `error`."""
+    with patch("core.ai_parser._gemini_client") as client_factory:
+        model = client_factory.return_value.models
         if error is not None:
             model.generate_content.side_effect = error
         else:

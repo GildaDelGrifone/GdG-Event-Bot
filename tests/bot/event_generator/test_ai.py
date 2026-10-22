@@ -21,8 +21,8 @@ class TestGenerateEventDataWithAi(unittest.TestCase):
             "is_roleplay": False,
             "description": "Una fantastica serata all'insegna dei giochi da tavolo!",
         }
-        with patch("core.ai_parser.genai.GenerativeModel") as mock_model_cls:
-            mock_model_cls.return_value.generate_content.return_value = MagicMock(
+        with patch("core.ai_parser._gemini_client") as mock_client:
+            mock_client.return_value.models.generate_content.return_value = MagicMock(
                 text=f"```json\n{json.dumps(fake_ai_json)}\n```"
             )
 
@@ -35,8 +35,8 @@ class TestGenerateEventDataWithAi(unittest.TestCase):
             self.assertFalse(data["is_roleplay"])
 
     def test_generate_event_data_with_ai_quota_error(self):
-        with patch("core.ai_parser.genai.GenerativeModel") as mock_model_cls:
-            mock_model_cls.return_value.generate_content.side_effect = Exception("429 Your prepayment credits are depleted")
+        with patch("core.ai_parser._gemini_client") as mock_client:
+            mock_client.return_value.models.generate_content.side_effect = Exception("429 Your prepayment credits are depleted")
 
             with self.assertRaises(GeminiQuotaError):
                 generate_event_data_with_ai("prompt")

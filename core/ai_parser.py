@@ -2,7 +2,7 @@ import json
 import logging
 import re
 
-import google.generativeai as genai
+from google import genai
 
 from core import config
 
@@ -15,7 +15,7 @@ TRUTHY_TOKENS = {"true", "1", "yes", "si", "sì"}
 _SEATS_FRACTION_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)\s*/\s*(\d+)', re.IGNORECASE)
 _SEATS_SINGLE_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)(?!\s*/)', re.IGNORECASE)
 
-genai.configure(api_key=config.GEMINI_API_KEY)
+_client = None
 
 
 class GeminiQuotaError(Exception):
@@ -33,17 +33,26 @@ def strip_json_fence(text):
 
 def is_quota_error(err):
     err_str = str(err).lower()
-    return "429" in err_str or "prepayment credits are depleted" in err_str or "quota" in err_str or "resourceexhausted" in err_str
+    return ("429" in err_str or "prepayment credits are depleted" in err_str or "quota" in err_str
+            or "resourceexhausted" in err_str or "resource_exhausted" in err_str)
 
 
 def coerce_bool(value):
     return value.strip().lower() in TRUTHY_TOKENS if isinstance(value, str) else bool(value)
 
 
+def _gemini_client():
+    """Created on first use, so importing this module needs no API key."""
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=config.GEMINI_API_KEY)
+    return _client
+
+
 def generate_text(prompt):
     """Runs prompt on config.GEMINI_MODEL; quota/credit failures surface as GeminiQuotaError."""
     try:
-        return genai.GenerativeModel(config.GEMINI_MODEL).generate_content(prompt).text
+        return _gemini_client().models.generate_content(model=config.GEMINI_MODEL, contents=prompt).text
     except Exception as e:
         if is_quota_error(e):
             raise GeminiQuotaError(str(e)) from e
