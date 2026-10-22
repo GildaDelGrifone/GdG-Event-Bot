@@ -187,6 +187,21 @@ class TestSwitches(CleanupCase):
         self.delete.assert_not_called()
         self.assertEqual(db.get_event(event_id)["eventbrite_event_id"], f"eb{event_id}")
 
+    async def test_deletions_are_silent_when_cleanup_notifications_are_off(self):
+        event_id = self.make_event("canceled")
+        with eventbrite_credentials(EVENTBRITE_CLEANUP_NOTIFICATIONS=False):
+            await delete_cancelled_eventbrite_events(self.bot)
+        self.delete.assert_called_once_with(f"eb{event_id}")
+        self.assertIsNone(db.get_event(event_id)["eventbrite_event_id"])
+        self.bot.send_message.assert_not_called()
+
+    async def test_kept_events_are_still_reported_when_cleanup_notifications_are_off(self):
+        self.make_event("canceled")
+        kept = self.make_event("closed", status="cancelled")
+        with eventbrite_credentials(EVENTBRITE_CLEANUP_NOTIFICATIONS=False):
+            await delete_cancelled_eventbrite_events(self.bot)
+        self.assertEqual(self.texts(), [f"⚠️ Non eliminati da Eventbrite: #{kept} Avventura D&D (ordini ancora da annullare)"])
+
     async def test_works_without_a_bot(self):
         event_id = self.make_event("canceled")
         await delete_cancelled_eventbrite_events(None)

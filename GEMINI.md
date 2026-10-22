@@ -301,7 +301,7 @@ The Eventbrite API has **no call to cancel an order or attendee**, and the refun
 | `closed` (orders still being cancelled) | kept and listed in the admin summary |
 | refused by Eventbrite (e.g. `CANNOT_DELETE`) | kept and listed in the admin summary |
 
-Future-dated events are left alone until their day (so `[🎟️ Ricrea su Eventbrite]` stays usable), a `HIT_RATE_LIMIT` stops the run until the next night, and one failing event never blocks the others. The admins get a single plain-text summary (`🧹 Eliminati da Eventbrite N eventi annullati: …` / `⚠️ Non eliminati da Eventbrite: …`), only if something happened. Not yet verified on a real account: whether Eventbrite lets you delete an event whose orders were all cancelled; if it refuses, the event is kept and reported.
+Future-dated events are left alone until their day (so `[🎟️ Ricrea su Eventbrite]` stays usable), a `HIT_RATE_LIMIT` stops the run until the next night, and one failing event never blocks the others. The admins get a single plain-text summary (`🧹 Eliminati da Eventbrite N eventi annullati: …` / `⚠️ Non eliminati da Eventbrite: …`), only if something happened. The `Eliminati` line is sent only when `EVENTBRITE_CLEANUP_NOTIFICATIONS` is on (default off); the `Non eliminati` list is always sent, since an admin has to act on it. Not yet verified on a real account: whether Eventbrite lets you delete an event whose orders were all cancelled; if it refuses, the event is kept and reported.
 
 **Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to that order's page on Eventbrite (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored.
 
@@ -580,6 +580,7 @@ GdG-Event-Bot/
 | `EVENTBRITE_UNLIMITED_CAPACITY` | (Optional) Eventbrite capacity for events with unlimited seats (Telegram stays unlimited) | `50` |
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
+| `EVENTBRITE_CLEANUP_NOTIFICATIONS` | (Optional) Send the nightly `🧹 Eliminati da Eventbrite N eventi annullati` message to the admin chat (`true`/`false`). Events the cleanup could not delete are reported either way | `false` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
 | `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (in memory) | `2345678,3456789` |
 | `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (in memory) | `false` |

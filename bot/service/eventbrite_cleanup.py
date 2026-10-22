@@ -27,6 +27,8 @@ def _already_gone(error):
 
 
 async def _send_summary(bot, deleted, kept):
+    if not config.EVENTBRITE_CLEANUP_NOTIFICATIONS:
+        deleted = []  # only problems that need an admin are reported
     if not (bot and config.ADMIN_CHAT_ID and (deleted or kept)):
         return
     parts = []
