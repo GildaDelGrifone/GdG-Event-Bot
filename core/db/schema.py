@@ -56,7 +56,8 @@ TABLES = (
         image_path TEXT,
         schedule_days TEXT DEFAULT '[]',
         specific_date TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        advance_days INTEGER DEFAULT 0
     )
     ''',
 )
@@ -77,6 +78,9 @@ COLUMN_MIGRATIONS = {
         "eventbrite_content_version": "INTEGER DEFAULT 0",
         "eventbrite_synced_at": "TEXT",
         "eventbrite_venue_id": "TEXT",
+    },
+    "scheduled_events": {
+        "advance_days": "INTEGER DEFAULT 0",
     },
     "reservations": {
         "full_name": "TEXT",

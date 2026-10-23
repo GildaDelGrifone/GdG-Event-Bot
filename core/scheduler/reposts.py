@@ -2,22 +2,22 @@ import logging
 from datetime import datetime
 
 from core import config
-from core.db import get_scheduled_events_for_date
+from core.db import get_scheduled_events_due
 from utils.date_utils import DAYS_IT
 from utils.templates.reposts import REPOST_UPDATE_REMINDER, format_reposts_digest_entry, format_reposts_digest_header
 
 logger = logging.getLogger(__name__)
 
 
-def format_reposts_digest(events, weekday_it, today_str):
+def format_reposts_digest(due, weekday_it, today_str):
     lines = [format_reposts_digest_header(weekday_it, today_str)]
-    lines.extend(format_reposts_digest_entry(ev) for ev in events)
+    lines.extend(format_reposts_digest_entry(ev, event_date) for ev, event_date in due)
     lines.append(REPOST_UPDATE_REMINDER)
     return "\n".join(lines)
 
 
 async def send_daily_scheduled_reposts(bot):
-    """Daily 10:00 job: tells ADMIN_CHAT_ID which scheduled templates are due today, with invoke commands."""
+    """Daily job: tells ADMIN_CHAT_ID which scheduled templates need a reminder today (event date = today + advance_days)."""
     if not bot or not config.ADMIN_CHAT_ID:
         return
 
@@ -26,7 +26,7 @@ async def send_daily_scheduled_reposts(bot):
     today_str = now.strftime("%d-%m-%Y")
 
     logger.info(f"Scheduler: Checking scheduled reposts for today ({weekday_it} {today_str})...")
-    events = get_scheduled_events_for_date(today_str, weekday_it)
+    events = get_scheduled_events_due(now.date())
     if not events:
         logger.info(f"Scheduler: No events scheduled for reposting on {today_str}.")
         return

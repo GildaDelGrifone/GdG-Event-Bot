@@ -1,5 +1,14 @@
 """Repost scheduling: /event_repost, /event_schedule*, the daily digest and schedule popups."""
 import html
+import re
+
+from utils.date_utils import DAYS_IT as _DAYS_IT
+
+
+def format_advance_days(days):
+    if not days:
+        return "lo stesso giorno"
+    return f"{days} giorno prima" if days == 1 else f"{days} giorni prima"
 
 
 def format_schedule_repost_message(scheduled_event):
@@ -13,11 +22,13 @@ def format_schedule_repost_message(scheduled_event):
         f"📅 <b>Programmazione Repost Evento #{sched_id}</b>\n"
         f"🏷️ <b>Titolo:</b> {html.escape(title)}\n\n"
         f"🗓️ <b>Giorni settimanali attivi:</b> {days_str}\n"
-        f"📌 <b>Data specifica impostata:</b> {spec_date}\n\n"
-        f"Tocca i pulsanti in basso per attivare/disattivare i giorni in cui ripubblicare l'evento.\n\n"
-        f"👉 Per programmare una data specifica (stessa sintassi di /event_edit_date):\n"
-        f"<code>/event_schedule {sched_id} DD-MM-YYYY [HH:MM]</code>\n"
-        f"(es. <code>/event_schedule {sched_id} 09-10-2026 21:00</code>)"
+        f"📌 <b>Data specifica impostata:</b> {spec_date}\n"
+        f"⏳ <b>Promemoria:</b> {format_advance_days(scheduled_event.get('advance_days'))}\n\n"
+        f"Tocca i pulsanti in basso per attivare/disattivare i giorni in cui ripubblicare l'evento "
+        f"e per scegliere quanti giorni prima dell'evento ricevere il promemoria.\n\n"
+        f"👉 Per programmare una data specifica (stessa sintassi di /event_edit_date) e, se vuoi, i giorni di anticipo N:\n"
+        f"<code>/event_schedule {sched_id} [DD-MM-YYYY [HH:MM]] [N]</code>\n"
+        f"(es. <code>/event_schedule {sched_id} 09-10-2026 21:00 2</code> oppure <code>/event_schedule {sched_id} 2</code>)"
     )
 
 
@@ -69,11 +80,19 @@ SCHEDULE_NO_REPLY = (
     "Uso: <code>/event_schedule [DATA HH:MM]</code>\n"
     "Esempi:\n"
     "• <code>/event_schedule</code> (mostra i giorni di apertura)\n"
-    "• <code>/event_schedule 09-10-2026 21:00</code>"
+    "• <code>/event_schedule 09-10-2026 21:00</code>\n"
+    "• <code>/event_schedule 09-10-2026 21:00 2</code> (promemoria 2 giorni prima)\n"
+    "N (opzionale, 0-30) = giorni di anticipo del promemoria; 0 = lo stesso giorno."
 )
 
 
 SCHEDULE_INVALID_DATE = "❌ Formato data specifica non valido. Usa DD-MM-YYYY [HH:MM] o oggi/LUN/MER/VEN."
+
+
+SCHEDULE_INVALID_ADVANCE = "❌ I giorni di anticipo devono essere un numero intero tra 0 e 30."
+
+
+SCHEDULE_ADVANCE_UPDATED_PREFIX = "✅ Giorni di anticipo aggiornati!\n\n"
 
 
 SCHEDULE_SAVE_ERROR = "❌ Errore durante il salvataggio della programmazione nel database."
@@ -115,21 +134,29 @@ def format_schedule_list_entry(sched_event):
     days = sched_event.get('schedule_days') or []
     return (
         f"• <b>{html.escape(sched_event.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
-        f"  🗓️ Giorni: {', '.join(days) if days else 'Nessuno'} | Data: {sched_event.get('specific_date') or 'Nessuna'}\n"
+        f"  🗓️ Giorni: {', '.join(days) if days else 'Nessuno'} | Data: {sched_event.get('specific_date') or 'Nessuna'}"
+        f" | Anticipo: {sched_event.get('advance_days') or 0} gg\n"
         f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
         f"  ⚙️ Gestisci programmazione: <code>/event_schedule {sched_id}</code>\n"
     )
 
 
 def format_reposts_digest_header(weekday_it, today_str):
-    return f"📅 <b>Eventi programmati per il reposting di oggi ({weekday_it} {today_str}):</b>\n"
+    return f"📅 <b>Promemoria reposting di oggi ({weekday_it} {today_str}):</b>\n"
 
 
-def format_reposts_digest_entry(sched_event):
+def format_reposts_digest_entry(sched_event, event_date):
+    """event_date is the day of the event itself (today plus the template's advance_days)."""
     sched_id = sched_event['id']
+    advance = sched_event.get('advance_days') or 0
+    event_day = event_date.strftime("%d-%m-%Y")
+    when = f"{_DAYS_IT[event_date.weekday()]} {event_day}" + (f" (tra {advance} giorni)" if advance > 1 else " (domani)" if advance == 1 else "")
+    time_match = re.search(r'\b(\d{1,2}:\d{2})\b', sched_event.get('specific_date') or '')
+    invoke_date = f"{event_day} {time_match.group(1)}" if time_match else event_day
     return (
         f"• <b>{html.escape(sched_event.get('title') or 'Evento')}</b> (ID #{sched_id})\n"
-        f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id}</code>\n"
+        f"  📆 Evento: {when}\n"
+        f"  👉 Invia per preparare il post: <code>/event_schedule_invoke {sched_id} {invoke_date}</code>\n"
     )
 
 
@@ -144,3 +171,7 @@ SCHEDULE_DELETED_TEXT = "🗑️ Programmazione reposting eliminata."
 
 def format_schedule_day_toggled(day, active):
     return f"{'Attivato' if active else 'Disattivato'}: {day}"
+
+
+def format_schedule_advance_popup(days):
+    return f"Promemoria: {format_advance_days(days)}"

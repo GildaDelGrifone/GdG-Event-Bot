@@ -230,12 +230,13 @@ When `[Publish Recap]` is clicked:
     - Line 1: `[Lunedì] [Mercoledì] [Venerdì]` (standard opening days).
     - Line 2: `[Sabato] [Domenica]` (special opening days).
     - Buttons display dynamic emoji checkboxes (`✅` when active, `⬜` when inactive) to toggle recurring schedule days.
-  - Admins can also specify a one-off scheduled date via `/event_schedule [ID] DD-MM-YYYY [HH:MM]`.
+  - Line 3: `[➖] [⏳ Anticipo: N gg] [➕]` sets `advance_days` (0-30, `sched_adv_{id}_{inc|dec|noop}`, `bot.callbacks.schedule.handle_advance_days`).
+  - Admins can also specify a one-off scheduled date via `/event_schedule [ID] [DD-MM-YYYY [HH:MM]] [N]`; the optional trailing integer `N` is `advance_days` (split off by `_split_advance`; `/event_schedule 5 2` changes only N, rejected outside 0-30).
 - **Scheduled Repost Notification & Invocation (9:00 AM Cron):**
   - Runs daily at **9:00 AM** via APScheduler.
-  - Queries `scheduled_events` for entries matching today's date or active weekday.
+  - Queries `scheduled_events` with `core.db.get_scheduled_events_due(today)`: a template is due when its weekday / `specific_date` matches `today + advance_days` (`advance_days = 0` is the original same-day behaviour). Each entry shows the event date and an invoke command carrying it (`/event_schedule_invoke ID DD-MM-YYYY [HH:MM]`).
   - Sends a consolidated digest to `ADMIN_CHAT_ID` listing each scheduled event with a clickable invocation command: `/event_schedule_invoke <SCHEDULED_ID>`.
-  - Invoking `/event_schedule_invoke <SCHEDULED_ID>` prepares the event with date set to today and outputs the approval card ready for publishing.
+  - Invoking `/event_schedule_invoke <SCHEDULED_ID> [DATE] [SEATS]` prepares the event and outputs the approval card ready for publishing. An explicit date wins (the template's `HH:MM` is added when missing). Without one the date is today, or, when `advance_days > 0`, the template's nearest occurrence on or after today (`core.db.next_scheduled_occurrence`), so invoking on the event day itself gives today.
 - **Scheduled Content Overwrite (`/event_schedule_update <SCHEDULED_ID>`):**
   - Admins can reply to any new event post with `/event_schedule_update <SCHEDULED_ID>` to overwrite the text and image template of an existing scheduled event entry in SQLite.
 - **Scheduled Events List (`/event_schedule_list`):**
@@ -541,6 +542,7 @@ GdG-Event-Bot/
 | `schedule_days` | TEXT | DEFAULT '[]' | JSON array of active weekdays for recurring reposting |
 | `specific_date` | TEXT | | Optional specific date and time (`DD-MM-YYYY [HH:MM]`) |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
+| `advance_days` | INTEGER | DEFAULT 0 | Days before the event the digest reminder is sent (0-30; 0 = same day) |
 
 ---
 

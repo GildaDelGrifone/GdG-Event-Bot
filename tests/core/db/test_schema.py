@@ -25,6 +25,21 @@ class TestSchemaMigrations(unittest.TestCase):
             self.assertIn("is_roleplay", cols)
 
 
+class TestScheduledEventsSchema(unittest.TestCase):
+    def test_init_db_adds_advance_days_to_an_old_scheduled_events_table(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        legacy_db_path = os.path.join(temp_dir.name, "legacy.db")
+        with sqlite3.connect(legacy_db_path) as conn:
+            conn.execute("CREATE TABLE scheduled_events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)")
+            conn.execute("INSERT INTO scheduled_events (title) VALUES ('old')")
+
+        with patched_config(DB_PATH=legacy_db_path):
+            db.init_db()
+        with sqlite3.connect(legacy_db_path) as conn:
+            self.assertEqual(conn.execute("SELECT advance_days FROM scheduled_events").fetchone(), (0,))
+
+
 class TestEventbriteSchema(unittest.TestCase):
     def test_init_db_migrates_eventbrite_columns_and_index(self):
         temp_dir = tempfile.TemporaryDirectory()

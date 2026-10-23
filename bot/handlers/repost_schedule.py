@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import uuid
 
 from telegram import Update
@@ -11,13 +12,15 @@ from core.db import (
     insert_scheduled_event,
     get_scheduled_event,
     get_all_scheduled_events,
+    update_scheduled_event_advance_days,
     update_scheduled_event_specific_date,
     update_scheduled_event_content,
 )
+from core.db.scheduled import MAX_ADVANCE_DAYS
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.templates.common import NO_TEXT_IN_REPLIED_MESSAGE
 from utils.templates.reposts import (
-    REPOST_UPDATE_REMINDER, SCHEDULE_DATE_UPDATED_PREFIX, SCHEDULE_INVALID_DATE, SCHEDULE_INVALID_DATE_FOR_EXISTING,
+    REPOST_UPDATE_REMINDER, SCHEDULE_ADVANCE_UPDATED_PREFIX, SCHEDULE_DATE_UPDATED_PREFIX, SCHEDULE_INVALID_ADVANCE, SCHEDULE_INVALID_DATE, SCHEDULE_INVALID_DATE_FOR_EXISTING,
     SCHEDULE_LIST_EMPTY, SCHEDULE_NO_REPLY, SCHEDULE_SAVE_ERROR, SCHEDULE_UPDATE_ERROR, SCHEDULE_UPDATE_NO_REPLY,
     SCHEDULE_UPDATE_USAGE, format_schedule_list_entry, format_schedule_list_header, format_schedule_repost_message,
     format_scheduled_event_not_found, format_scheduled_event_updated,
@@ -54,8 +57,22 @@ def _scheduled_title(text, target_msg):
     return text.strip().split("\n")[0][:50]
 
 
+def _split_advance(tokens):
+    """Splits an optional trailing plain integer (the advance days N) off the date tokens: (date_tokens, n or None).
+
+    A bare integer never parses as a date, so "09-10-2026 21:00 2" and "2" are unambiguous.
+    """
+    if tokens and re.fullmatch(r"-?\d+", tokens[-1]):
+        return tokens[:-1], int(tokens[-1])
+    return tokens, None
+
+
+def _valid_advance(days):
+    return days is None or 0 <= days <= MAX_ADVANCE_DAYS
+
+
 async def _reply_schedule_card(message, sched_ev, prefix=""):
-    kb = get_schedule_repost_keyboard(sched_ev['id'], sched_ev.get('schedule_days'))
+    kb = get_schedule_repost_keyboard(sched_ev['id'], sched_ev.get('schedule_days'), sched_ev.get('advance_days'))
     await message.reply_text(prefix + format_schedule_repost_message(sched_ev), reply_markup=kb, parse_mode="HTML")
 
 
@@ -68,7 +85,7 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
     args_str = command_argument(message)
     tokens = args_str.split()
 
-    # "/event_schedule <ID> [DATE]" manages an existing schedule
+    # "/event_schedule <ID> [DATE] [N]" manages an existing schedule
     if tokens and tokens[0].isdigit():
         sched_id = int(tokens[0])
         sched_ev = get_scheduled_event(sched_id)
@@ -76,13 +93,23 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
             if len(tokens) == 1:
                 await _reply_schedule_card(message, sched_ev)
                 return
-            parsed = parse_user_date(" ".join(tokens[1:]))
-            if not parsed:
-                await message.reply_text(SCHEDULE_INVALID_DATE_FOR_EXISTING)
+            date_tokens, advance = _split_advance(tokens[1:])
+            if not _valid_advance(advance):
+                await message.reply_text(SCHEDULE_INVALID_ADVANCE)
                 return
-            formatted_d, _ = format_standard_event_date(*parsed)
-            update_scheduled_event_specific_date(sched_id, formatted_d)
-            await _reply_schedule_card(message, get_scheduled_event(sched_id), prefix=SCHEDULE_DATE_UPDATED_PREFIX)
+            prefix = ""
+            if date_tokens:
+                parsed = parse_user_date(" ".join(date_tokens))
+                if not parsed:
+                    await message.reply_text(SCHEDULE_INVALID_DATE_FOR_EXISTING)
+                    return
+                formatted_d, _ = format_standard_event_date(*parsed)
+                update_scheduled_event_specific_date(sched_id, formatted_d)
+                prefix = SCHEDULE_DATE_UPDATED_PREFIX
+            if advance is not None:
+                update_scheduled_event_advance_days(sched_id, advance)
+                prefix = prefix or SCHEDULE_ADVANCE_UPDATED_PREFIX
+            await _reply_schedule_card(message, get_scheduled_event(sched_id), prefix=prefix)
             return
 
     if not message.reply_to_message:
@@ -94,9 +121,14 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
         await message.reply_text(NO_TEXT_IN_REPLIED_MESSAGE)
         return
 
+    date_tokens, advance_days = _split_advance(tokens)
+    if not _valid_advance(advance_days):
+        await message.reply_text(SCHEDULE_INVALID_ADVANCE)
+        return
+
     specific_date_val = None
-    if args_str:
-        parsed = parse_user_date(args_str)
+    if date_tokens:
+        parsed = parse_user_date(" ".join(date_tokens))
         if not parsed:
             await message.reply_text(SCHEDULE_INVALID_DATE)
             return
@@ -108,14 +140,15 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
         text=text,
         image_path=saved_img_path,
         schedule_days=[],
-        specific_date=specific_date_val
+        specific_date=specific_date_val,
+        advance_days=advance_days or 0,
     )
     if not scheduled_id:
         await message.reply_text(SCHEDULE_SAVE_ERROR)
         return
 
     msg_text = format_schedule_repost_message(get_scheduled_event(scheduled_id))
-    kb = get_schedule_repost_keyboard(scheduled_id, [])
+    kb = get_schedule_repost_keyboard(scheduled_id, [], advance_days)
 
     if saved_img_path and os.path.exists(saved_img_path):
         try:

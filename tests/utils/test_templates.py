@@ -1,6 +1,7 @@
 import importlib
 import pkgutil
 import unittest
+from datetime import date
 from types import SimpleNamespace
 
 import core.db as db
@@ -264,7 +265,7 @@ class TestMessageCatalogue(unittest.TestCase):
     def test_helpers_escape_user_supplied_html(self):
         self.assertIn("&lt;b&gt;", templates.format_eb_poll_booked("<b>", "1 posto", "T"))
         self.assertIn("&lt;i&gt;", templates.format_conflict_item("T", "<i>"))
-        self.assertIn("&lt;x&gt;", templates.format_reposts_digest_entry({"id": 1, "title": "<x>"}))
+        self.assertIn("&lt;x&gt;", templates.format_reposts_digest_entry({"id": 1, "title": "<x>"}, date(2026, 10, 9)))
         self.assertIn("&lt;x&gt;", templates.format_schedule_list_entry({"id": 1, "title": "<x>"}))
 
     def test_overbooking_and_status_messages(self):

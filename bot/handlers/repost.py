@@ -1,11 +1,12 @@
 import logging
 import os
 import re
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.db import get_event, get_scheduled_event
+from core.db import get_event, get_scheduled_event, next_scheduled_occurrence
 from utils.date_utils import parse_user_date
 from bot.common.auth import admin_only, describe_user
 from bot.common.media import read_image_file
@@ -85,25 +86,42 @@ async def event_repost_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await message.reply_text(REPOST_DONE)
 
 
-def _invoke_overrides(sched_ev, extra_tokens):
-    """Date defaults to today (keeping any scheduled time); extra tokens are "[DATE...] [SEATS]"."""
-    override_date = "oggi"
+def _invoke_overrides(sched_ev, extra_tokens, today=None):
+    """Date for the invoked event plus optional seats; extra tokens are "[DATE...] [SEATS]".
+
+    An explicit date wins (the digest passes the event day). Without one the date is today, or - for a template with
+    advance_days > 0 - its nearest occurrence on or after today, so invoking on the event day itself gives today.
+    The template's HH:MM is kept whenever the date has none.
+    """
     spec = sched_ev.get('specific_date')
     m_time = re.search(r'\b(\d{1,2}:\d{2})\b', spec) if spec else None
-    if m_time:
-        override_date = f"oggi {m_time.group(1)}"
+    time_suffix = f" {m_time.group(1)}" if m_time else ""
 
     override_seats = None
+    date_tokens = []
     if len(extra_tokens) == 1:
         token = extra_tokens[0]
         if token.isdigit() or "/" in token:
             override_seats = token
         else:
-            override_date = token
+            date_tokens = [token]
     elif len(extra_tokens) >= 2:
         override_seats = extra_tokens[-1]
-        override_date = " ".join(extra_tokens[:-1])
-    return override_date, override_seats
+        date_tokens = extra_tokens[:-1]
+
+    if date_tokens:
+        override_date = " ".join(date_tokens)
+        if not re.search(r'\d{1,2}:\d{2}', override_date):
+            override_date += time_suffix
+        return override_date, override_seats
+
+    override_date = "oggi"
+    if sched_ev.get('advance_days'):
+        today = today or datetime.now().date()
+        occurrence = next_scheduled_occurrence(sched_ev, today)
+        if occurrence and occurrence != today:
+            override_date = occurrence.strftime("%d-%m-%Y")
+    return override_date + time_suffix, override_seats
 
 
 @admin_only(notify=True)

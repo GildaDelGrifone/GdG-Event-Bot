@@ -120,6 +120,10 @@ def format_schedule_day_button(name, active):
     return f"{SCHEDULE_DAY_ACTIVE_ICON if active else SCHEDULE_DAY_INACTIVE_ICON} {name}"
 
 
+def format_schedule_advance_button(days):
+    return f"⏳ Anticipo: {days} gg"
+
+
 def format_decrement_seat_button(label, seats):
     return f"➖ {label} ({seats})"
 

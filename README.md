@@ -240,8 +240,8 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
-- `/event_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
-- `/event_schedule_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
+- `/event_schedule [ID] [DATA HH:MM] [N]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date. The optional `N` (0-30, default 0) is how many days **before** the event the 09:00 reminder arrives: `/event_schedule 5 2` or `/event_schedule 5 24-10-2026 21:00 2` (also settable with the `[➖] [⏳ Anticipo: N gg] [➕]` row on the card). The reminder lists the event with its real date, so its `/event_schedule_invoke` command prepares the event for that day.
+- `/event_schedule_invoke <ID> [DATA] [POSTI]`: Prepares and sends the approval card for a scheduled event. Without a date it is dated today; with advance days `N > 0` it is dated the template's nearest occurrence on or after today (so on the event day itself it is today).
 - `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).

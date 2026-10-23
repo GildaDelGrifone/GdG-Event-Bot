@@ -11,7 +11,7 @@ from utils.templates.keyboards import (
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS, BUTTON_REACTIVATE, BUTTON_REFRESH,
     BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button, format_eventbrite_order_row_button,
-    format_increment_seat_button, format_schedule_day_button, format_venue_button,
+    format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
 )
 from utils.templates.subscribers import format_reservation_subscriber_display
 
@@ -173,7 +173,7 @@ def get_event_booking_keyboard(event_id, event=None, bot_username=None):
     return InlineKeyboardMarkup([row])
 
 
-def get_schedule_repost_keyboard(scheduled_id, active_days=None):
+def get_schedule_repost_keyboard(scheduled_id, active_days=None, advance_days=0):
     active_lower = {str(d).strip().lower() for d in (active_days or [])}
 
     def day_button(key, name):
@@ -184,6 +184,11 @@ def get_schedule_repost_keyboard(scheduled_id, active_days=None):
     return InlineKeyboardMarkup([
         day_buttons[:3],
         day_buttons[3:],
+        [
+            InlineKeyboardButton("➖", callback_data=f"sched_adv_{scheduled_id}_dec"),
+            InlineKeyboardButton(format_schedule_advance_button(advance_days or 0), callback_data=f"sched_adv_{scheduled_id}_noop"),
+            InlineKeyboardButton("➕", callback_data=f"sched_adv_{scheduled_id}_inc"),
+        ],
         [
             InlineKeyboardButton(BUTTON_DELETE, callback_data=f"sched_del_{scheduled_id}"),
             InlineKeyboardButton(BUTTON_CLOSE, callback_data=f"sched_close_{scheduled_id}"),

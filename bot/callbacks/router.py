@@ -33,6 +33,7 @@ CALLBACK_ROUTES = (
     ("sub_addnew_", subscribers.handle_add_subscriber_prompt),
     ("close_subs_", subscribers.handle_close_panel),
     ("sched_toggle_", schedule.handle_toggle_day),
+    ("sched_adv_", schedule.handle_advance_days),
     ("sched_del_", schedule.handle_delete_schedule),
     ("sched_close_", schedule.handle_close_schedule),
 )
