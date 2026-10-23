@@ -4,10 +4,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event_by_telegram_message_id, update_discussion_message_info
+from core.db import get_event, get_event_by_telegram_message_id, update_discussion_message_info
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
-from utils.templates import recap_links_text
+from utils.templates.event import format_discussion_booking_message
+from utils.templates.recap import RECAP_INVALID_DATE, format_recap_done, recap_links_text
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
@@ -25,17 +26,14 @@ async def manual_recap_command(update: Update, context: ContextTypes.DEFAULT_TYP
         parsed = parse_user_date(args[0])
         if not parsed:
             if update.message:
-                await update.message.reply_text(
-                    "❌ Formato data non valido.\n"
-                    "Usa il formato DD-MM-YYYY (es. /recap_generate 05-09-2026)."
-                )
+                await update.message.reply_text(RECAP_INVALID_DATE)
             return
         date_str = parsed[0].strftime("%d-%m-%Y")
 
     reply_id = update.message.message_id if update.message else None
     success = await generate_daily_recap(context.bot, date_str, is_manual=True, reply_to_message_id=reply_id)
     if success:
-        done_text = f"Recap generato per la data: {date_str or 'Oggi'}"
+        done_text = format_recap_done(date_str)
         if update.message:
             await update.message.reply_text(done_text)
         else:
@@ -64,6 +62,23 @@ async def _reply_recap_links(context, message, forward_msg_id):
         logger.info(f"Successfully posted recap links reply in discussion group for recap message {forward_msg_id}")
     except Exception as e:
         logger.error(f"Error posting recap links to discussion group: {e}")
+
+
+async def _add_link_published_meanwhile(context, event_id, reply_msg, sent_text, keyboard):
+    """The Eventbrite publish runs in the background: if it finished while this message was being sent, its own edit
+    could not find the message yet, so apply the link here."""
+    fresh = get_event(event_id)
+    text = format_discussion_booking_message(fresh)
+    if text == sent_text:
+        return
+    try:
+        await context.bot.edit_message_text(
+            chat_id=reply_msg.chat_id, message_id=reply_msg.message_id, text=text, reply_markup=keyboard,
+            parse_mode="HTML", disable_web_page_preview=True,
+        )
+    except Exception as e:
+        if not is_not_modified_error(e):
+            logger.error(f"Error adding the Eventbrite link to the booking reply of event {event_id}: {e}")
 
 
 async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,24 +116,31 @@ async def handle_discussion_forward(update: Update, context: ContextTypes.DEFAUL
     if event.get('discussion_message_id'):
         logger.info(f"Event {event['id']} already has discussion_message_id={event['discussion_message_id']}")
         try:
-            await context.bot.edit_message_reply_markup(
+            await context.bot.edit_message_text(
                 chat_id=message.chat_id,
                 message_id=event['discussion_message_id'],
-                reply_markup=pub_keyboard
+                text=format_discussion_booking_message(event),
+                reply_markup=pub_keyboard,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
             )
         except Exception as e:
             if not is_not_modified_error(e):
                 logger.error(f"Error updating existing discussion reply markup: {e}")
         return
 
+    text = format_discussion_booking_message(event)
     try:
         reply_msg = await context.bot.send_message(
             chat_id=message.chat_id,
-            text="👇 Gestisci qui la tua prenotazione!",
+            text=text,
             reply_to_message_id=message.message_id,
-            reply_markup=pub_keyboard
+            reply_markup=pub_keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
         )
         update_discussion_message_info(event['id'], reply_msg.message_id, message.chat_id)
         logger.info(f"Successfully posted booking buttons reply in discussion group for event {event['id']}")
+        await _add_link_published_meanwhile(context, event['id'], reply_msg, text, pub_keyboard)
     except Exception as e:
         logger.error(f"Error sending booking buttons to discussion group: {e}")

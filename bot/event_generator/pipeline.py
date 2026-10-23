@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -7,8 +8,11 @@ from core import config
 from core.ai_parser import GeminiQuotaError
 from core.db import insert_event, update_event_field
 from utils.image_utils import create_collage_from_bytes, save_image_locally
-from utils.templates import format_public_event_message
+from utils.templates.event import format_public_event_message
 from bot.common.messages import CAPTION_LIMIT
+from utils.templates.generator import (
+    GENERATE_PARSE_FAILED, GENERATE_QUOTA_DEPLETED, GENERATE_SAVE_ERROR, GENERATE_SUCCESS,
+)
 from bot.common.previews import date_anomaly_warning, notify_quota_depleted, send_admin_preview
 from bot.event_generator.ai import generate_event_data_with_ai
 from bot.event_generator.bgg import fetch_bgg_game_image
@@ -60,30 +64,33 @@ async def _send_generated_preview(bot, warning_block, final_text, image_path, ke
 
 
 async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
-    """AI fields -> BoardGameGeek covers -> caption-safe post -> pending DB row -> admin approval card."""
+    """AI fields (+ guessed BGG IDs) -> BoardGameGeek covers -> caption-safe post -> pending DB row -> admin approval card."""
     try:
-        event_data = generate_event_data_with_ai(prompt_text)
+        event_data = await asyncio.to_thread(generate_event_data_with_ai, prompt_text)
     except GeminiQuotaError as e:
         await notify_quota_depleted(context.bot, config.ADMIN_CHAT_ID, e, "/event_generate")
-        return False, "Crediti Gemini AI esauriti. Impossibile generare l'evento."
+        return False, GENERATE_QUOTA_DEPLETED
 
     if not event_data:
-        return False, "Impossibile interpretare l'evento con l'AI. Verifica il messaggio fornito."
+        return False, GENERATE_PARSE_FAILED
 
     games = event_data.get("games", [])
-    images = [img for img in (fetch_bgg_game_image(game) for game in games) if img]
-    image_path = _save_event_image(games, images, event_data.get("normalized_date"))
+    bgg_ids = event_data.get("bgg_ids") or {}
+    covers = await asyncio.gather(*(asyncio.to_thread(fetch_bgg_game_image, game, bgg_id=bgg_ids.get(game))
+                                    for game in games))
+    images = [img for img in covers if img]
+    image_path = await asyncio.to_thread(_save_event_image, games, images, event_data.get("normalized_date"))
 
     final_text = enforce_caption_limit(event_data, max_length=CAPTION_LIMIT)
 
     event_id = insert_event(event_data, image_path, original_text=prompt_text)
     if not event_id:
         logger.error("Failed to insert generated event into DB.")
-        return False, "Errore durante il salvataggio dell'evento nel database."
+        return False, GENERATE_SAVE_ERROR
 
     warning_block = date_anomaly_warning(event_data, raw_text=prompt_text)
     admin_msg = await _send_generated_preview(context.bot, warning_block, final_text, image_path, get_approval_keyboard(event_id))
     if admin_msg:
         update_event_field(event_id, "admin_message_id", admin_msg.message_id)
 
-    return True, "Evento generato con successo e inviato in revisione."
+    return True, GENERATE_SUCCESS

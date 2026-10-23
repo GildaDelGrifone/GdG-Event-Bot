@@ -103,7 +103,7 @@ async def get_media_group_data_from_cache(
 
     images_dict = group_entry.get("images", {})
     cached_images = [images_dict[mid] for mid in sorted(images_dict) if images_dict[mid]]
-    image_bytes = _build_collage(cached_images, f"admin media group {media_group_id}") if cached_images else None
+    image_bytes = await asyncio.to_thread(_build_collage, cached_images, f"admin media group {media_group_id}") if cached_images else None
 
     captions = group_entry.get("captions", {})
     first_caption = next((captions[mid] for mid in sorted(captions) if captions[mid]), None)
@@ -170,7 +170,7 @@ async def finalize_media_group(media_group_id: str, context: ContextTypes.DEFAUL
 
     await handle_event_extraction(
         text=text,
-        image_bytes=_build_collage(group.get("images", []), "event"),
+        image_bytes=await asyncio.to_thread(_build_collage, group.get("images", []), "event"),
         context=context,
         message_link=group.get("message_link"),
         telegram_message_id=group.get("message_id"),

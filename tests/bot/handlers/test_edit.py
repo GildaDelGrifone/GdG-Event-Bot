@@ -408,5 +408,67 @@ class TestEventEditDate(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(db.get_event(ev_id)["normalized_date"], datetime.now().strftime("%d-%m-%Y"))
 
 
+class TestEventbriteEdits(OldEventMixin, unittest.IsolatedAsyncioTestCase):
+    async def _edit(self, text):
+        update = admin_update(text, reply_to=admin_card(self.event_id))
+        with as_admin_chat(), patch("bot.handlers.edit.update_event_messages", AsyncMock()) as update_messages:
+            await event_edit_command(update, self.context)
+        return update, update_messages
+
+    def _with_eventbrite_booking(self, seats=2):
+        db.update_event_status(self.event_id, "approved")
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", seats)
+
+    async def test_content_fields_flag_the_eventbrite_sync(self):
+        cases = {
+            "/event_edit_title Nuovo": True, "/event_edit_date 05-09-2026 21:00": True,
+            "/event_edit_system Cthulhu": True, "/event_edit_host Nuovo Host": True,
+            "/event_edit_extra Note": True, "/event_edit_extra_add Altre note": True,
+            "/event_edit_description Testo": True, "/event_edit_type boardgame": True,
+            "/event_edit_seats 3/4": True, "/event_edit_booked 1": False,
+        }
+        db.update_event_status(self.event_id, "approved")
+        for text, expected in cases.items():
+            with self.subTest(command=text):
+                _, update_messages = await self._edit(text)
+                update_messages.assert_awaited_once()
+                self.assertIs(update_messages.call_args.kwargs["eventbrite_content"], expected)
+
+    async def test_booked_count_below_eventbrite_seats_is_rejected(self):
+        self._with_eventbrite_booking(2)  # booked_seats == 2, all on Eventbrite
+
+        update, update_messages = await self._edit("/event_edit_booked 1")
+
+        self.assertIn("2 posti risultano prenotati su Eventbrite", update.message.reply_text.call_args.args[0])
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 2)
+        update_messages.assert_not_awaited()
+
+    async def test_booked_count_at_or_above_eventbrite_seats_is_accepted(self):
+        self._with_eventbrite_booking(2)
+        await self._edit("/event_edit_booked 3")
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 3)
+
+    async def test_seats_free_total_that_would_drop_eventbrite_seats_is_rejected(self):
+        self._with_eventbrite_booking(2)
+
+        update, _ = await self._edit("/event_edit_seats 3/3")  # booked would become 0
+
+        self.assertIn("Eventbrite", update.message.reply_text.call_args.args[0])
+        event = db.get_event(self.event_id)
+        self.assertEqual((event["booked_seats"], event["max_seats"]), (2, 4))
+
+    async def test_seats_free_total_keeping_eventbrite_seats_is_accepted(self):
+        self._with_eventbrite_booking(2)
+        await self._edit("/event_edit_seats 1/4")  # booked becomes 3
+        event = db.get_event(self.event_id)
+        self.assertEqual((event["booked_seats"], event["seats"]), (3, "1/4"))
+
+    async def test_total_only_and_unlimited_edits_keep_the_bookings(self):
+        self._with_eventbrite_booking(2)
+        await self._edit("/event_edit_seats 6")
+        await self._edit("/event_edit_seats null")
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

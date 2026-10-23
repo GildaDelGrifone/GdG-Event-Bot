@@ -9,6 +9,10 @@ NAME_MATCH_SQL = (
 )
 
 
+# Eventbrite attendees are display names only; Telegram lookups must never match them
+NOT_EVENTBRITE_SQL = "COALESCE(source, 'telegram') != 'eventbrite'"
+
+
 def clean_username(username):
     return (username or '').strip().lstrip('@')
 
@@ -25,6 +29,22 @@ def normalize_identity(username, full_name):
 @db_safe(default=list)
 def get_reservations_for_event(event_id):
     return fetch_all('SELECT * FROM reservations WHERE event_id = ? ORDER BY id ASC', (event_id,))
+
+
+@db_safe(default=list)
+def get_eventbrite_reservations(event_id):
+    return fetch_all(
+        "SELECT * FROM reservations WHERE event_id = ? AND source = 'eventbrite' ORDER BY id ASC", (event_id,)
+    )
+
+
+@db_safe(default=0)
+def eventbrite_seat_count(event_id):
+    row = fetch_one(
+        "SELECT COALESCE(SUM(seats_booked), 0) AS seats FROM reservations WHERE event_id = ? AND source = 'eventbrite'",
+        (event_id,),
+    )
+    return int(row['seats'])
 
 
 @db_safe()
@@ -44,7 +64,10 @@ def get_reservation_by_user(event_id, username=None, user_id=None):
         params += [name, name]
     if not conditions:
         return None
-    return fetch_one(f"SELECT * FROM reservations WHERE event_id = ? AND ({' OR '.join(conditions)})", tuple(params))
+    return fetch_one(
+        f"SELECT * FROM reservations WHERE event_id = ? AND {NOT_EVENTBRITE_SQL} AND ({' OR '.join(conditions)})",
+        tuple(params),
+    )
 
 
 @db_safe(default=list)

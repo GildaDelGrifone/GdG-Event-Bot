@@ -3,6 +3,7 @@ import logging
 from core import config
 from core.ai_parser import GEMINI_DEPLETED_ALERT
 from utils.date_utils import validate_event_date_anomalies
+from utils.templates.approval import format_caption_limit_warning, format_date_anomaly_warning
 from bot.common.messages import CAPTION_LIMIT, truncate_caption, with_html_fallback
 
 logger = logging.getLogger(__name__)
@@ -12,17 +13,13 @@ def date_anomaly_warning(event, raw_text=None):
     warnings = validate_event_date_anomalies(event, raw_text=raw_text)
     if not warnings:
         return ""
-    return "🚨 ATTENZIONE ANOMALIE DATA:\n" + "\n".join(warnings) + "\n👉 Usa /event_edit_date per correggere prima di approvare.\n\n"
+    return format_date_anomaly_warning(warnings)
 
 
 def build_admin_warning_block(event, final_text, has_image, raw_text=None, check_date_anomalies=True):
     block = date_anomaly_warning(event, raw_text=raw_text) if check_date_anomalies else ""
     if has_image and len(final_text) > CAPTION_LIMIT:
-        block = (
-            f"🚨 ATTENZIONE LIMITE CARATTERI:\n"
-            f"⚠️ IL TESTO DELL'EVENTO SUPERA I 1024 CARATTERI ({len(final_text)}/1024)!\n"
-            f"La pubblicazione sul canale fallirà. Riduci la descrizione con /event_edit_description prima di approvare.\n\n"
-        ) + block
+        block = format_caption_limit_warning(len(final_text), CAPTION_LIMIT) + block
     return block
 
 

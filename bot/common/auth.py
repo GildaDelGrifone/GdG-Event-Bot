@@ -2,8 +2,8 @@ import functools
 
 from core import config
 from bot.common.messages import resolve_message
+from utils.templates.common import UNAUTHORIZED_REPLY
 
-UNAUTHORIZED_REPLY = "Non sei autorizzato."
 
 
 def describe_user(user, role="Admin"):

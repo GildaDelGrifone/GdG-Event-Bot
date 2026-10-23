@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import sys
@@ -73,3 +74,18 @@ class DailyMonthlyLogHandler(TimedRotatingFileHandler):
     def doRollover(self):
         super().doRollover()
         self.check_and_zip()
+
+
+class JobLinesToDebug(logging.Filter):
+    """Treats APScheduler's per-run INFO lines of the given jobs as DEBUG: relabelled, and dropped unless DEBUG is on
+    (APScheduler logs them itself at INFO, so a filter is the only place to change that). Everything else passes."""
+
+    def __init__(self, job_names):
+        super().__init__()
+        self.job_names = tuple(job_names)
+
+    def filter(self, record):
+        if record.levelno == logging.INFO and any(name in record.getMessage() for name in self.job_names):
+            record.levelno, record.levelname = logging.DEBUG, "DEBUG"
+            return logging.getLogger().isEnabledFor(logging.DEBUG)
+        return True

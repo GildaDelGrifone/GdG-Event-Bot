@@ -31,6 +31,7 @@ This application monitors a Telegram channel, extracts event information using *
 - **Event Cancellation:** Admins can cancel any event at any time using a persistent `[Cancel]` button. Cancelled events update live in the channel and are flagged as `[ANNULLATO]` with zero seats in recaps and graphics.
 - **Daily Recaps & Multi-Image Collages:** Automatically runs at 16:00 on gaming days (Mon, Wed, Fri, Sat, Sun) or on-demand via `/recap_generate`. Stitches event artwork into clean collages (wrapped into multiple rows via `MAX_EVENTS_PER_ROW`) without cropping borders.
 - **Instagram Story Generator:** Programmatically builds 1080x1920 Instagram Story cards for individual events and daily recaps using Pillow (handling top banner artwork, dynamic text wrapping, seat counters, and association location footers).
+- **Eventbrite Integration (Optional):** Admins can also publish an event on Eventbrite (`[🚀 Publish + Eventbrite]`, `[🎟️ Solo Eventbrite]`, `[🎟️ Pubblica su Eventbrite]` or `/event_publish_eventbrite`). Telegram and Eventbrite share one seat pool: bookings on either side update the other, Eventbrite bookings are polled every few minutes and announced in the discussion group, and edits/cancellations made in Telegram are mirrored on Eventbrite. The bot behaves exactly as before when Eventbrite is not configured.
 - **WordPress REST API Integration:** AI writes an Italian recap article embedding event details, Telegram message links, and individual event pictures (max 400x400). The recap collage is set as the featured image. Posts can be published publicly directly from Telegram.
 
 ---
@@ -82,10 +83,17 @@ Create or edit the `.env` file in the root directory:
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 PUBLIC_CHANNEL_ID=-100xxxxxxxxxx
 ADMIN_CHAT_ID=your_admin_user_or_group_id
+TELEGRAM_BOT_USERNAME=your_bot_username_here   # without @; used for the 👥 Lista deep links
 
 # Google Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
+
+# BoardGameGeek API (Optional)
+# With a token /event_generate asks BoardGameGeek for the box covers first. Without it (or when BGG answers 401 / finds nothing)
+# the BGG ID comes from Wikidata or Gemini's guess (checked against BGG's names), then Wikipedia,
+# then a web image search whose results Gemini must confirm.
+# BGG_API_TOKEN=your_bgg_api_token_here
 
 # WordPress REST API Configuration
 WP_URL=https://www.gildadelgrifonetorino.it
@@ -98,8 +106,44 @@ WP_POST_CATEGORY=
 IG_ACCESS_TOKEN=EAAG...
 IG_ACCOUNT_ID=178414...
 
+# Eventbrite Integration (Optional): enabled only when token, organization ID and venue ID are all set
+# EVENTBRITE_TOKEN=your_private_oauth_token
+# EVENTBRITE_ORGANIZATION_ID=
+# EVENTBRITE_VENUE_ID=                   # default venue, created once with scripts/eventbrite_setup.py
+# EVENTBRITE_VENUE_ID_ALTERNATIVES=      # optional: more venues, comma-separated (choose with /bot_eventbrite_venue)
+# EVENTBRITE_ORGANIZER_ID=               # optional
+# EVENTBRITE_TIMEZONE=Europe/Rome
+# EVENTBRITE_CURRENCY=EUR
+# EVENTBRITE_LISTED=true                 # false = unlisted (useful for testing)
+# EVENTBRITE_DEFAULT_START_TIME=20:45    # used when the event date has no time
+# EVENTBRITE_EVENT_DURATION_HOURS=4
+# EVENTBRITE_UNLIMITED_CAPACITY=50       # Eventbrite capacity for events with unlimited seats
+# EVENTBRITE_POLL_MINUTES=2
+# EVENTBRITE_DELETE_CANCELLED=true       # at 23:59 delete cancelled events dated today or earlier from Eventbrite (Telegram is unchanged)
+# EVENTBRITE_CLEANUP_NOTIFICATIONS=false  # 23:59 "🧹 Eliminati da Eventbrite N eventi annullati" message (events it could not delete are always reported)
+# EVENTBRITE_FULL_SYNC_MINUTES=30        # full order check this often even if quantity_sold is unchanged (0 = every poll)
+# EVENTBRITE_ONLY_MODE=false           # start in Eventbrite-only mode (see /bot_eventbrite_only_toggle): no Telegram publish buttons, no Instagram story
+# EVENTBRITE_COLLECTION_ROLEPLAY=         # Eventbrite collection id for roleplaying events (python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo")
+# EVENTBRITE_COLLECTION_BOARDGAMES=       # same, for the other events; both empty = events are not put in collections
+# EVENTBRITE_BOOKING_NOTIFICATIONS=true  # notice for Eventbrite bookings/releases (discussion group; admin chat for Eventbrite-only events)
+
 # Storage Configuration (Optional)
 # DATA_DIR=/path/to/custom/data
+
+# Logging (Optional): DEBUG, INFO (default), WARNING, ERROR or CRITICAL. DEBUG also shows the Eventbrite poller job lines.
+# LOG_LEVEL=INFO
+
+# Scheduled job times (Optional): 24h HH:MM, local time; an invalid value falls back to the default
+# REPOSTS_TIME=09:00               # digest of the scheduled reposts due today
+# RECAP_TIME=16:00                 # daily recap card (gaming days only)
+# ARCHIVE_IMAGES_TIME=23:59        # image archiving + booking shutdown
+# ARCHIVE_LOGS_TIME=00:05          # monthly log zip check
+# EVENTBRITE_CLEANUP_TIME=23:59    # delete cancelled events from Eventbrite
+# RECAP_WEEKDAYS=0,2,4,5,6         # game nights that get an automatic recap (0 = Monday ... 6 = Sunday)
+
+# Game night texts (Optional)
+# EVENT_START_TIME=20:45                   # "Ci vediamo alle ..." in the recap and story; default Eventbrite start time
+# RECAP_CONTACTS=@Destard,@ManueleAbi      # who to contact to propose an event (recap texts, WordPress article)
 
 # Collage Configuration (Optional)
 MAX_EVENTS_PER_ROW=4
@@ -129,8 +173,9 @@ python3 main.py
 - **Deferred Auto-Interception:** The bot parses the content via Gemini AI first. If confirmed as an event, it deletes the raw post from the public channel and routes it to admin review; if it is not an event, it is preserved in the channel.
 - **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`.
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
+- **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Publish + Eventbrite]` (publishes on Telegram, then on Eventbrite); in Eventbrite-only mode (`/bot_eventbrite_only_toggle`, `EVENTBRITE_ONLY_MODE`) the card shows only `[Discard]`, `[🚀 Telegram + EB]` and `[🎟️ Solo Eventbrite]` (approves the event without any channel post and publishes it on Eventbrite only) and no Instagram story is generated. An approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates are refused; events with no free seats (e.g. `0/0 Completo`) are published sold out (visible, nothing bookable until a seat frees up); unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).
-- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches official box images from BoardGameGeek, stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
+- **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches the box images (from BoardGameGeek when `BGG_API_TOKEN` is set, otherwise still from BoardGameGeek when the BGG ID is found on Wikidata or guessed by Gemini and checked against BGG's names, then Wikipedia, then a web image search whose results Gemini confirms show that game), stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
 
 ### 2. Live Seat Booking & Same-Day Conflict Warnings
 - Users click `[➕ Prenota]` on a channel post or discussion group reply to reserve a seat (or see `[🚫 Esauriti]` if full).
@@ -139,6 +184,7 @@ python3 main.py
 - Users click `[👥 Lista]` to open a private DM with the bot and view the full list of participants without spamming the group, or manually call `/event_subs <id>` (or `/subs <id>`, or `/event_subs_<id>`).
 - **Same-Day Conflict Warning:** If a user reserves a seat on an event while already subscribed to another valid event (not cancelled or unsubscribed) scheduled for the same day, the bot processes the reservation normally and immediately posts a warning in the discussion chat. The warning tags the user, lists the conflicting event(s) with titles and direct message links, and reminds the user to release their seat from whichever event they decide not to attend.
 - Users click `[➖ Annulla]` to release reserved seats.
+- **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group, or in the admin chat (as a reply to the event card) for Eventbrite-only events (`EVENTBRITE_BOOKING_NOTIFICATIONS=false` silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored.
 
 ### 3. Daily Recap Flow
 - Runs automatically at **16:00** on Mondays, Wednesdays, Fridays, Saturdays, and Sundays (silent if no events are scheduled).
@@ -162,6 +208,9 @@ In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already 
 - `/event_edit_description <Descrizione o sinossi>`
 - `/event_edit_image` (allega una nuova foto o album in risposta alla scheda evento, oppure rispondi a una foto con `/event_edit_image <event_id>`)
 - `/event_regenerate_story`: rigenera e invia in chat l'immagine della storia Instagram per l'evento risposto o per ID specificato
+- `/event_publish_eventbrite [ID]`: pubblica l'evento approvato su Eventbrite (stesso effetto del pulsante `[🎟️ Pubblica su Eventbrite]`)
+
+Per gli eventi pubblicati su Eventbrite, le modifiche a titolo, data, sistema, host, note, descrizione, tipo, posti e immagine vengono riportate anche su Eventbrite. `/event_edit_booked` e `/event_edit_seats X/Y` non possono scendere sotto i posti prenotati su Eventbrite.
 
 *Nota sui controlli di validità della data:*
 Durante l'acquisizione iniziale dell'evento da parte dell'AI, il bot esegue un controllo automatico di sanità della data: se la data rilevata è nel passato oppure c'è una discrepanza tra il giorno della settimana scritto e quello effettivo di calendario (es. "Sabato 04 Settembre 2026" quando il 4 settembre è venerdì), viene anteposto un avviso visibile (`🚨 ATTENZIONE ANOMALIE DATA`) nel messaggio di revisione admin. Correggendo la data con `/event_edit_date`, l'avviso viene automaticamente rimosso.
@@ -174,26 +223,32 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 - Commands (send standalone or in reply to an event):
   - `/event_sub_add <event_id> @username [posti]`
   - `/event_sub_remove <event_id> @username [posti]`
+- **Eventbrite bookings** are marked `🎟️` and have no `➕`/`➖`: each is a single URL button opening that order's page on Eventbrite, and admin seat changes on them are refused.
 - **Public Group Notifications:** Whenever an event admin adds or removes subscribers or seats for a public event (via buttons, reply prompt, or commands), a notification is sent to the public discussion group (`DISCUSSION_GROUP_ID`) specifying that the modification was performed by an **event admin** (distinguishing event admins from group/server admins) and indicating the target user and seat count.
 
 ### 6. Event Cancellation & Reactivation
-- **Cancellation (`[❌ Annulla Evento]`):** Updates status to `cancelled`, removes booking buttons from channel and discussion group, and posts a notification in the public discussion group (`DISCUSSION_GROUP_ID`) tagging all subscribed users to inform them of the cancellation (or sends a general notice if there are no subscribers).
+- **Cancellation (`[❌ Annulla Evento]`):** The button first asks for confirmation (`[✅ Sì, annulla]` / `[↩️ Indietro]`, so a misclick cannot cancel an event); after the confirmation it updates status to `cancelled`, removes booking buttons from channel and discussion group, and posts a notification in the public discussion group (`DISCUSSION_GROUP_ID`) tagging all subscribed users to inform them of the cancellation (or sends a general notice if there are no subscribers). On Eventbrite the event is unpublished when it has no orders; with orders, sales are closed, the event is renamed `[ANNULLATO] …`, and the cancel API is tried. Eventbrite's API cannot cancel orders (and cannot refund free ones), so the admins get one button per order that opens its *Cancel order* page on the dashboard (Eventbrite emails each attendee). Once every order is cancelled the bot completes the Eventbrite cancellation by itself (or at once with `[🔁 Ho annullato tutto, completa]`). A cancelled Eventbrite event cannot be revived: reactivating offers `[🎟️ Ricrea su Eventbrite]`.
+- **Eventbrite-only cancellation (`[🚫 Annulla su Eventbrite]`):** on the card of an event published on Eventbrite, the second row has `[🎟️ Eventbrite]` and `[🚫 Annulla su Eventbrite]`. After a confirmation it cancels only the Eventbrite event (same per-order link flow if there are orders); the Telegram event stays active and nothing is posted to the discussion group. The row then shows `[🔁 Completa annullamento]` while orders are pending and `[🎟️ Ricrea su Eventbrite]` once cancelled.
+- **Eventbrite collections:** set `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` (ids; `scripts/eventbrite_setup.py --create-collection "Giochi di ruolo"` creates one) and published events are added to the collection of their type; changing the type with `/event_edit_type` moves them. Failures only warn the admins.
+- **Nightly Eventbrite cleanup:** at 23:59 the bot deletes from Eventbrite the cancelled events dated today or earlier (set `EVENTBRITE_DELETE_CANCELLED=false` to turn it off), so they are gone after midnight. Telegram is not touched: events, bookings, channel posts and discussion messages stay as they are, and nothing is posted to the group. Events whose orders are still being cancelled, or that Eventbrite refuses to delete, are kept and listed in one summary message to the admins. The list of deleted events (`🧹 Eliminati da Eventbrite N eventi annullati`) is added to that message only with `EVENTBRITE_CLEANUP_NOTIFICATIONS=true` (off by default).
 - **Reactivation (`[♻️ Riattiva Evento]`):** Under a cancelled event in `ADMIN_CHAT_ID`, admins can click `[♻️ Riattiva Evento]`. This restores status to `approved`, restores booking buttons in the public channel and discussion group, and posts a notification in the discussion group notifying the original subscribers that the event is reactivated.
 
 
 ### 7. Event Overview & Bot Control Commands
-- `/event_next`: Public command displaying today's and upcoming events in chronological order, with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
+- `/event_next [date]`: Public command displaying today's and upcoming events in chronological order (or only the events of one day when given `gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato` or `domenica`; a weekday means its next occurrence, today included), with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
-- `/event_schedule [ID] [DATA HH:MM]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date.
-- `/event_schedule_invoke <ID>`: Prepares and sends the approval card for a scheduled event for today's reposting.
+- `/event_schedule [ID] [DATA HH:MM] [N]`: Set up recurring reposting schedule via opening days checkbox buttons (`Lunedì`, `Mercoledì`, `Venerdì`, `Sabato`, `Domenica`) or schedule a specific date. The optional `N` (0-30, default 0) is how many days **before** the event the 09:00 reminder arrives: `/event_schedule 5 2` or `/event_schedule 5 24-10-2026 21:00 2` (also settable with the `[➖] [⏳ Anticipo: N gg] [➕]` row on the card). The reminder lists the event with its real date, so its `/event_schedule_invoke` command prepares the event for that day.
+- `/event_schedule_invoke <ID> [DATA] [POSTI]`: Prepares and sends the approval card for a scheduled event. Without a date it is dated today; with advance days `N > 0` it is dated the template's nearest occurrence on or after today (so on the event day itself it is today).
 - `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
 - `/bot_resume`: Resumes public channel monitoring.
-- `/bot_status`: Checks whether the bot is currently active or paused.
+- `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
+- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. In memory: a restart returns to the default.
+- `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. In memory: a restart returns to the env value.
 
 ---
 
@@ -284,6 +339,43 @@ All maintenance utilities are located in the `scripts/` directory:
   ```
   Safely truncates `events` and `reservations` tables, resets autoincrement counters, and removes generated `.jpg` files across all date folders while preserving fonts.
 
+- **Eventbrite Setup:**
+  ```bash
+  # Validate the token and list the organization IDs:
+  python3 scripts/eventbrite_setup.py --check --orgs
+
+  # List existing venues / create the venue once and print EVENTBRITE_VENUE_ID:
+  python3 scripts/eventbrite_setup.py --venues
+  python3 scripts/eventbrite_setup.py --create-venue --name "Gilda del Grifone" \
+      --address "Via Ada Negri 8/A" --city Torino --postal-code 10135 --country IT
+
+  # Edit an existing venue (omitted fields keep their value; the API cannot delete venues):
+  python3 scripts/eventbrite_setup.py --update-venue <id> --name "TO PLAY TORINO" --address "Via Borgaro, 2" \
+      --postal-code 10149 --region TO
+
+  # Optional: create the two collections and print their ids
+  python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo"
+  python3 scripts/eventbrite_setup.py --create-collection "Giochi da tavolo"
+  ```
+  Setup order:
+  1. Put `EVENTBRITE_TOKEN` in `.env`, then run `--check --orgs` and set `EVENTBRITE_ORGANIZATION_ID`.
+  2. Run `--create-venue` (or `--venues` to find an existing one) and set `EVENTBRITE_VENUE_ID` (the default venue). These three values enable the integration. More places can be listed in `EVENTBRITE_VENUE_ID_ALTERNATIVES`; the repo skill `.claude/skills/eventbrite-venues` walks through creating/editing venues.
+  3. Optional, for collections: run `--create-collection` once per collection and set `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` to the printed ids. For collections already made in the dashboard, the id is the number at the end of their URL (`/cc/name-<id>`).
+  4. The API creates collections as **drafts** and cannot publish them: publish each one from the Eventbrite dashboard.
+  5. Restart the bot.
+
+  Eventbrite has no sandbox: use `EVENTBRITE_LISTED=false` while testing.
+
+- **Inspect an Eventbrite Event (read-only):**
+  ```bash
+  # Ticket quantities (quantity_sold) versus orders and attendees; the ID is in the dashboard URL
+  python3 scripts/eventbrite_inspect.py 2003659307927
+
+  # Keep watching, printing only when something changes (every 20 seconds, minimum 15)
+  python3 scripts/eventbrite_inspect.py 2003659307927 --watch 20
+  ```
+  Shows the event status, each ticket class (`quantity_total`, `quantity_sold`, `quantity_pending`), every order with its cancelled/refunded/active attendees, whether `quantity_sold` matches the active attendees, and the Eventbrite seats the bot has stored. Only ids and counts are printed, never names or emails.
+
 - **Check Meta Instagram Token:**
   ```bash
   python3 scripts/test_ig.py
@@ -295,9 +387,9 @@ All maintenance utilities are located in the `scripts/` directory:
 ## Development & Tests
 
 - **Code layout:** the `bot/` code is split into packages:
-  - `bot/handlers/`: one module per command family (`control`, `public`, `ingestion`, `albums`, `extraction`, `edit`, `subscribers`, `recap`, `repost`, `repost_schedule`).
+  - `bot/handlers/`: one module per command family (`control`, `public`, `ingestion`, `albums`, `extraction`, `edit`, `subscribers`, `recap`, `repost`, `repost_schedule`, `eventbrite`).
   - `bot/callbacks/`: inline-button handlers, dispatched by the `CALLBACK_ROUTES` prefix table in `router.py`.
-  - `bot/service/`: shared Telegram side effects (post sync, booking, notices).
+  - `bot/service/`: shared Telegram side effects (post sync, booking, notices, Eventbrite publish/sync/poll).
   - `bot/event_generator/`: the `/event_generate` feature.
   - `bot/common/`: shared helpers (`@admin_only`, seat parsing, media downloads, HTML/reply fallbacks, admin preview cards).
   - Runtime state lives in `bot/state.py`.
@@ -305,17 +397,19 @@ All maintenance utilities are located in the `scripts/` directory:
     - `core/db/`: SQLite data access, imported as `from core.db import ...`.
     - `core/scheduler/`: the APScheduler jobs (recap, archiving, repost digest) plus `runner.py`.
     - `core/wordpress/`: the WordPress REST client, imported as `from core.wordpress import ...`.
+    - `core/eventbrite/`: the Eventbrite REST client and payload builders, imported as `from core.eventbrite import ...`.
     - `ai_parser.py` (Gemini), `instagram.py`, `log_utils.py` and `config.py`.
   - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings (including `DB_PATH` for a temporary database) and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).
   - See `GEMINI.md` §3.1 (`bot/`) and §3.2 (`core/`) for details.
 - **Test layout:** `tests/` mirrors the source tree, with one test file per module under test (e.g. `bot/handlers/edit.py` → `tests/bot/handlers/test_edit.py`, `core/db/seats.py` → `tests/core/db/test_seats.py`, `scripts/generate_story.py` → `tests/scripts/test_generate_story.py`). Put a new test next to the module it exercises. Shared helpers live in `tests/support/`:
   - `db.py`: `TempDBMixin` (fresh SQLite file per test via `core.config.DB_PATH`, plus `self.temp_dir`), `create_event(...)` and the shared event fixtures.
   - `telegram.py`: factories for fake updates, messages, users, callback queries and bots (`admin_update`, `callback_update`, `make_context`, `admin_card`, `telegram_photo`, ...).
-  - `config.py`: `patched_config(...)`, `as_admin_chat()`, `wordpress_credentials()`.
+  - `config.py`: `patched_config(...)`, `as_admin_chat()`, `wordpress_credentials()`, `eventbrite_credentials(...)`.
   - `images.py`: in-memory and on-disk test images.
 - **Running the test suite:**
   ```bash
-  pip install -r requirements.txt pytest
+  pip install -r requirements.txt -r requirements-dev.txt
   python3 -m pytest tests                      # or: python3 -m unittest discover -s tests -t .
+  python3 -m pyflakes bot core utils scripts tests main.py
   ```
-  The suite needs no real tokens or network access. Tests never touch the real database or `data/` folder.
+  The suite needs no real tokens or network access. GitHub Actions (`.github/workflows/ci.yml`) runs both commands on every push and pull request. Tests never touch the real database or `data/` folder.

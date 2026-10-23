@@ -2,12 +2,15 @@ import os
 import shutil
 import uuid
 import io
-from PIL import Image, ImageOps, ImageDraw, ImageFont
+from PIL import Image, ImageFilter, ImageOps, ImageFont
 from pilmoji import Pilmoji
 import logging
+import tempfile
 import textwrap
 from datetime import datetime
+from core import config
 from core.config import FONTS_DIR, MAX_EVENTS_PER_ROW
+from utils.templates.common import ASSOCIATION_ADDRESS
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +112,8 @@ def build_horizontal_collage(images, max_per_row=None):
     for im in images:
         try:
             im = ImageOps.exif_transpose(im)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not apply EXIF orientation: {e}")
         if im.mode != 'RGB':
             im = im.convert('RGB')
         processed_images.append(im)
@@ -334,6 +337,32 @@ def create_collage_from_bytes(images_bytes_list):
         logger.error(f"Error creating collage from bytes: {e}")
         return None
 
+def pad_to_aspect(path, ratio=2.0, min_size=(2160, 1080)):
+    """Writes a temporary JPEG of the image centred on a blurred, enlarged copy of itself so the result has exactly
+    the given width:height ratio (and is at least min_size). Returns the temp file path; the caller deletes it."""
+    with Image.open(path) as source:
+        image = ImageOps.exif_transpose(source).convert("RGB")
+
+    width, height = image.size
+    if width / height >= ratio:
+        canvas_w, canvas_h = width, width / ratio
+    else:
+        canvas_w, canvas_h = height * ratio, height
+    scale = max(1.0, min_size[0] / canvas_w, min_size[1] / canvas_h)
+    canvas_h = int(round(canvas_h * scale))
+    canvas_w = int(round(canvas_h * ratio))  # derived from the height so the ratio stays exact
+
+    canvas = ImageOps.fit(image, (canvas_w, canvas_h), Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=30))
+    fit = min(canvas_w / width, canvas_h / height)
+    foreground = image.resize((max(1, int(round(width * fit))), max(1, int(round(height * fit)))), Image.LANCZOS)
+    canvas.paste(foreground, ((canvas_w - foreground.width) // 2, (canvas_h - foreground.height) // 2))
+
+    handle = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    handle.close()
+    canvas.save(handle.name, "JPEG", quality=90)
+    return handle.name
+
+
 def create_story_image(event_data, original_image_path, output_dir):
     try:
         # Instagram Story dimensions
@@ -364,12 +393,10 @@ def create_story_image(event_data, original_image_path, output_dir):
                 # Try to load downloaded Roboto fonts, fallback to default if missing
                 font_bold = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Bold.ttf"), 50)
                 font_regular = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Regular.ttf"), 40)
-                font_desc = ImageFont.truetype(os.path.join(FONTS_DIR, "Roboto-Regular.ttf"), 35)
             except Exception:
                 logger.warning("Could not load custom fonts, using default.")
                 font_bold = ImageFont.load_default()
                 font_regular = ImageFont.load_default()
-                font_desc = ImageFont.load_default()
 
             margin = 60
             y = y_text_start
@@ -584,7 +611,7 @@ def create_recap_story_image(events, collage_path, date_str, output_dir):
                 y += 20
                     
             # Draw bottom footer
-            footer = "Ci vediamo alle 20:45, alla Gilda del Grifone in Via Ada Negri 8/A, Torino!"
+            footer = f"Ci vediamo alle {config.EVENT_START_TIME}, alla {ASSOCIATION_ADDRESS}!"
             char_width_footer = int((STORY_WIDTH - margin * 2) / (font_small.size * 0.55))
             
             # Always place footer near the bottom

@@ -86,6 +86,12 @@ class TestSendAdminActionNotice(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("@Lorenzo", text)
         self.assertIn('<a href="tg://user?id=8893283822">Lorenzo Duarte</a>', text)
 
+    async def test_events_never_posted_on_telegram_get_no_group_notice(self):
+        event = {**db.get_event(create_no_username_event()), "telegram_message_id": None}
+        send_message = await self._notice(event, target_username="luigi", action="add", seats=1,
+                                          admin_user=make_user(username="admin_user", first_name="Admin"))
+        send_message.assert_not_called()
+
     async def test_send_admin_action_notice_direct_unpublished_ignored(self):
         pending_event_id = create_unpublished_event()
         self.assertEqual(db.get_event(pending_event_id)["status"], "pending")

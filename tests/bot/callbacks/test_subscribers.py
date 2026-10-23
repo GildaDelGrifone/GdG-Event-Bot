@@ -148,5 +148,35 @@ class TestUnpublishedEventSubscribers(TempDBMixin, unittest.IsolatedAsyncioTestC
             context.bot.send_message.assert_not_called()
 
 
+class TestEventbriteInManagementView(unittest.TestCase):
+    def test_legend_only_appears_with_eventbrite_bookings(self):
+        event = {**SUBSCRIBED_EVENT, "id": 1, "message_link": None}
+        telegram_only = [{"username": "mario", "seats_booked": 1, "source": "telegram"}]
+        mixed = telegram_only + [{"full_name": "Anna B.", "seats_booked": 2, "source": "eventbrite"}]
+        self.assertNotIn("Eventbrite", format_subscribers_management_view(event, telegram_only))
+        view = format_subscribers_management_view(event, mixed)
+        self.assertIn("🎟️ = prenotazione Eventbrite (gestisci dalla dashboard)", view)
+        self.assertIn("1. <b>@mario</b>", view)
+        self.assertIn("2. <b>🎟️ Anna B.</b> — 2 posti", view)
+
+
+class TestEventbriteSeatButtons(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def test_stale_seat_buttons_on_eventbrite_rows_are_refused(self):
+        event_id = create_subscribed_event()
+        db.apply_eventbrite_order(event_id, "o1", "Mario R.", 2)
+        res_id = db.get_eventbrite_reservations(event_id)[0]["id"]
+        expected = "Prenotazione Eventbrite: gestiscila dalla dashboard Eventbrite."
+
+        for action in ("sub_inc", "sub_dec"):
+            update, query = callback_update(f"{action}_{event_id}_{res_id}", chat_id=999)
+            with patch("bot.callbacks.subscribers.update_event_messages", AsyncMock()) as update_messages:
+                await handle_callback_query(update, make_context())
+            query.answer.assert_awaited_with(expected, show_alert=True)
+            update_messages.assert_not_awaited()
+
+        self.assertEqual(db.eventbrite_seat_count(event_id), 2)
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 4)
+
+
 if __name__ == "__main__":
     unittest.main()

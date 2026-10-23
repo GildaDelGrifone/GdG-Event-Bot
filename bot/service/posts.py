@@ -7,9 +7,10 @@ from telegram.error import RetryAfter
 
 from core import config
 from core.db import get_event, update_discussion_message_info
-from utils.templates import format_public_event_message
+from utils.templates.event import format_discussion_booking_message, format_public_event_message
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
+from bot.service.eventbrite import sync_eventbrite
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ async def _sync_public_post(bot, event_id, event, public_text, keyboard, update_
 
 
 async def _sync_discussion_reply(bot, event_id, event, keyboard, current_query):
+    text = format_discussion_booking_message(event)
     disc_msg_id = event.get('discussion_message_id')
     disc_chat_id = event.get('discussion_chat_id') or config.DISCUSSION_GROUP_ID
 
@@ -103,25 +105,28 @@ async def _sync_discussion_reply(bot, event_id, event, keyboard, current_query):
             disc_chat_id = current_query.message.chat_id
             update_discussion_message_info(event_id, disc_msg_id, disc_chat_id)
             try:
-                await _execute_with_retry(lambda: current_query.edit_message_reply_markup(reply_markup=keyboard))
+                await _execute_with_retry(lambda: current_query.edit_message_text(
+                    text=text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
+                ))
                 return
             except Exception as e:
                 if not is_not_modified_error(e):
-                    logger.debug(f"Could not edit reply markup on current query message: {e}")
+                    logger.debug(f"Could not edit the current query message: {e}")
 
     if not (disc_msg_id and disc_chat_id):
         return
     try:
-        await _execute_with_retry(lambda: bot.edit_message_reply_markup(
-            chat_id=int(disc_chat_id), message_id=int(disc_msg_id), reply_markup=keyboard
+        await _execute_with_retry(lambda: bot.edit_message_text(
+            chat_id=int(disc_chat_id), message_id=int(disc_msg_id), text=text, reply_markup=keyboard,
+            parse_mode="HTML", disable_web_page_preview=True,
         ))
     except Exception as e:
         if not is_not_modified_error(e):
-            logger.error(f"Error updating discussion reply markup for event {event_id}: {e}")
+            logger.error(f"Error updating discussion reply for event {event_id}: {e}")
 
 
-async def update_event_messages(context, event_id, event=None, current_query=None, update_image=False):
-    """Re-renders an event's public channel post and its discussion-group booking reply."""
+async def update_event_messages(context, event_id, event=None, current_query=None, update_image=False, eventbrite_content=False):
+    """Re-renders an event's public channel post and discussion-group booking reply, then syncs Eventbrite (if linked)."""
     if event is None:
         event = get_event(event_id)
     if not event:
@@ -135,3 +140,4 @@ async def update_event_messages(context, event_id, event=None, current_query=Non
 
     await _sync_public_post(context.bot, event_id, event, public_text, keyboard, update_image)
     await _sync_discussion_reply(context.bot, event_id, event, keyboard, current_query)
+    await sync_eventbrite(context, event, content_changed=eventbrite_content, image_changed=update_image)

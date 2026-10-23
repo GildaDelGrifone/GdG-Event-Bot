@@ -1,8 +1,8 @@
 import logging
 
-logger = logging.getLogger(__name__)
+from utils.templates.common import CAPTION_LIMIT
 
-CAPTION_LIMIT = 1024
+logger = logging.getLogger(__name__)
 
 
 def resolve_message(update):
@@ -21,6 +21,15 @@ def command_tokens(message):
 
 def truncate_caption(text):
     return text if len(text) <= CAPTION_LIMIT else text[:CAPTION_LIMIT - 4] + "..."
+
+
+def edit_card(query, text, **kwargs):
+    """Edits the callback's message in place: the caption of a photo card (cut to CAPTION_LIMIT), else the text.
+    Returns the awaitable, so it can also be wrapped in a lambda for with_html_fallback."""
+    message = query.message
+    if message.photo or message.caption:
+        return query.edit_message_caption(caption=truncate_caption(text), **kwargs)
+    return query.edit_message_text(text=text, **kwargs)
 
 
 def is_not_modified_error(err):

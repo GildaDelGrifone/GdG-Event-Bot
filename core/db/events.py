@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.db.connection import db_safe, execute, execute_many, fetch_all, fetch_one, transaction
 from utils.date_utils import event_date_tuple, parse_date_tuple_from_str
@@ -10,6 +10,11 @@ EDITABLE_EVENT_FIELDS = frozenset({
     'admin_message_id',
 })
 _MESSAGE_ID_COLUMNS = frozenset({'telegram_message_id', 'discussion_message_id', 'admin_message_id'})
+# Written only by the Eventbrite service, never through /event_edit_*
+EVENTBRITE_FIELDS = frozenset({
+    'eventbrite_event_id', 'eventbrite_url', 'eventbrite_ticket_class_id', 'eventbrite_status',
+    'eventbrite_quantity_total', 'eventbrite_content_version', 'eventbrite_synced_at', 'eventbrite_venue_id',
+})
 _TRUTHY_ROLEPLAY = (True, 1, '1', 'true', 'True')
 
 
@@ -64,6 +69,26 @@ def delete_event(event_id):
     with transaction() as cur:
         cur.execute('DELETE FROM reservations WHERE event_id = ?', (event_id,))
         cur.execute('DELETE FROM events WHERE id = ?', (event_id,))
+    return True
+
+
+@db_safe(default=False)
+def set_eventbrite_info(event_id, **fields):
+    """Updates only the eventbrite_* columns; returns False when nothing valid was given."""
+    if not fields or not set(fields) <= EVENTBRITE_FIELDS:
+        return False
+    assignments = ', '.join(f'{column} = ?' for column in fields)
+    execute(f'UPDATE events SET {assignments} WHERE id = ?', (*fields.values(), event_id))
+    return True
+
+
+@db_safe(default=False)
+def clear_eventbrite_info(event_id):
+    """Forgets the Eventbrite event, e.g. before re-creating one that Eventbrite cancelled."""
+    assignments = ', '.join(
+        f'{column} = {0 if column == "eventbrite_content_version" else "NULL"}' for column in sorted(EVENTBRITE_FIELDS)
+    )
+    execute(f'UPDATE events SET {assignments} WHERE id = ?', (event_id,))
     return True
 
 
@@ -159,3 +184,28 @@ def get_upcoming_events(include_today=True):
 
     dated.sort(key=lambda item: (item[0], item[1].get('id', 0)))
     return [ev for _, ev in dated] + undated
+
+
+@db_safe(default=list)
+def get_eventbrite_cleanup_candidates(day):
+    """Events linked to Eventbrite whose Eventbrite event is cancelled, unpublished or closed (cancellation pending) and
+    dated `day` ((year, month, day)) or earlier. Undated events are never returned."""
+    rows = fetch_all(
+        "SELECT * FROM events WHERE eventbrite_event_id IS NOT NULL "
+        "AND eventbrite_status IN ('canceled', 'unpublished', 'closed')"
+    )
+    return [row for row in rows if (event_date_tuple(row) or (9999, 12, 31)) <= tuple(day)]
+
+
+@db_safe(default=list)
+def get_eventbrite_tracked_events():
+    """Approved/cancelled events linked to Eventbrite and dated today or later (or yesterday, to catch late cancellations).
+    Events already `canceled` on Eventbrite, and `draft` ones (a publish that failed midway, no orders possible), are left
+    out: nothing can change on them."""
+    yesterday = datetime.now() - timedelta(days=1)
+    cutoff = (yesterday.year, yesterday.month, yesterday.day)
+    rows = fetch_all(
+        "SELECT * FROM events WHERE eventbrite_event_id IS NOT NULL AND status IN ('approved', 'cancelled') "
+        "AND COALESCE(eventbrite_status, '') NOT IN ('canceled', 'draft')"
+    )
+    return [row for row in rows if (event_date_tuple(row) or (0, 0, 0)) >= cutoff]

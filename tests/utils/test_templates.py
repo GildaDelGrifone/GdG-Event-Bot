@@ -1,16 +1,18 @@
+import importlib
+import pkgutil
 import unittest
+from datetime import date
+from types import SimpleNamespace
 
 import core.db as db
+from tests.support.config import patched_config
 from tests.support.db import TempDBMixin, create_deep_link_event, create_no_username_event
-from utils.templates import (
-    format_event_participants_message,
-    format_event_seats,
-    format_instagram_story,
-    format_public_event_message,
-    format_reservation_subscriber_display,
-    recap_generate_text,
-    recap_links_text,
+from utils.templates.event import (
+    format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
+from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
+from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
+import utils.templates as templates_package
 
 
 class TestRoleplayTypeFormatting(unittest.TestCase):
@@ -103,6 +105,18 @@ class TestRecapTexts(unittest.TestCase):
         self.assertIn("- ❌ <b>Cyberpunk Red</b> (Cyberpunk) : 0/4 [ANNULLATO]", text)
         self.assertIn("- <b>One Shot Giochi Liberi</b> : Nessun limite (Prenotati: 3)", text)
 
+    def test_format_contacts(self):
+        self.assertEqual(format_contacts([]), "")
+        self.assertEqual(format_contacts(["@a"]), "@a")
+        self.assertEqual(format_contacts(["@a", "@b"]), "@a o @b")
+        self.assertEqual(format_contacts(["@a", "@b", "@c"]), "@a, @b o @c")
+
+    def test_recap_footer_uses_configured_contacts_and_start_time(self):
+        with patched_config(RECAP_CONTACTS=["@Host1"], EVENT_START_TIME="21:00"):
+            text = recap_generate_text("Venerdì", "05-09-2026", [])
+        self.assertIn("contatta @Host1.", text)
+        self.assertIn("Ci vediamo alle 21:00!", text)
+
     def test_recap_links_text_event_titles_bold_and_linked(self):
         events = [
             {"title": "Avventura D&D", "system": "D&D 5e", "message_link": "https://t.me/c/123/456", "status": "approved"},
@@ -176,6 +190,104 @@ class TestSubscribersWithoutUsername(TempDBMixin, unittest.TestCase):
         self.assertIn("<b>@ChicoMalo96</b>", msg)
         self.assertNotIn("@Lorenzo", msg)
         self.assertIn('<b><a href="tg://user?id=8893283822">Lorenzo Duarte</a></b>', msg)
+
+
+class TestEventbriteTemplates(unittest.TestCase):
+    def test_eventbrite_subscribers_are_prefixed_in_both_modes(self):
+        res = {"source": "eventbrite", "username": None, "user_id": None, "full_name": "Mario <R.>"}
+        self.assertEqual(format_reservation_subscriber_display(res, as_html=True), "🎟️ Mario &lt;R.&gt;")
+        self.assertEqual(format_reservation_subscriber_display(res, as_html=False), "🎟️ Mario <R.>")
+        self.assertEqual(format_reservation_subscriber_display({"source": "eventbrite"}), "🎟️ Partecipante Eventbrite")
+
+    def test_telegram_subscribers_are_unchanged(self):
+        res = {"source": "telegram", "username": "mario", "user_id": 1, "full_name": None}
+        self.assertEqual(format_reservation_subscriber_display(res), "@mario")
+
+    def test_participants_message_lists_eventbrite_bookings(self):
+        event = {"id": 1, "title": "T", "booked_seats": 3, "max_seats": 4}
+        reservations = [
+            {"source": "eventbrite", "full_name": "Mario R.", "seats_booked": 2},
+            {"source": "telegram", "username": "luigi", "user_id": 2, "seats_booked": 1},
+        ]
+        message = format_event_participants_message(event, reservations)
+        self.assertIn("<b>🎟️ Mario R.</b> (2 posti)", message)
+        self.assertIn("<b>@luigi</b>", message)
+
+    def test_discussion_booking_message(self):
+        plain = "👇 Gestisci qui la tua prenotazione!"
+        self.assertEqual(format_discussion_booking_message({}), plain)
+        self.assertEqual(format_discussion_booking_message(None), plain)
+        live = {"eventbrite_url": "https://eb.example/e/1?a=1&b=2", "eventbrite_status": "live"}
+        self.assertEqual(
+            format_discussion_booking_message(live),
+            plain + '\n🎟️ Prenota anche su Eventbrite: <a href="https://eb.example/e/1?a=1&amp;b=2">link</a>')
+        for status in ("draft", "unpublished", "closed", "canceled", None):
+            with self.subTest(status=status):
+                self.assertEqual(format_discussion_booking_message({**live, "eventbrite_status": status}), plain)
+        self.assertEqual(format_discussion_booking_message({"eventbrite_status": "live"}), plain)
+
+
+def _load_templates():
+    """Every public name of every utils.templates module, in one namespace (names are unique across modules)."""
+    names = {}
+    for info in pkgutil.iter_modules(templates_package.__path__):
+        module = importlib.import_module(f"utils.templates.{info.name}")
+        for name, value in vars(module).items():
+            if not name.startswith("_") and getattr(value, "__module__", module.__name__) == module.__name__:
+                names[name] = value
+    return SimpleNamespace(**names)
+
+
+templates = _load_templates()
+
+
+class TestMessageCatalogue(unittest.TestCase):
+    def test_public_text_constants_are_non_empty_strings(self):
+        for name in dir(templates):
+            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
+                with self.subTest(name=name):
+                    value = getattr(templates, name)
+                    self.assertIsInstance(value, str)
+                    self.assertTrue(value.strip())
+
+    def test_command_menu_entries_are_unique_name_description_pairs(self):
+        names = [name for name, _ in templates.DEFAULT_COMMAND_DESCRIPTIONS + templates.ADMIN_COMMAND_DESCRIPTIONS]
+        self.assertEqual(len(names), len(set(names)))
+        for _, description in templates.DEFAULT_COMMAND_DESCRIPTIONS + templates.ADMIN_COMMAND_DESCRIPTIONS:
+            self.assertTrue(description)
+
+    def test_seat_helpers_pluralise(self):
+        self.assertEqual(templates.format_seats_count(1), "1 posto")
+        self.assertEqual(templates.format_seats_count(3), "3 posti")
+        self.assertEqual(templates.format_seats_added_verb(1), "Aggiunto 1 posto")
+        self.assertEqual(templates.format_seats_removed_verb(2), "Rimossi 2 posti")
+
+    def test_helpers_escape_user_supplied_html(self):
+        self.assertIn("&lt;b&gt;", templates.format_eb_poll_booked("<b>", "1 posto", "T"))
+        self.assertIn("&lt;i&gt;", templates.format_conflict_item("T", "<i>"))
+        self.assertIn("&lt;x&gt;", templates.format_reposts_digest_entry({"id": 1, "title": "<x>"}, date(2026, 10, 9)))
+        self.assertIn("&lt;x&gt;", templates.format_schedule_list_entry({"id": 1, "title": "<x>"}))
+
+    def test_overbooking_and_status_messages(self):
+        self.assertEqual(templates.format_eb_overbooking(7, 5, 4),
+                         "⚠️ Overbooking su #7: 5/4 (prenotazione Eventbrite arrivata in contemporanea).")
+        self.assertIn("Ultima prenotazione Telegram: @mario.", templates.format_eb_overbooking(7, 5, 4, "@mario"))
+        self.assertIn("annullato su Eventbrite ma attivo su Telegram", templates.format_eb_poll_event_cancelled(3, False))
+        self.assertIn("iscritti avvisati da Eventbrite", templates.format_eb_poll_event_cancelled(3, True))
+
+    def test_status_notice_adds_subscribers_only_when_present(self):
+        plain = templates.format_status_notice("⚠️", "ANNULLATO", "T", "Iscritti avvisati", "")
+        self.assertNotIn("Iscritti avvisati", plain)
+        tagged = templates.format_status_notice("⚠️", "ANNULLATO", "T", "Iscritti avvisati", "@a, @b")
+        self.assertTrue(tagged.endswith("Iscritti avvisati: @a, @b"))
+
+    def test_keyboard_label_helpers(self):
+        self.assertEqual(templates.format_venue_button("Sede", True, True), "✅ Sede (predefinito)")
+        self.assertEqual(templates.format_venue_button("Sede", False, False), "Sede")
+        self.assertEqual(templates.format_schedule_day_button("Lunedì", True), "✅ Lunedì")
+        self.assertEqual(templates.format_schedule_day_button("Lunedì", False), "⬜ Lunedì")
+        self.assertEqual(templates.format_eb_orders_to_cancel(1, 3).count("altri"), 0)
+        self.assertIn("altri 2 ordini", templates.format_eb_orders_to_cancel(1, 42, hidden=2))
 
 
 if __name__ == "__main__":

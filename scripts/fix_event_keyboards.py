@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from telegram import Bot
 from telegram.request import HTTPXRequest
-from telegram.error import RetryAfter, TimedOut, NetworkError, BadRequest, TelegramError
+from telegram.error import RetryAfter, TimedOut, NetworkError, BadRequest
 
 from core.config import (
     TELEGRAM_BOT_TOKEN,
@@ -196,7 +196,7 @@ async def fix_keyboards(
         if status == "pending":
             admin_keyboard = get_approval_keyboard(event_id)
         elif status == "approved":
-            admin_keyboard = get_approved_event_keyboard(event_id)
+            admin_keyboard = get_approved_event_keyboard(event_id, ev)
         elif status == "cancelled":
             admin_keyboard = get_cancelled_event_keyboard(event_id)
 

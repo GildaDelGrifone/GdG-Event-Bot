@@ -83,5 +83,83 @@ class TestAdminSubscribers(TempDBMixin, unittest.TestCase):
         self.assertEqual(len(db.get_reservations_for_event(event_id)), 1)
 
 
+class TestEventbriteSeats(TempDBMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.event_id = db.insert_event({"title": "T", "max_seats": 4, "seats": "4/4"}, None, "raw")
+        db.update_event_status(self.event_id, "approved")
+
+    def test_new_order_adds_row_and_updates_counters(self):
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 2), (0, 2, False))
+        row = db.get_eventbrite_reservations(self.event_id)[0]
+        self.assertEqual((row["full_name"], row["seats_booked"], row["source"], row["eventbrite_order_id"]),
+                         ("Mario R.", 2, "eventbrite", "o1"))
+        self.assertIsNone(row["user_id"])
+        self.assertIsNone(row["username"])
+        ev = db.get_event(self.event_id)
+        self.assertEqual((ev["booked_seats"], ev["seats"]), (2, "2/4"))
+        self.assertEqual(db.eventbrite_seat_count(self.event_id), 2)
+
+    def test_increase_decrease_and_delete(self):
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 1)
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 3), (1, 3, False))
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 3)
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 2), (3, 2, False))
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 0), (2, 0, False))
+        self.assertEqual(db.get_eventbrite_reservations(self.event_id), [])
+        ev = db.get_event(self.event_id)
+        self.assertEqual((ev["booked_seats"], ev["seats"]), (0, "4/4"))
+
+    def test_zero_seats_for_unknown_order_is_a_no_op(self):
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "ghost", "X", 0), (0, 0, False))
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 0)
+
+    def test_overbooking_is_applied_and_flagged(self):
+        db.book_seat(self.event_id, 1, username="a")
+        db.book_seat(self.event_id, 2, username="b")
+        db.book_seat(self.event_id, 3, username="c")
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 3), (0, 3, True))
+        ev = db.get_event(self.event_id)
+        self.assertEqual((ev["booked_seats"], ev["seats"]), (6, "0/4"))
+
+    def test_unlimited_event_is_never_overbooked(self):
+        event_id = db.insert_event({"title": "U", "max_seats": None}, None, "raw")
+        self.assertEqual(db.apply_eventbrite_order(event_id, "o1", "Mario R.", 9), (0, 9, False))
+
+    def test_cancelled_event_still_tracks_orders(self):
+        db.update_event_status(self.event_id, "cancelled")
+        self.assertEqual(db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 1), (0, 1, False))
+
+    def test_missing_event_returns_none(self):
+        self.assertIsNone(db.apply_eventbrite_order(999, "o1", "Mario R.", 1))
+
+    def test_unique_index_blocks_duplicate_order_rows(self):
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 1)
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 2)
+        self.assertEqual(len(db.get_eventbrite_reservations(self.event_id)), 1)
+
+    def test_admin_seat_changes_are_refused_on_eventbrite_rows(self):
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 2)
+        res_id = db.get_eventbrite_reservations(self.event_id)[0]["id"]
+        expected = (False, "Prenotazione Eventbrite: gestiscila dalla dashboard Eventbrite.")
+        self.assertEqual(db.admin_add_seat(self.event_id, res_id), expected)
+        self.assertEqual(db.admin_remove_seat(self.event_id, res_id), expected)
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 2)
+
+    def test_telegram_flows_never_match_eventbrite_rows(self):
+        db.apply_eventbrite_order(self.event_id, "o1", "Mario R.", 2)
+        # A Telegram user whose display name equals the Eventbrite name
+        self.assertEqual(db.unbook_seat(self.event_id, 77, username="Mario R."),
+                         (False, "Non hai posti prenotati da liberare."))
+        self.assertEqual(db.admin_remove_subscriber(self.event_id, "Mario R.")[0], False)
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 2)
+
+        self.assertTrue(db.book_seat(self.event_id, 77, username=None, full_name="Mario R.")[0])
+        self.assertTrue(db.admin_add_subscriber(self.event_id, "Mario R.", seats=1)[0])
+        self.assertEqual(db.eventbrite_seat_count(self.event_id), 2)
+        self.assertEqual(sum(r["seats_booked"] for r in db.get_reservations_for_event(self.event_id)), 4)
+        self.assertIsNone(db.get_reservation_by_user(self.event_id, username="nobody"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -32,7 +32,7 @@ class TestEventScheduleCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         sent_kb = update.message.reply_text.call_args[1]["reply_markup"]
 
         self.assertIn("Programmazione Repost Evento", sent_text)
-        self.assertEqual(len(sent_kb.inline_keyboard), 3)
+        self.assertEqual(len(sent_kb.inline_keyboard), 4)  # days, days, advance, delete/close
         self.assertEqual(len(sent_kb.inline_keyboard[0]), 3)  # Lun, Mer, Ven
         self.assertEqual(len(sent_kb.inline_keyboard[1]), 2)  # Sab, Dom
         self.assertIn("Lunedì", sent_kb.inline_keyboard[0][0].text)
@@ -40,6 +40,44 @@ class TestEventScheduleCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn("Venerdì", sent_kb.inline_keyboard[0][2].text)
         self.assertIn("Sabato", sent_kb.inline_keyboard[1][0].text)
         self.assertIn("Domenica", sent_kb.inline_keyboard[1][1].text)
+
+    async def test_event_schedule_keyboard_has_advance_row(self):
+        update = admin_update("/event_schedule", reply_to=source_post("Titolo: X\nPosti: 4/4", 778))
+        with as_admin_chat():
+            await event_schedule_command(update, make_context())
+        row = update.message.reply_text.call_args[1]["reply_markup"].inline_keyboard[2]
+        self.assertEqual([b.text for b in row], ["➖", "⏳ Anticipo: 0 gg", "➕"])
+
+    async def test_event_schedule_new_with_date_and_advance(self):
+        update = admin_update("/event_schedule 24-10-2026 21:00 2",
+                              reply_to=source_post("Titolo: Serata\nPosti: 4/4", 779))
+        with as_admin_chat():
+            await event_schedule_command(update, make_context())
+        ev = db.get_all_scheduled_events()[0]
+        self.assertEqual((ev["specific_date"], ev["advance_days"]), ("Sabato 24-10-2026 21:00", 2))
+
+    async def test_event_schedule_existing_advance_only_and_with_date(self):
+        sched_id = db.insert_scheduled_event("T", "testo")
+        update = admin_update(f"/event_schedule {sched_id} 3")
+        with as_admin_chat():
+            await event_schedule_command(update, make_context())
+        ev = db.get_scheduled_event(sched_id)
+        self.assertEqual((ev["advance_days"], ev["specific_date"]), (3, None))
+        self.assertIn("anticipo aggiornati", update.message.reply_text.call_args[0][0])
+
+        update = admin_update(f"/event_schedule {sched_id} 24-10-2026 21:00 1")
+        with as_admin_chat():
+            await event_schedule_command(update, make_context())
+        ev = db.get_scheduled_event(sched_id)
+        self.assertEqual((ev["advance_days"], ev["specific_date"]), (1, "Sabato 24-10-2026 21:00"))
+
+    async def test_event_schedule_rejects_out_of_range_advance(self):
+        sched_id = db.insert_scheduled_event("T", "testo")
+        update = admin_update(f"/event_schedule {sched_id} 31")
+        with as_admin_chat():
+            await event_schedule_command(update, make_context())
+        self.assertIn("tra 0 e 30", update.message.reply_text.call_args[0][0])
+        self.assertEqual(db.get_scheduled_event(sched_id)["advance_days"], 0)
 
     async def test_event_schedule_update_command(self):
         sched_id = db.insert_scheduled_event(title="Vecchio Titolo", text="Vecchio Testo", schedule_days=["Lunedì"])

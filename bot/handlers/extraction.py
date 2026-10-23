@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from core import config
@@ -5,7 +6,7 @@ from core.ai_parser import parse_event_message, GeminiQuotaError
 from core.db import insert_event, update_event_field
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally
-from utils.templates import format_public_event_message
+from utils.templates.event import format_public_event_message
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, contains_event_keywords, parse_seats_input
 from bot.common.previews import build_admin_warning_block, notify_quota_depleted, send_admin_preview
 from bot.keyboards import get_approval_keyboard
@@ -58,7 +59,7 @@ async def handle_event_extraction(text, image_bytes, context, message_link=None,
         return False
 
     try:
-        event_data = parse_event_message(text)
+        event_data = await asyncio.to_thread(parse_event_message, text)
     except GeminiQuotaError as e:
         await notify_quota_depleted(context.bot, config.ADMIN_CHAT_ID, e, "event extraction")
         return False
@@ -75,7 +76,7 @@ async def handle_event_extraction(text, image_bytes, context, message_link=None,
         except Exception as e:
             logger.error(f"Errore durante l'eliminazione del messaggio originale: {e}")
 
-    image_path = save_image_locally(image_bytes, config.DATA_DIR, event_data.get('normalized_date')) if image_bytes else None
+    image_path = await asyncio.to_thread(save_image_locally, image_bytes, config.DATA_DIR, event_data.get('normalized_date')) if image_bytes else None
 
     event_id = insert_event(event_data, image_path, text, message_link, telegram_message_id)
     if not event_id:

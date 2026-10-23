@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -5,10 +6,17 @@ from telegram import InputMediaPhoto, Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event, update_event_field
+from core.db import eventbrite_seat_count, get_event, update_event_field
 from utils.date_utils import parse_user_date, format_standard_event_date
 from utils.image_utils import save_image_locally, delete_local_image, move_image_locally
-from utils.templates import format_public_event_message
+from utils.templates.approval import APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX
+from utils.templates.edit import (
+    EDIT_BOOKED_INVALID, EDIT_DATE_INVALID, EDIT_DB_ERROR, EDIT_EVENT_ID_UNKNOWN, EDIT_EVENT_MISSING_AFTER_UPDATE,
+    EDIT_EVENT_NOT_FOUND, EDIT_EXTRA_ADD_USAGE, EDIT_IMAGE_MISSING, EDIT_IMAGE_SAVE_ERROR, EDIT_NO_REPLY,
+    EDIT_SEATS_INVALID, EDIT_TYPE_INVALID, format_caption_overflow_warning, format_edit_done,
+    format_edit_eventbrite_seats_blocked,
+)
+from utils.templates.event import format_public_event_message
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import CAPTION_LIMIT, is_not_modified_error, truncate_caption, with_html_fallback
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, extract_event_id_from_reply, parse_seats_input
@@ -19,9 +27,9 @@ from bot.service.posts import update_event_messages
 logger = logging.getLogger(__name__)
 
 STATUS_SUFFIXES = {
-    'approved': "\n\n✅ APPROVATO",
-    'discarded': "\n\n❌ SCARTATO",
-    'cancelled': "\n\n⚠️ ANNULLATO",
+    'approved': APPROVED_SUFFIX,
+    'discarded': DISCARDED_SUFFIX,
+    'cancelled': CANCELLED_SUFFIX,
 }
 
 EDIT_COMMAND_FIELDS = {
@@ -38,6 +46,9 @@ EDIT_COMMAND_FIELDS = {
     "/event_edit_type": "is_roleplay",
 }
 
+# Fields shown on the Eventbrite listing: editing one of them re-pushes the event page
+EVENTBRITE_CONTENT_FIELDS = frozenset({"title", "date", "system", "host", "extra_info", "description", "is_roleplay", "seats"})
+
 ROLEPLAY_TRUE_TOKENS = {"rpg", "gdr", "ruolo", "master", "true", "1", "si", "sì", "yes"}
 ROLEPLAY_FALSE_TOKENS = {"boardgame", "gdt", "tavolo", "host", "false", "0", "no", "non rpg", "non gdr"}
 CLEAR_EXTRA_TOKENS = {"null", "nessuno", "0", "none", "elimina", "cancella"}
@@ -51,15 +62,21 @@ class EditInputError(Exception):
         self.parse_mode = parse_mode
 
 
+def _ensure_booked_not_below_eventbrite(event_id, new_booked):
+    eb_seats = eventbrite_seat_count(event_id)
+    if new_booked < eb_seats:
+        raise EditInputError(format_edit_eventbrite_seats_blocked(eb_seats))
+
+
 async def _edit_image(update, event_id, current_event, value):
     image_bytes = await extract_image_bytes_from_update(update)
     if not image_bytes:
-        raise EditInputError("Devi allegare un'immagine (o un album) a questo comando, oppure rispondere a un'immagine con il comando.")
+        raise EditInputError(EDIT_IMAGE_MISSING)
 
     old_image_path = current_event.get("image_path")
-    new_image_path = save_image_locally(image_bytes, config.DATA_DIR, current_event.get("normalized_date"))
+    new_image_path = await asyncio.to_thread(save_image_locally, image_bytes, config.DATA_DIR, current_event.get("normalized_date"))
     if not new_image_path:
-        raise EditInputError("Errore durante il salvataggio dell'immagine.")
+        raise EditInputError(EDIT_IMAGE_SAVE_ERROR)
 
     success = update_event_field(event_id, "image_path", new_image_path)
     if success and old_image_path and old_image_path != new_image_path:
@@ -70,10 +87,7 @@ async def _edit_image(update, event_id, current_event, value):
 async def _edit_date(update, event_id, current_event, value):
     parsed = parse_user_date(value)
     if not parsed:
-        raise EditInputError(
-            "❌ Formato data non valido.\n"
-            "Usa il formato DD-MM-YYYY o DD-MM-YYYY HH:MM (es. 05-09-2026 oppure 05-09-2026 21:00) (i / funzionano anche)."
-        )
+        raise EditInputError(EDIT_DATE_INVALID)
     formatted_date, norm_date = format_standard_event_date(*parsed)
     success = update_event_field(event_id, "date", formatted_date)
     success = update_event_field(event_id, "normalized_date", norm_date) and success
@@ -90,7 +104,7 @@ async def edit_seats(update, event_id, current_event, value):
     try:
         seats = parse_seats_input(value)
     except ValueError:
-        raise EditInputError("Formato non valido. Usa 'X/Y' (es. '2/2'), un numero intero (es. '4'), o 'null'.")
+        raise EditInputError(EDIT_SEATS_INVALID)
 
     if seats is None:
         update_event_field(event_id, "max_seats", None)
@@ -102,6 +116,7 @@ async def edit_seats(update, event_id, current_event, value):
         current_booked = current_event.get('booked_seats', 0) or 0
         free = max(0, total - current_booked)
     else:
+        _ensure_booked_not_below_eventbrite(event_id, max(0, total - free))
         update_event_field(event_id, "booked_seats", max(0, total - free))
     update_event_field(event_id, "max_seats", total)
     update_event_field(event_id, "seats", f"{free}/{total}")
@@ -112,7 +127,8 @@ async def _edit_booked_seats(update, event_id, current_event, value):
     try:
         booked = int(value)
     except ValueError:
-        raise EditInputError("Il valore per i posti prenotati deve essere un numero intero.")
+        raise EditInputError(EDIT_BOOKED_INVALID)
+    _ensure_booked_not_below_eventbrite(event_id, booked)
     success = update_event_field(event_id, "booked_seats", booked)
     max_seats = current_event.get('max_seats')
     if max_seats is not None:
@@ -128,10 +144,7 @@ async def _edit_extra_info(update, event_id, current_event, value):
 
 async def _edit_extra_info_add(update, event_id, current_event, value):
     if not value:
-        raise EditInputError(
-            "Devi specificare il testo da aggiungere. (es. <code>/event_edit_extra_add Note aggiuntive</code>)",
-            parse_mode="HTML",
-        )
+        raise EditInputError(EDIT_EXTRA_ADD_USAGE, parse_mode="HTML")
 
     current_extra = (current_event.get("extra_info") or "").strip()
     if current_extra:
@@ -144,11 +157,7 @@ async def _edit_extra_info_add(update, event_id, current_event, value):
     final_text = format_public_event_message(temp_event)
 
     if len(final_text) > CAPTION_LIMIT:
-        warning_msg = (
-            f"⚠️ <b>Attenzione:</b> il testo dell'evento supera la dimensione massima per la didascalia "
-            f"({len(final_text)}/{CAPTION_LIMIT} caratteri)!\n"
-            f"Se l'evento ha un'immagine, la pubblicazione o l'aggiornamento della didascalia fallirà."
-        )
+        warning_msg = format_caption_overflow_warning(len(final_text), CAPTION_LIMIT)
         await with_html_fallback(lambda **kw: update.message.reply_text(warning_msg, **kw))
 
     return update_event_field(event_id, "extra_info", new_extra)
@@ -163,12 +172,7 @@ async def _edit_roleplay_type(update, event_id, current_event, value):
     elif clean == "":
         new_val = 0 if current_event.get("is_roleplay") else 1
     else:
-        raise EditInputError(
-            "❌ Tipo non valido.\n"
-            "Usa <code>/event_edit_type rpg</code> (o gdr) per gioco di ruolo (Master),\n"
-            "oppure <code>/event_edit_type boardgame</code> (o tavolo) per altri giochi (Host).",
-            parse_mode="HTML",
-        )
+        raise EditInputError(EDIT_TYPE_INVALID, parse_mode="HTML")
     return update_event_field(event_id, "is_roleplay", new_val)
 
 
@@ -201,12 +205,12 @@ async def _resolve_edit_target(update, cmd, value):
         return event_id, target_msg
 
     if not reply_msg:
-        await update.message.reply_text("Rispondi al messaggio dell'evento che vuoi modificare.")
+        await update.message.reply_text(EDIT_NO_REPLY)
         return None, None
 
     event_id = extract_event_id_from_reply(reply_msg)
     if not event_id:
-        await update.message.reply_text("Impossibile determinare l'ID dell'evento da questo messaggio. Assicurati di rispondere al messaggio con i pulsanti (Publish, Discard, Cancel).")
+        await update.message.reply_text(EDIT_EVENT_ID_UNKNOWN)
         return None, None
     return event_id, reply_msg
 
@@ -270,7 +274,7 @@ async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     current_event = get_event(event_id)
     if not current_event:
-        await update.message.reply_text("Evento non trovato nel database (potrebbe essere stato eliminato o scartato).")
+        await update.message.reply_text(EDIT_EVENT_NOT_FOUND)
         return
 
     editor = FIELD_EDITORS.get(cmd) or FIELD_EDITORS.get(field) or _plain_field_editor(field)
@@ -283,20 +287,23 @@ async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     admin_identifier = describe_user(update.effective_user)
     if not success:
         logger.warning(f"{admin_identifier} failed to update field '{field}' to '{value}' for event #{event_id}.")
-        await update.message.reply_text("Errore durante l'aggiornamento del database.")
+        await update.message.reply_text(EDIT_DB_ERROR)
         return
 
     logger.info(f"{admin_identifier} successfully updated field '{field}' to '{value}' for event #{event_id}.")
 
     event = get_event(event_id)
     if not event:
-        await update.message.reply_text("Evento non trovato nel DB dopo l'aggiornamento.")
+        await update.message.reply_text(EDIT_EVENT_MISSING_AFTER_UPDATE)
         return
 
     if target_msg:
         await _refresh_admin_message(target_msg, event, image_changed=(field == "image_path"))
 
     if event['status'] in ['approved', 'cancelled']:
-        await update_event_messages(context, event_id, event=event, update_image=(field == "image_path"))
+        await update_event_messages(
+            context, event_id, event=event, update_image=(field == "image_path"),
+            eventbrite_content=field in EVENTBRITE_CONTENT_FIELDS,
+        )
 
-    await update.message.reply_text(f"✅ Campo '{field}' aggiornato con successo!")
+    await update.message.reply_text(format_edit_done(field))

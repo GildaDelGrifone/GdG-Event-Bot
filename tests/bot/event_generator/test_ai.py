@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from bot.event_generator.ai import generate_event_data_with_ai
+from bot.event_generator.ai import generate_event_data_with_ai, normalize_bgg_ids
 from core.ai_parser import GeminiQuotaError
 
 
@@ -20,9 +20,10 @@ class TestGenerateEventDataWithAi(unittest.TestCase):
             "extra_info": "Adatto a neofiti",
             "is_roleplay": False,
             "description": "Una fantastica serata all'insegna dei giochi da tavolo!",
+            "bgg_ids": {"Catan": "13", "Wingspan": None},
         }
-        with patch("core.ai_parser.genai.GenerativeModel") as mock_model_cls:
-            mock_model_cls.return_value.generate_content.return_value = MagicMock(
+        with patch("core.ai_parser._gemini_client") as mock_client:
+            mock_client.return_value.models.generate_content.return_value = MagicMock(
                 text=f"```json\n{json.dumps(fake_ai_json)}\n```"
             )
 
@@ -33,13 +34,22 @@ class TestGenerateEventDataWithAi(unittest.TestCase):
             self.assertEqual(data["booked_seats"], 0)
             self.assertEqual(data["max_seats"], 4)
             self.assertFalse(data["is_roleplay"])
+            self.assertEqual(data["bgg_ids"], {"Catan": 13})
 
     def test_generate_event_data_with_ai_quota_error(self):
-        with patch("core.ai_parser.genai.GenerativeModel") as mock_model_cls:
-            mock_model_cls.return_value.generate_content.side_effect = Exception("429 Your prepayment credits are depleted")
+        with patch("core.ai_parser._gemini_client") as mock_client:
+            mock_client.return_value.models.generate_content.side_effect = Exception("429 Your prepayment credits are depleted")
 
             with self.assertRaises(GeminiQuotaError):
                 generate_event_data_with_ai("prompt")
+
+
+class TestNormalizeBggIds(unittest.TestCase):
+    def test_normalize_bgg_ids(self):
+        self.assertEqual(normalize_bgg_ids({"Root": 237182, "Heat": "366013", "X": "abc", "Y": -1, "Z": None}),
+                         {"Root": 237182, "Heat": 366013})
+        self.assertEqual(normalize_bgg_ids(None), {})
+        self.assertEqual(normalize_bgg_ids([13]), {})
 
 
 if __name__ == "__main__":

@@ -2,7 +2,8 @@ import json
 import logging
 import re
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from core import config
 
@@ -15,7 +16,7 @@ TRUTHY_TOKENS = {"true", "1", "yes", "si", "sì"}
 _SEATS_FRACTION_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)\s*/\s*(\d+)', re.IGNORECASE)
 _SEATS_SINGLE_RE = re.compile(r'Posti(?:\s+liberi|\s+disponibili)?\s*:\s*(\d+)(?!\s*/)', re.IGNORECASE)
 
-genai.configure(api_key=config.GEMINI_API_KEY)
+_client = None
 
 
 class GeminiQuotaError(Exception):
@@ -33,17 +34,37 @@ def strip_json_fence(text):
 
 def is_quota_error(err):
     err_str = str(err).lower()
-    return "429" in err_str or "prepayment credits are depleted" in err_str or "quota" in err_str or "resourceexhausted" in err_str
+    return ("429" in err_str or "prepayment credits are depleted" in err_str or "quota" in err_str
+            or "resourceexhausted" in err_str or "resource_exhausted" in err_str)
 
 
 def coerce_bool(value):
     return value.strip().lower() in TRUTHY_TOKENS if isinstance(value, str) else bool(value)
 
 
+def _gemini_client():
+    """Created on first use, so importing this module needs no API key."""
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=config.GEMINI_API_KEY)
+    return _client
+
+
 def generate_text(prompt):
     """Runs prompt on config.GEMINI_MODEL; quota/credit failures surface as GeminiQuotaError."""
     try:
-        return genai.GenerativeModel(config.GEMINI_MODEL).generate_content(prompt).text
+        return _gemini_client().models.generate_content(model=config.GEMINI_MODEL, contents=prompt).text
+    except Exception as e:
+        if is_quota_error(e):
+            raise GeminiQuotaError(str(e)) from e
+        raise
+
+
+def generate_from_image(prompt, image_bytes, mime_type="image/jpeg"):
+    """Like generate_text, with one image attached before the prompt."""
+    try:
+        contents = [types.Part.from_bytes(data=image_bytes, mime_type=mime_type), prompt]
+        return _gemini_client().models.generate_content(model=config.GEMINI_MODEL, contents=contents).text
     except Exception as e:
         if is_quota_error(e):
             raise GeminiQuotaError(str(e)) from e
@@ -141,6 +162,8 @@ def _article_prompt(recap_text, event_list):
         img_url = ev.get('wp_media_url')
         img_info = f" | Image URL: {img_url}" if img_url else ""
         events_details += f"- {ev.get('title')}: {link}{img_info}\n"
+    names = [handle.lstrip("@") for handle in config.RECAP_CONTACTS]
+    examples = [f'"l\'utente Telegram @{name} (https://t.me/{name})"' for name in names]
 
     return f"""
     You are an AI generating an engaging article for a tabletop games association's WordPress blog.
@@ -149,7 +172,7 @@ def _article_prompt(recap_text, event_list):
 
     CRITICAL INSTRUCTIONS:
     - You must include the direct Telegram event link for each event in the article text, using the provided list below. Do not use placeholders like [Inserisci qui i link diretti agli eventi].
-    - If you cite Destard or ManueleAbi, specify clearly that they are Telegram usernames. For example, use "l'utente Telegram @Destard (https://t.me/Destard)" and "l'utente Telegram @ManueleAbi (https://t.me/ManueleAbi)".
+    - If you cite {" or ".join(names)}, specify clearly that they are Telegram usernames. For example, use {" and ".join(examples)}.
     - If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using an HTML <img> tag with a maximum size constraint (e.g., <img src="..." alt="..." style="max-width:400px; max-height:400px; width:auto; height:auto; margin-bottom:15px;">). Do not mention or include HTML tags for the daily collage, as the system will automatically attach it as the article's featured image (Immagine in evidenza).
 
     Recap Info:

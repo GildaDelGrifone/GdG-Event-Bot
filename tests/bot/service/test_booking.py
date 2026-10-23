@@ -201,3 +201,44 @@ class TestSubscribersWithoutUsername(TempDBMixin, unittest.IsolatedAsyncioTestCa
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEventbriteCollision(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.event_id = create_event(
+            original_text="t", title="Evento", date="10-10-2026", normalized_date="10-10-2026",
+            system="D&D", host="GM", seats="1/2", booked_seats=1, max_seats=2, description="d",
+        )
+        self.user = make_user(112233, "player", first_name="Player")
+        self.query = discussion_query(100)
+        self.context = make_context()
+        self.send_message = self.context.bot.send_message
+
+    async def book(self, reserved):
+        with booking_chats(), \
+             patch("bot.service.booking.reserve_on_eventbrite", AsyncMock(return_value=reserved)), \
+             patch("bot.service.booking.poll_event_now", AsyncMock()) as poll, \
+             patch("bot.service.booking.update_event_messages", AsyncMock()) as update:
+            await handle_seat_booking(self.event_id, self.user, self.query, self.context)
+        return poll, update
+
+    async def test_a_seat_taken_on_eventbrite_undoes_the_booking_and_tells_the_user(self):
+        poll, update = await self.book(reserved=False)
+
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 1)
+        self.assertEqual(db.get_reservations_for_event(self.event_id), [])
+        text, = self.query.answer.call_args.args
+        self.assertIn("L'ultimo posto è appena stato prenotato su Eventbrite", text)
+        self.assertTrue(self.query.answer.call_args.kwargs["show_alert"])
+        poll.assert_awaited_once()
+        update.assert_awaited_once()
+        self.send_message.assert_not_called()
+
+    async def test_a_reserved_seat_is_confirmed_as_usual(self):
+        poll, _ = await self.book(reserved=True)
+
+        self.assertEqual(db.get_event(self.event_id)["booked_seats"], 2)
+        self.assertEqual(self.query.answer.call_args.args, ("Prenotazione aggiunta.",))
+        poll.assert_not_awaited()
+        self.send_message.assert_called()

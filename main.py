@@ -5,14 +5,17 @@ from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, CallbackQueryHandler
+from core import config
 from core.config import (
     TELEGRAM_BOT_TOKEN, PUBLIC_CHANNEL_ID, DISCUSSION_GROUP_ID, ADMIN_CHAT_ID,
     LOGS_DIR
 )
 from core.db import init_db
+from core.eventbrite import eventbrite_enabled
 from bot.handlers.albums import cache_admin_media_group
-from bot.handlers.control import bot_pause_command, bot_resume_command, bot_status_command
+from bot.handlers.control import bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command
 from bot.handlers.edit import event_edit_command
+from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
 from bot.handlers.public import event_next_command, event_subs_command, start_command
 from bot.handlers.recap import manual_recap_command, handle_discussion_forward
@@ -22,16 +25,19 @@ from bot.handlers.repost_schedule import (
 )
 from bot.handlers.subscribers import event_sub_add_command, event_sub_remove_command, handle_admin_reply
 from bot.handlers.story import event_regenerate_story_command
+from utils.templates.commands import ADMIN_COMMAND_DESCRIPTIONS, DEFAULT_COMMAND_DESCRIPTIONS
 from bot.event_generator.command import event_generate_command
 from bot.callbacks.router import handle_callback_query
-from core.scheduler.runner import start_scheduler, stop_scheduler
-from core.log_utils import DailyMonthlyLogHandler
+from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
+from bot.service.eventbrite_poll import poll_eventbrite_bookings
+from core.scheduler.runner import add_cron_job, add_interval_job, start_scheduler, stop_scheduler
+from core.log_utils import DailyMonthlyLogHandler, JobLinesToDebug
 
 log_file_path = os.path.join(LOGS_DIR, "bot.log")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
+    level=getattr(logging, config.LOG_LEVEL),
     handlers=[
         DailyMonthlyLogHandler(log_file_path),
         logging.StreamHandler()
@@ -40,49 +46,22 @@ logging.basicConfig(
 
 # Set httpx logging to WARNING to prevent clutter from Telegram getUpdates polling
 logging.getLogger("httpx").setLevel(logging.WARNING)
+# The Eventbrite poller runs every minute: its "Running job" / "executed successfully" lines are DEBUG only
+logging.getLogger("apscheduler.executors.default").addFilter(JobLinesToDebug(("poll_eventbrite_bookings",)))
 
 logger = logging.getLogger(__name__)
 
 async def post_init(application: Application):
     start_scheduler(application.bot)
+    if eventbrite_enabled():
+        add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
+        add_cron_job(delete_cancelled_eventbrite_events, *config.EVENTBRITE_CLEANUP_TIME, [application.bot])
 
     # Default commands for users in private chats / groups
-    default_commands = [
-        BotCommand("start", "Avvia il bot e visualizza info o iscritti"),
-        BotCommand("event_next", "Mostra gli eventi di oggi e futuri"),
-        BotCommand("event_subs", "<id> Mostra gli iscritti di un evento"),
-    ]
+    default_commands = [BotCommand(name, description) for name, description in DEFAULT_COMMAND_DESCRIPTIONS]
 
     # Admin commands available in ADMIN_CHAT_ID with syntax descriptions
-    admin_commands = [
-        BotCommand("event_process", "<testo o foto> Analizza e crea bozza evento"),
-        BotCommand("ep", "<testo o foto> Analizza e crea bozza evento"),
-        BotCommand("event_generate", "<istruzioni> Genera evento e locandina con AI"),
-        BotCommand("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
-        BotCommand("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
-        BotCommand("bot_pause", "Mette in pausa l'intercettazione automatica"),
-        BotCommand("bot_resume", "Riattiva l'intercettazione automatica"),
-        BotCommand("bot_status", "Mostra lo stato operativo del bot"),
-        BotCommand("event_edit_title", "<Titolo> Modifica il titolo dell'evento"),
-        BotCommand("event_edit_date", "<DD-MM-YYYY HH:MM> Modifica data e ora"),
-        BotCommand("event_edit_system", "<Sistema> Modifica il sistema/gioco"),
-        BotCommand("event_edit_host", "<Nome> Modifica Master o Host"),
-        BotCommand("event_edit_type", "<rpg|boardgame> Imposta tipo tavolo"),
-        BotCommand("event_edit_seats", "<X/Y> Modifica posti disponibili/totali"),
-        BotCommand("event_edit_booked", "<N> Modifica posti già prenotati"),
-        BotCommand("event_edit_extra", "<Note> Modifica dettagli/note extra"),
-        BotCommand("event_edit_extra_add", "<Note> Aggiunge dettagli/note extra"),
-        BotCommand("event_edit_description", "<Testo> Modifica la descrizione"),
-        BotCommand("event_edit_image", "[ID] Allega nuova foto per la locandina"),
-        BotCommand("event_regenerate_story", "[ID] Rigenera immagine Storia Instagram"),
-        BotCommand("event_sub_add", "<ID> @username [posti] Aggiunge iscritto"),
-        BotCommand("event_sub_remove", "<ID> @username [posti] Rimuove iscritto"),
-        BotCommand("event_repost", "<DATE> <SEATS> Ripubblica evento con nuova data e posti"),
-        BotCommand("event_schedule", "[ID] [DATA HH:MM] Programma ripubblicazione evento"),
-        BotCommand("event_schedule_invoke", "<ID> Prepara il post dell'evento programmato"),
-        BotCommand("event_schedule_update", "<ID> Aggiorna il contenuto dell'evento programmato"),
-        BotCommand("event_schedule_list", "Mostra tutti gli eventi programmati per il repost"),
-    ]
+    admin_commands = [BotCommand(name, description) for name, description in ADMIN_COMMAND_DESCRIPTIONS]
 
     try:
         await application.bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
@@ -110,8 +89,9 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         logger.error("Eccezione non gestita durante l'elaborazione di un update:", exc_info=context.error)
 
 def main():
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN non impostato.")
+    missing = config.missing_required_settings()
+    if missing:
+        logger.error(f"Impostazioni obbligatorie mancanti nel file .env: {', '.join(missing)}. Il bot non può avviarsi.")
         return
         
     init_db()
@@ -137,6 +117,8 @@ def main():
     application.add_handler(CommandHandler("bot_pause", bot_pause_command))
     application.add_handler(CommandHandler("bot_resume", bot_resume_command))
     application.add_handler(CommandHandler("bot_status", bot_status_command))
+    application.add_handler(CommandHandler("bot_eventbrite_only_toggle", bot_eventbrite_only_toggle_command))
+    application.add_handler(CommandHandler("bot_eventbrite_venue", bot_eventbrite_venue_command))
     
     edit_cmds = [
         "event_edit_title", "event_edit_date",
@@ -147,6 +129,7 @@ def main():
     for cmd in edit_cmds:
         application.add_handler(CommandHandler(cmd, event_edit_command, block=False))
     application.add_handler(CommandHandler("event_regenerate_story", event_regenerate_story_command, block=False))
+    application.add_handler(CommandHandler("event_publish_eventbrite", event_publish_eventbrite_command, block=False))
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
     application.add_handler(CommandHandler("event_repost", event_repost_command, block=False))
@@ -160,6 +143,7 @@ def main():
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_process|ep)(\s|$|@)"), manual_trigger_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_generate|eg)(\s|$|@)"), event_generate_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_regenerate_story|ers)(\s|$|@)"), event_regenerate_story_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_publish_eventbrite(\s|$|@)"), event_publish_eventbrite_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(recap_generate|rg)(\s|$|@)"), manual_recap_command))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_repost|er)(\s|$|@)"), event_repost_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule(\s|$|@)"), event_schedule_command, block=False))

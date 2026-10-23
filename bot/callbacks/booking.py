@@ -1,9 +1,13 @@
 import logging
 
+from telegram.error import TelegramError
+
 from core.db import get_event
 from bot.keyboards import is_event_full
 from bot.service.booking import handle_seat_booking, handle_seat_unbooking
 from bot.service.posts import update_event_messages
+from utils.templates.booking import POPUP_TABLE_FULL
+from utils.templates.common import POPUP_EVENT_NOT_FOUND
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +18,9 @@ async def handle_full(query, context, payload):
     event = get_event(event_id)
     if not event:
         try:
-            await query.answer("Evento non trovato.", show_alert=True)
-        except Exception:
-            pass
+            await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
+        except TelegramError as e:
+            logger.debug(f"Could not answer callback query: {e}")
         return
 
     if not is_event_full(event):
@@ -25,9 +29,9 @@ async def handle_full(query, context, payload):
 
     logger.warning(f"User {query.from_user.id} (@{query.from_user.username}) attempted to book full event #{event_id}.")
     try:
-        await query.answer("I posti per questo tavolo sono esauriti!", show_alert=True)
-    except Exception:
-        pass
+        await query.answer(POPUP_TABLE_FULL, show_alert=True)
+    except TelegramError as e:
+        logger.debug(f"Could not answer callback query: {e}")
     await update_event_messages(context, event_id, event=event, current_query=query)
 
 

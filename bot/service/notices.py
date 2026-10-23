@@ -2,7 +2,11 @@ import html
 import logging
 
 from core import config
-from utils.templates import format_event_title_link
+from utils.templates.booking import (
+    SEATS_ADDED_ICON, SEATS_REMOVED_ICON, format_admin_action_notice, format_seats_added_verb,
+    format_seats_removed_verb,
+)
+from utils.templates.common import format_event_title_link
 from bot.common.messages import send_with_reply_fallback
 from bot.service.mentions import format_subscriber_tag
 
@@ -24,6 +28,8 @@ async def send_discussion_notice(context, event, text, label):
     chat_id = discussion_chat_id()
     if chat_id is None:
         return
+    if not event.get('telegram_message_id'):
+        return  # never posted on Telegram (Eventbrite-only event): the group has nothing to reply to
     await send_with_reply_fallback(
         context.bot, chat_id, text, event.get('discussion_message_id'), log=logger, label=label
     )
@@ -56,12 +62,9 @@ async def send_admin_action_notice(
     user_tag = format_subscriber_tag(target_username, target_full_name, target_user_id) or "Utente"
     seats_count = max(1, int(seats or 1))
     if action == "add":
-        icon, verb = "✅", "Aggiunto 1 posto" if seats_count == 1 else f"Aggiunti {seats_count} posti"
+        icon, verb = SEATS_ADDED_ICON, format_seats_added_verb(seats_count)
     else:
-        icon, verb = "❌", "Rimosso 1 posto" if seats_count == 1 else f"Rimossi {seats_count} posti"
+        icon, verb = SEATS_REMOVED_ICON, format_seats_removed_verb(seats_count)
 
-    text = (
-        f"🛠️ <b>Operazione effettuata da un admin degli eventi{_admin_suffix(admin_user)}:</b>\n"
-        f"{icon} {verb} per {user_tag} per: {format_event_title_link(event)}"
-    )
+    text = format_admin_action_notice(_admin_suffix(admin_user), icon, verb, user_tag, format_event_title_link(event))
     await send_discussion_notice(context, event, text, label="admin action notice")
