@@ -17,6 +17,7 @@ venv/
 env/
 .venv
 .venv/
+.venv-k8s/
 
 # IDEs
 .vscode/
