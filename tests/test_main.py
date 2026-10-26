@@ -64,6 +64,10 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         mock_app.add_handler.side_effect = lambda h, group=0: added_handlers.append((h, group))
         mock_builder = MagicMock()
         mock_builder.token.return_value = mock_builder
+        mock_builder.connect_timeout.return_value = mock_builder
+        mock_builder.read_timeout.return_value = mock_builder
+        mock_builder.write_timeout.return_value = mock_builder
+        mock_builder.pool_timeout.return_value = mock_builder
         mock_builder.post_init.return_value = mock_builder
         mock_builder.post_shutdown.return_value = mock_builder
         mock_builder.build.return_value = mock_app
@@ -164,7 +168,7 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         mock_app = MagicMock()
         mock_app.add_handler.side_effect = lambda h, group=0: added.append(h)
         mock_builder = MagicMock()
-        for name in ("token", "post_init", "post_shutdown"):
+        for name in ("token", "connect_timeout", "read_timeout", "write_timeout", "pool_timeout", "post_init", "post_shutdown"):
             getattr(mock_builder, name).return_value = mock_builder
         mock_builder.build.return_value = mock_app
 

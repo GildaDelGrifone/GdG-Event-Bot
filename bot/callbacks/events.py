@@ -86,7 +86,10 @@ async def _publish_to_channel(context, query, event_id, event):
 
 async def _send_story_preview(context, chat_id, event):
     # Instagram publishing is disabled for now; admins review the generated story image instead
-    await context.bot.send_message(chat_id=chat_id, text=STORY_GENERATION_PROGRESS)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=STORY_GENERATION_PROGRESS)
+    except Exception as e:
+        logger.warning(f"Failed to send story generation progress message: {e}")
     story_image_path = await asyncio.to_thread(create_story_image, event, event.get('image_path'), config.DATA_DIR)
     await send_image_or_error(
         context.bot, chat_id, story_image_path,

@@ -124,7 +124,7 @@ RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, 
 MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
-DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DEFAULT_DATA_DIR = "data"
 DATA_DIR = os.getenv("DATA_DIR", DEFAULT_DATA_DIR)
 FONTS_DIR = os.path.join(PROJECT_ROOT, "data")  # Fonts stay in the repo's data folder even with a custom DATA_DIR
 DB_PATH = os.path.join(DATA_DIR, "bot_database.db")

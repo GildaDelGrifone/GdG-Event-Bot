@@ -97,8 +97,13 @@ INDEXES = (
 
 # Non-additive changes (renames, data rewrites, ...): {version: (sql, ...)}, run once, in order, on databases whose
 # PRAGMA user_version is lower. Add an entry and bump SCHEMA_VERSION to its key.
-VERSIONED_MIGRATIONS = {}
-SCHEMA_VERSION = 1
+VERSIONED_MIGRATIONS = {
+    2: (
+        "UPDATE events SET image_path = 'data/' || substr(image_path, instr(image_path, '/data/') + 6) WHERE image_path LIKE '%/data/%'",
+        "UPDATE scheduled_events SET image_path = 'data/' || substr(image_path, instr(image_path, '/data/') + 6) WHERE image_path LIKE '%/data/%'",
+    ),
+}
+SCHEMA_VERSION = 2
 
 
 def _enable_wal():

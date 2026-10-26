@@ -67,11 +67,14 @@ async def send_with_reply_fallback(bot, chat_id, text, reply_to_message_id=None,
 
 
 async def send_image_or_error(bot, chat_id, image_path, caption, error_text):
-    if image_path:
-        with open(image_path, 'rb') as f:
-            await bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
-    else:
-        await bot.send_message(chat_id=chat_id, text=error_text)
+    try:
+        if image_path:
+            with open(image_path, 'rb') as f:
+                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+        else:
+            await bot.send_message(chat_id=chat_id, text=error_text)
+    except Exception as e:
+        logger.warning(f"Failed to send image or error message to {chat_id}: {e}")
 
 
 async def reply_in_chunks(message, parts, limit=4000, prefix="", **reply_kwargs):

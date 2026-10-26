@@ -74,7 +74,10 @@ async def _create_wordpress_draft(bot, chat_id, date_str, day_str, events, colla
 
 async def _run_post_recap_pipeline(bot, chat_id, date_str, events):
     """Recap Instagram story preview, then the WordPress draft article."""
-    await bot.send_message(chat_id=chat_id, text=WORDPRESS_DRAFT_PROGRESS)
+    try:
+        await bot.send_message(chat_id=chat_id, text=WORDPRESS_DRAFT_PROGRESS)
+    except Exception as e:
+        logger.warning(f"Failed to send WordPress draft progress message: {e}")
     day_str = _recap_day_name(date_str)
 
     collage_path = await asyncio.to_thread(create_collage, [ev['image_path'] for ev in events if ev.get('image_path')], config.DATA_DIR, date_str)

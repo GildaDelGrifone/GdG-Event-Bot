@@ -92,18 +92,43 @@ class TestSchemaVersioning(unittest.TestCase):
         self.assertEqual(self.pragma("user_version"), schema.SCHEMA_VERSION)
 
     def test_versioned_migrations_run_once_and_in_order(self):
+        v1 = schema.SCHEMA_VERSION + 1
+        v2 = schema.SCHEMA_VERSION + 2
         migrations = {
-            2: ("CREATE TABLE marker (step INTEGER)", "INSERT INTO marker VALUES (2)"),
-            3: ("INSERT INTO marker VALUES (3)",),
+            v1: ("CREATE TABLE marker (step INTEGER)", "INSERT INTO marker VALUES (1)"),
+            v2: ("INSERT INTO marker VALUES (2)",),
         }
         with patched_config(DB_PATH=self.db_path):
             db.init_db()
-            with patch.object(schema, "VERSIONED_MIGRATIONS", migrations), patch.object(schema, "SCHEMA_VERSION", 3):
+            with patch.object(schema, "VERSIONED_MIGRATIONS", migrations), patch.object(schema, "SCHEMA_VERSION", v2):
                 db.init_db()
                 db.init_db()
         with sqlite3.connect(self.db_path) as conn:
-            self.assertEqual([r[0] for r in conn.execute("SELECT step FROM marker")], [2, 3])
-        self.assertEqual(self.pragma("user_version"), 3)
+            self.assertEqual([r[0] for r in conn.execute("SELECT step FROM marker")], [1, 2])
+        self.assertEqual(self.pragma("user_version"), v2)
+
+    def test_migration_v2_converts_absolute_data_image_paths_to_relative(self):
+        with sqlite3.connect(self.db_path) as conn:
+            for ddl in schema.TABLES:
+                conn.execute(ddl)
+            conn.execute(
+                "INSERT INTO events (title, image_path) VALUES (?, ?), (?, ?)",
+                ("Host Ev", "/home/user/bot/data/2026/10/26/event_1.jpg", "Pod Ev", "/app/data/2026/10/26/event_2.jpg"),
+            )
+            conn.execute(
+                "INSERT INTO scheduled_events (title, text, image_path) VALUES (?, ?, ?), (?, ?, ?)",
+                ("Host Sched", "t", "/home/user/bot/data/scheduled/sched_1.jpg", "Pod Sched", "t", "/app/data/scheduled/sched_2.jpg"),
+            )
+            conn.execute("PRAGMA user_version = 1")
+
+        with patched_config(DB_PATH=self.db_path):
+            db.init_db()
+
+        with sqlite3.connect(self.db_path) as conn:
+            ev_paths = [r[0] for r in conn.execute("SELECT image_path FROM events ORDER BY id")]
+            sched_paths = [r[0] for r in conn.execute("SELECT image_path FROM scheduled_events ORDER BY id")]
+        self.assertEqual(ev_paths, ["data/2026/10/26/event_1.jpg", "data/2026/10/26/event_2.jpg"])
+        self.assertEqual(sched_paths, ["data/scheduled/sched_1.jpg", "data/scheduled/sched_2.jpg"])
 
 
 if __name__ == "__main__":

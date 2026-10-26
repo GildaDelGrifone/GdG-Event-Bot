@@ -99,6 +99,10 @@ def main():
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
+        .connect_timeout(15.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(15.0)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()

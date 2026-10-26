@@ -91,6 +91,28 @@ class TestPublishRecap(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fwd_call["reply_to_message_id"], 888)
         self.assertIn("<b>Avventura D&amp;D</b>", fwd_call["text"])
 
+    async def test_publish_recap_creates_wordpress_draft_even_if_story_photo_times_out(self):
+        update, _query = callback_update("publish_recap_05-09-2026", chat_id=9999, message_id=123, text=None,
+                                         caption="Recap caption")
+        context = make_context()
+        context.bot.copy_message.return_value = MagicMock(message_id=777)
+        context.bot.send_photo.side_effect = TimeoutError("Timed out")
+
+        test_events = [sample_event(id=1, title="Avventura D&D", image_path=None)]
+
+        with patched_config(PUBLIC_CHANNEL_ID="-100111111"), \
+             patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
+             patch("bot.callbacks.recap.create_collage", return_value=None), \
+             patch("bot.callbacks.recap.create_recap_story_image", return_value=__file__), \
+             patch("bot.callbacks.recap.generate_wordpress_article", return_value="<p>Articolo</p>") as mock_gen, \
+             patch("bot.callbacks.recap.publish_article", return_value=("https://example.com/?p=10", 10)) as mock_pub, \
+             patch("bot.callbacks.recap.update_events_wp_info") as mock_upd:
+            await handle_callback_query(update, context)
+
+        mock_gen.assert_called_once()
+        mock_pub.assert_called_once()
+        mock_upd.assert_called_once_with([1], 10, "https://example.com/?p=10")
+
 
 if __name__ == "__main__":
     unittest.main()
