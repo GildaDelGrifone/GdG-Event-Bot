@@ -1,6 +1,6 @@
 # Draft plan: cancel Eventbrite orders by automating the organizer dashboard (future work)
 
-> Status: **draft, not scheduled**. Today the bot sends the admins one "Cancel order" link per order (see GEMINI.md §2.11). This plan is the optional next step: the bot cancels the orders itself by driving the organizer dashboard.
+> Status: **draft, not scheduled**. Today the bot sends the admins one "Cancel order" link per order (see AGENTS.md §2.12). This plan is the optional next step: the bot cancels the orders itself by driving the organizer dashboard.
 
 ## Context
 - Eventbrite's public API (v3) has **no call to cancel an order or attendee**. The only per-order write call is `POST /orders/{id}/refunds/`, and it **fails on free orders**, which is what our events use (confirmed on a real account).

@@ -425,7 +425,7 @@ All maintenance utilities are located in the `scripts/` directory:
     - `core/eventbrite/`: the Eventbrite REST client and payload builders, imported as `from core.eventbrite import ...`.
     - `ai_parser.py` (Gemini), `instagram.py`, `log_utils.py` and `config.py`.
   - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings (including `DB_PATH` for a temporary database) and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).
-  - See `GEMINI.md` §3.1 (`bot/`) and §3.2 (`core/`) for details.
+  - See `AGENTS.md` §3.1 (`bot/`) and §3.2 (`core/`) for details.
 - **Test layout:** `tests/` mirrors the source tree, with one test file per module under test (e.g. `bot/handlers/edit.py` → `tests/bot/handlers/test_edit.py`, `core/db/seats.py` → `tests/core/db/test_seats.py`, `scripts/generate_story.py` → `tests/scripts/test_generate_story.py`). Put a new test next to the module it exercises. Shared helpers live in `tests/support/`:
   - `db.py`: `TempDBMixin` (fresh SQLite file per test via `core.config.DB_PATH`, plus `self.temp_dir`), `create_event(...)` and the shared event fixtures.
   - `telegram.py`: factories for fake updates, messages, users, callback queries and bots (`admin_update`, `callback_update`, `make_context`, `admin_card`, `telegram_photo`, ...).

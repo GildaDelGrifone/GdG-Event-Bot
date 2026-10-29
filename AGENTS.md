@@ -424,7 +424,9 @@ GdG-Event-Bot/
 ├── requirements.txt      # Python dependencies
 ├── main.py               # Application entry point
 ├── README.md             # User and operator manual
-└── GEMINI.md             # This document (technical and architectural specification)
+├── AGENTS.md             # This document (technical and architectural specification, read by AI coding tools)
+├── CLAUDE.md             # Points Claude Code at AGENTS.md (`@AGENTS.md`)
+└── .gemini/settings.json # Points Gemini CLI at AGENTS.md (`context.fileName`)
 ```
 
 
