@@ -172,10 +172,10 @@ def _event_links(event_list):
     return events_details
 
 
-def _article_brief(recap_text, event_list, target, image_rule, output_rule):
-    """Instructions shared by every article format; `image_rule` and `output_rule` are format specific."""
+def _article_brief(recap_text, event_list, target, image_rule, output_rule, contact_format="@{name} (https://t.me/{name})"):
+    """Instructions shared by every article format; `image_rule`, `output_rule` and `contact_format` are format specific."""
     names = [handle.lstrip("@") for handle in config.RECAP_CONTACTS]
-    examples = [f'"l\'utente Telegram @{name} (https://t.me/{name})"' for name in names]
+    examples = [f'"l\'utente Telegram {contact_format.format(name=name)}"' for name in names]
 
     return f"""
     You are an AI generating an engaging article for {target}.
@@ -230,6 +230,7 @@ def _astro_article_prompt(recap_text, event_list):
         "a tabletop games association's website",
         'If an "Image URL" is provided for an event in the list below, put it in that event\'s section as a Markdown image on its own line, after the text and before the link: ![<event title>](<Image URL>). Do not mention or include the daily collage, as the system attaches it automatically as the article cover.',
         _ASTRO_LAYOUT.format(start_time=config.EVENT_START_TIME),
+        contact_format="**@{name}** ([https://t.me/{name}](https://t.me/{name}))",
     )
 
 

@@ -355,7 +355,7 @@ All maintenance utilities are located in the `scripts/` directory:
   # Use a specific cover instead of the one of the existing article:
   python3 scripts/regenerate_article.py 28-10-2026 --cover https://media.gildadelgrifonetorino.it/...
   ```
-  Reads the night's events from the database, reuses the images already in R2 (their address comes from the event image file name, so the original files are not needed; unreachable ones are skipped) and the cover of the article already on the site, and asks Gemini for the article. It checks the layout (plain intro, one `###` section per event, `---` rule, no bare URLs) and asks again up to 3 times; if it still does not match, nothing is published. Needs the `ASTRO_GITHUB_*` and `R2_PUBLIC_URL` settings (`--dry-run` only needs `R2_PUBLIC_URL`). It never writes to the database.
+  Reads the night's events from the database, reuses the images already in R2 (their address comes from the event image file name, so the original files are not needed; unreachable ones are skipped) and the cover of the article already on the site, and asks Gemini for the article. It checks the layout (plain intro, one `###` section per event, `---` rule, event links as Markdown links) and asks again up to 3 times; if it still does not match, nothing is published. Needs the `ASTRO_GITHUB_*` and `R2_PUBLIC_URL` settings (`--dry-run` only needs `R2_PUBLIC_URL`). It never writes to the database.
 
 - **Fix / Synchronize Inline Keyboards:**
   ```bash

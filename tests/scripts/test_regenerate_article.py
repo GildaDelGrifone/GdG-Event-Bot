@@ -37,6 +37,15 @@ class TestCheckStructure(unittest.TestCase):
     def test_a_correct_article_has_no_problems(self):
         self.assertEqual(script.check_structure(GOOD_ARTICLE, self.EVENTS), [])
 
+    def test_plain_contact_addresses_are_accepted_but_plain_event_links_are_not(self):
+        contacts = "contatta **@Destard** (https://t.me/Destard) o **@ManueleAbi** (https://t.me/ManueleAbi)"
+        body = GOOD_ARTICLE.replace("**@Destard** ([https://t.me/Destard](https://t.me/Destard))", contacts)
+
+        with patched_config(RECAP_CONTACTS=["@Destard", "@ManueleAbi"]):
+            self.assertEqual(script.check_structure(body, self.EVENTS), [])
+            plain_event = body.replace("[Prenotati qui](https://t.me/G/1)", "https://t.me/G/1")
+            self.assertEqual(len(script.check_structure(plain_event, self.EVENTS)), 1)
+
     def test_each_deviation_is_reported(self):
         body = "### Titolo\n\nTesto https://t.me/G/1\n\n### Uno\n\n### Due\n\n### Tre\n"
 

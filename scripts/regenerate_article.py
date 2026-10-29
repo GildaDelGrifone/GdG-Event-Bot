@@ -95,6 +95,8 @@ def check_structure(body, events):
     if not re.search(r"^---\s*$", body, re.M):
         problems.append("manca la riga --- prima della chiusura")
     without_links = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", body)
+    for handle in config.RECAP_CONTACTS:  # the contacts' addresses may stay plain: the site turns them into links
+        without_links = without_links.replace(f"https://t.me/{handle.lstrip('@')}", "")
     if re.search(r"https?://", without_links):
         problems.append("contiene indirizzi senza link Markdown")
     return problems

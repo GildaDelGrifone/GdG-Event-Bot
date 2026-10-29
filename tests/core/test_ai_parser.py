@@ -150,6 +150,8 @@ class TestAstroArticle(unittest.TestCase):
         self.assertIn("**annullato**", prompt)
         self.assertIn("never as a bare URL", prompt)
         self.assertIn("**@name** ([https://t.me/name](https://t.me/name))", prompt)
+        self.assertIn("l'utente Telegram **@Destard** ([https://t.me/Destard](https://t.me/Destard))", prompt)
+        self.assertNotIn("@Destard (https://t.me/Destard)", prompt)
         self.assertIn("do not list them again", prompt)
         self.assertIn("a line containing only ---", prompt)
         self.assertIn('"Vi aspettiamo in sede alle **20:45**"', prompt)
