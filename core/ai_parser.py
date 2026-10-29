@@ -221,7 +221,7 @@ _ASTRO_LAYOUT = """Return the response as Markdown: just the article body, with 
 
     Leave out the parentheses of the heading when the system is unknown, and put no emojis in the headings. Always write links as [text](url), never as a bare URL.
 
-    3. After the last event, a line containing only ---, then the closing: a bold hook for full tables (for example "**Tutto pieno? Non temere!**") saying that the Gilda has a games library of over 400 titles, an invitation to propose a night that names the Telegram contacts as described above, and a last line starting with "Vi aspettiamo in sede alle **{start_time}**" and ending with the 🦅 emoji."""
+    3. After the last event, a line containing only ---, then the closing: a bold hook for full tables (for example "**Tutto pieno? Non temere!**") saying that the Gilda has a games library of over 400 titles, an invitation to propose a night that names the Telegram contacts as described above, each written with its URL as a Markdown link (for example **@name** ([https://t.me/name](https://t.me/name))), and a last line starting with "Vi aspettiamo in sede alle **{start_time}**" and ending with the 🦅 emoji."""
 
 
 def _astro_article_prompt(recap_text, event_list):

@@ -341,6 +341,22 @@ All maintenance utilities are located in the `scripts/` directory:
   python3 scripts/generate_story.py 1 --publish-ig
   ```
 
+- **Regenerate an Astro Article:**
+  ```bash
+  # Generate the article of a past night and save it to a file to read it (nothing is written to GitHub):
+  python3 scripts/regenerate_article.py 28-10-2026 --dry-run --output /tmp/28-10.md
+
+  # Create or update the draft branch serata/<slug> on the website repo:
+  python3 scripts/regenerate_article.py 28-10-2026
+
+  # Same, and publish it (merges the branch; the site deploys):
+  python3 scripts/regenerate_article.py 28-10-2026 --publish
+
+  # Use a specific cover instead of the one of the existing article:
+  python3 scripts/regenerate_article.py 28-10-2026 --cover https://media.gildadelgrifonetorino.it/...
+  ```
+  Reads the night's events from the database, reuses the images already in R2 (their address comes from the event image file name, so the original files are not needed; unreachable ones are skipped) and the cover of the article already on the site, and asks Gemini for the article. It checks the layout (plain intro, one `###` section per event, `---` rule, no bare URLs) and asks again up to 3 times; if it still does not match, nothing is published. Needs the `ASTRO_GITHUB_*` and `R2_PUBLIC_URL` settings (`--dry-run` only needs `R2_PUBLIC_URL`). It never writes to the database.
+
 - **Fix / Synchronize Inline Keyboards:**
   ```bash
   # Synchronize keyboards across approved event messages (Channel, Discussion, Admin):

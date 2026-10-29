@@ -410,6 +410,7 @@ GdG-Event-Bot/
 ├── scripts/              # Utility and maintenance scripts
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
+│   ├── regenerate_article.py # Regenerate the Astro article of a past night (reuses the images already in R2; --dry-run / --publish)
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
 │   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create/update venues, create collections
