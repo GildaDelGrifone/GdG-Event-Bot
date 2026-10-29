@@ -3,11 +3,56 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import core.db as db
-from bot.handlers.recap import handle_discussion_forward, manual_recap_command
+from bot.handlers.recap import handle_discussion_forward, manual_recap_command, recap_article_command
 from tests.support.config import as_admin_chat
 from tests.support.db import TempDBMixin, create_event
 from bot.state import runtime_state
 from tests.support.telegram import admin_update, make_context, make_message, make_update
+
+
+class TestRecapArticleCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def _run(self, args, events=(), update=None):
+        update = update or admin_update(message_id=5)
+        context = make_context(args=args)
+        with as_admin_chat(), \
+             patch("bot.handlers.recap.get_pending_events_for_recap", return_value=list(events)) as load, \
+             patch("bot.handlers.recap.run_article_pipeline") as pipeline:
+            await recap_article_command(update, context)
+        return update, context, load, pipeline
+
+    async def test_regenerates_the_article_for_the_given_date(self):
+        events = [{"id": 1}]
+        update, context, load, pipeline = await self._run(["23-10-2026"], events)
+
+        load.assert_called_once_with("23-10-2026")
+        pipeline.assert_called_once_with(context.bot, "999", "23-10-2026", events)
+        self.assertIn("23-10-2026", update.message.reply_text.call_args[0][0])
+
+    async def test_defaults_to_today(self):
+        _update, _context, load, pipeline = await self._run([], [{"id": 1}])
+
+        load.assert_called_once_with(datetime.now().strftime("%d-%m-%Y"))
+        pipeline.assert_called_once()
+
+    async def test_invalid_date_is_rejected(self):
+        update, _context, load, pipeline = await self._run(["nope"])
+
+        self.assertIn("Formato data non valido", update.message.reply_text.call_args[0][0])
+        load.assert_not_called()
+        pipeline.assert_not_called()
+
+    async def test_no_events_replies_without_running_the_pipeline(self):
+        update, _context, _load, pipeline = await self._run(["15-09-2026"])
+
+        self.assertEqual(update.message.reply_text.call_args[0][0], "Nessun evento in programma per la data 15-09-2026.")
+        pipeline.assert_not_called()
+
+    async def test_non_admin_is_ignored(self):
+        update = make_update(text="/ra", chat_id=1, user=MagicMock(id=1, username="x"))
+        _update, _context, load, pipeline = await self._run([], [{"id": 1}], update=update)
+
+        load.assert_not_called()
+        pipeline.assert_not_called()
 
 
 class TestManualRecapCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):

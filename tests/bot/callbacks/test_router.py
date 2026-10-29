@@ -38,7 +38,7 @@ class TestEventbriteRoutes(unittest.TestCase):
 
     def test_each_callback_data_resolves_to_exactly_one_route(self):
         prefixes = [p for p, _ in router.CALLBACK_ROUTES]
-        for data in ("publish_event_1", "publish_eb_event_1", "eb_publish_1", "eb_recreate_1", "cancel_event_1", "cancel_confirm_1", "cancel_abort_1", "eb_cancel_retry_1", "eb_cancel_ask_1", "eb_cancel_do_1", "eb_logo_1", "book_1", "unbook_1", "publish_wp_1", "publish_astro_23-10-2026"):
+        for data in ("publish_event_1", "publish_eb_event_1", "eb_publish_1", "eb_recreate_1", "cancel_event_1", "cancel_confirm_1", "cancel_abort_1", "eb_cancel_retry_1", "eb_cancel_ask_1", "eb_cancel_do_1", "eb_logo_1", "book_1", "unbook_1", "publish_wp_1", "publish_astro_23-10-2026", "discard_wp_1", "discard_astro_23-10-2026", "discard_recap_05-09-2026", "discard_event_1"):
             with self.subTest(data=data):
                 self.assertEqual(len([p for p in prefixes if data.startswith(p)]), 1)
 

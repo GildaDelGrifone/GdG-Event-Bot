@@ -7,6 +7,7 @@ from telegram.error import NetworkError
 from telegram.ext import CommandHandler, filters
 
 from main import global_error_handler, main, post_init, warn_if_boto3_missing
+from bot.handlers.recap import recap_article_command
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
@@ -179,6 +180,29 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
              patch("main.eventbrite_enabled", return_value=True), patch("main.ADMIN_CHAT_ID", None):
             await post_init(mock_app)
         self.assertEqual([c[0] for c in calls.mock_calls], ["start", "add", "cron"])
+
+    def test_recap_article_command_is_registered_for_text_and_caption_without_blocking(self):
+        added = []
+        mock_app = MagicMock()
+        mock_app.add_handler.side_effect = lambda h, group=0: added.append(h)
+        mock_builder = MagicMock()
+        for name in ("token", "connect_timeout", "read_timeout", "write_timeout", "pool_timeout", "post_init", "post_shutdown"):
+            getattr(mock_builder, name).return_value = mock_builder
+        mock_builder.build.return_value = mock_app
+
+        with patch("main.init_db"), patch("main.Application.builder", return_value=mock_builder), \
+             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"), \
+             patched_config(TELEGRAM_BOT_TOKEN="fake_token", ADMIN_CHAT_ID="999"):
+            try:
+                main()
+            except Exception:
+                pass
+
+        ours = [h for h in added if getattr(h, "callback", None) is recap_article_command]
+        self.assertEqual(len(ours), 2)
+        self.assertTrue(all(h.block is False for h in ours))
+        command_handler = next(h for h in ours if isinstance(h, CommandHandler))
+        self.assertEqual(command_handler.commands, {"recap_article", "ra"})
 
     def test_publish_command_is_registered_for_text_and_caption(self):
         added = []

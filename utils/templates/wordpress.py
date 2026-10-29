@@ -12,6 +12,9 @@ ARTICLE_PUBLISHED_SUFFIX = "\n\n✅ ARTICOLO PUBBLICATO PUBBLICAMENTE!"
 ARTICLE_PUBLISH_ERROR_SUFFIX = "\n\n❌ Errore durante la pubblicazione dell'articolo."
 
 
+ARTICLE_DISCARDED_SUFFIX = "\n\n🗑️ ARTICOLO SCARTATO"
+ARTICLE_ALREADY_PUBLISHED_SUFFIX = "\n\n⚠️ L'articolo è già stato pubblicato: non può essere scartato."
+ARTICLE_DISCARD_ERROR_SUFFIX = "\n\n❌ Errore durante l'eliminazione della bozza."
 WORDPRESS_CREATE_ERROR = "❌ Errore durante la creazione dell'articolo su WordPress."
 
 

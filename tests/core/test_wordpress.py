@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from core.wordpress import get_category_ids, publish_article, update_article_status, upload_media
+from core.wordpress import discard_article, get_category_ids, publish_article, update_article_status, upload_media
 from tests.support.config import patched_config, wordpress_credentials
 
 
@@ -109,6 +109,37 @@ class TestWordPressClient(unittest.TestCase):
             self.assertIsNone(upload_media("/nope.jpg"))
         post.assert_not_called()
 
+
+class TestDiscardArticle(unittest.TestCase):
+    def discard(self, status, get_status=200, delete_status=200):
+        with wordpress_credentials(), \
+             patch("core.wordpress.client.requests.get", return_value=_response(get_status, {"status": status})) as get, \
+             patch("core.wordpress.client.requests.delete", return_value=_response(delete_status, {})) as delete:
+            return discard_article(7), get, delete
+
+    def test_draft_is_moved_to_the_trash(self):
+        result, get, delete = self.discard("draft")
+
+        self.assertIs(result, True)
+        self.assertEqual(get.call_args.args[0], "https://example.com/wp-json/wp/v2/posts/7")
+        self.assertEqual(get.call_args.kwargs["params"], {"context": "edit"})
+        self.assertEqual(delete.call_args.args[0], "https://example.com/wp-json/wp/v2/posts/7")
+        self.assertIn("timeout", delete.call_args.kwargs)
+
+    def test_published_article_is_not_deleted(self):
+        result, _get, delete = self.discard("publish")
+
+        self.assertEqual(result, "published")
+        delete.assert_not_called()
+
+    def test_http_errors_return_false(self):
+        self.assertIs(self.discard("draft", get_status=404)[0], False)
+        self.assertIs(self.discard("draft", delete_status=403)[0], False)
+
+    def test_missing_credentials_return_false(self):
+        with wordpress_credentials(url=None), patch("core.wordpress.client.requests.get") as get:
+            self.assertIs(discard_article(7), False)
+        get.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

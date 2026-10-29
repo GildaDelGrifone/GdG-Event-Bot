@@ -13,6 +13,8 @@ ADMIN_COMMAND_DESCRIPTIONS = (
     ("event_generate", "<istruzioni> Genera evento e locandina con AI"),
     ("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
     ("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
+    ("recap_article", "[DD-MM-YYYY] Rigenera solo l'articolo della serata (/ra)"),
+    ("ra", "[DD-MM-YYYY] Rigenera solo l'articolo della serata"),
     ("bot_pause", "Mette in pausa l'intercettazione automatica"),
     ("bot_resume", "Riattiva l'intercettazione automatica"),
     ("bot_status", "Mostra lo stato operativo del bot"),

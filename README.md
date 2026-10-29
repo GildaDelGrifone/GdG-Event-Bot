@@ -214,6 +214,8 @@ python3 main.py
 - **Review:** Admin reviews the collage and recap in Telegram with `[Publish Recap]` or `[Discard Recap]`.
 - **Publishing:** Clicking `[Publish Recap]` sends the recap message to the public channel, renders the recap Instagram Story, uploads images (R2 or WordPress), and creates a draft article (a `serata/<slug>` branch of the website repo, or a WordPress draft).
 - **One-Click Live:** The bot returns the draft link and a `[Pubblica sul sito]` (Astro: merges the branch, the page goes live after the Cloudflare deploy, ~1-2 min) or `[Pubblica su WordPress]` button.
+- **Discard Article:** Next to the publish button, `[🗑️ Scarta articolo]` throws the draft away while it is not yet published (Astro: deletes the `serata/<slug>` branch; WordPress: moves the post to the trash). An already published article is never touched.
+- **Article only:** `/recap_article [DD-MM-YYYY]` (or `/ra`) reruns only the article for a date (collage, image uploads, AI text, new draft with publish/discard buttons) without rebuilding the recap card or the Instagram story. Without a date it uses today.
 
 ### 4. Admin Event Editing (Reply Commands)
 In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already published) to update fields live in SQLite and edit the message in the channel:

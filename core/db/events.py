@@ -149,6 +149,19 @@ def update_events_article_info(event_ids, backend, ref, url):
 
 
 @db_safe()
+def clear_article_info_for_date(date_str):
+    execute(
+        'UPDATE events SET article_backend = NULL, article_ref = NULL, wp_post_url = NULL WHERE normalized_date = ?',
+        (date_str,),
+    )
+
+
+@db_safe()
+def clear_wp_post_info(post_id):
+    execute('UPDATE events SET wp_post_id = NULL, wp_post_url = NULL WHERE wp_post_id = ?', (post_id,))
+
+
+@db_safe()
 def get_article_ref_for_date(date_str, backend):
     """The draft reference stored by update_events_article_info for the events of date_str (DD-MM-YYYY), or None."""
     row = fetch_one(

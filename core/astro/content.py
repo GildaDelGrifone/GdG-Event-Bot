@@ -105,3 +105,16 @@ def update_article_status(draft_id, status="publish"):
     except Exception as e:
         logger.error(f"Astro: Exception publishing article '{draft_id}': {e}")
         return False
+
+
+def discard_article(draft_id):
+    """Deletes the draft branch. Returns True, False on error, or "published" when the branch is gone (publishing deletes it)."""
+    if not github_credentials():
+        return False
+    try:
+        if github.get_ref_sha(draft_id) is None:
+            return "published"
+        return github.delete_branch(draft_id)
+    except Exception as e:
+        logger.error(f"Astro: Exception discarding article '{draft_id}': {e}")
+        return False

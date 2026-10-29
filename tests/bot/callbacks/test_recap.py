@@ -5,10 +5,12 @@ from bot.callbacks.router import handle_callback_query
 from bot.handlers.recap import handle_discussion_forward
 from bot.state import runtime_state
 from core.ai_parser import GeminiQuotaError
-from core.db import update_events_article_info
+from bot.callbacks.recap import run_article_pipeline
+from bot.keyboards import get_astro_publish_keyboard, get_wp_publish_keyboard
+from core.db import get_article_ref_for_date, get_event, update_events_article_info, update_events_wp_info
 from tests.support.config import patched_config
 from tests.support.db import TempDBMixin, create_event, sample_event
-from tests.support.telegram import callback_update, make_context, make_message, make_update
+from tests.support.telegram import callback_update, make_bot, make_context, make_message, make_update
 
 
 class TestGeminiQuotaDepletionAlert(TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -223,6 +225,95 @@ class TestPublishArticle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         upd.assert_called_once_with(10, "publish")
         self.assertIn("PUBBLICATO", query.edit_message_text.call_args.kwargs["text"])
 
+
+class TestDiscardArticle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    BRANCH = "serata/eventi-della-serata-venerdi-23-10-2026"
+
+    async def _discard(self, data, target, outcome):
+        update, query = callback_update(data, text="Bozza creata")
+        with patch(target, return_value=outcome) as discard:
+            await handle_callback_query(update, make_context())
+        return discard, query.edit_message_text.call_args.kwargs["text"]
+
+    def _store_astro_draft(self):
+        event_id = create_event(normalized_date="23-10-2026")
+        update_events_article_info([event_id], "astro", self.BRANCH, "link")
+        return event_id
+
+    async def test_astro_discard_deletes_the_branch_and_clears_the_draft(self):
+        self._store_astro_draft()
+
+        discard, text = await self._discard("discard_astro_23-10-2026", "bot.callbacks.recap.astro.discard_article", True)
+
+        discard.assert_called_once_with(self.BRANCH)
+        self.assertIn("SCARTATO", text)
+        self.assertIsNone(get_article_ref_for_date("23-10-2026", "astro"))
+
+    async def test_astro_discard_of_a_published_article_is_refused_and_keeps_the_draft_info(self):
+        self._store_astro_draft()
+
+        _discard, text = await self._discard("discard_astro_23-10-2026", "bot.callbacks.recap.astro.discard_article", "published")
+
+        self.assertIn("già stato pubblicato", text)
+        self.assertEqual(get_article_ref_for_date("23-10-2026", "astro"), self.BRANCH)
+
+    async def test_astro_discard_error_keeps_the_draft_info(self):
+        self._store_astro_draft()
+
+        _discard, text = await self._discard("discard_astro_23-10-2026", "bot.callbacks.recap.astro.discard_article", False)
+
+        self.assertIn("Errore", text)
+        self.assertEqual(get_article_ref_for_date("23-10-2026", "astro"), self.BRANCH)
+
+    async def test_astro_discard_without_stored_draft_shows_error(self):
+        discard, text = await self._discard("discard_astro_23-10-2026", "bot.callbacks.recap.astro.discard_article", True)
+
+        discard.assert_not_called()
+        self.assertIn("Errore", text)
+
+    async def test_wordpress_discard_trashes_the_post_and_clears_it(self):
+        event_id = create_event()
+        update_events_wp_info([event_id], 10, "https://wp/10")
+
+        discard, text = await self._discard("discard_wp_10", "bot.callbacks.recap.discard_article", True)
+
+        discard.assert_called_once_with(10)
+        self.assertIn("SCARTATO", text)
+        self.assertIsNone(get_event(event_id)["wp_post_id"])
+
+    async def test_wordpress_discard_outcomes_other_than_success_keep_the_post(self):
+        event_id = create_event()
+        update_events_wp_info([event_id], 10, "https://wp/10")
+
+        _d, published = await self._discard("discard_wp_10", "bot.callbacks.recap.discard_article", "published")
+        _d, failed = await self._discard("discard_wp_10", "bot.callbacks.recap.discard_article", False)
+
+        self.assertIn("già stato pubblicato", published)
+        self.assertIn("Errore", failed)
+        self.assertEqual(get_event(event_id)["wp_post_id"], 10)
+
+    def test_draft_keyboards_carry_publish_and_discard_buttons(self):
+        astro_row = get_astro_publish_keyboard("23-10-2026").inline_keyboard[0]
+        wp_row = get_wp_publish_keyboard(10).inline_keyboard[0]
+
+        self.assertEqual([b.callback_data for b in astro_row], ["publish_astro_23-10-2026", "discard_astro_23-10-2026"])
+        self.assertEqual([b.callback_data for b in wp_row], ["publish_wp_10", "discard_wp_10"])
+
+
+class TestRunArticlePipeline(unittest.IsolatedAsyncioTestCase):
+    async def test_only_the_article_is_built_without_the_story(self):
+        bot = make_bot()
+        events = [sample_event(id=1, title="Catan", image_path=None)]
+        with patched_config(ARTICLE_BACKEND="astro"), \
+             patch("bot.callbacks.recap.create_collage", return_value="/fake/collage.jpg") as collage, \
+             patch("bot.callbacks.recap.create_recap_story_image") as story, \
+             patch("bot.callbacks.recap._create_article_draft") as draft:
+            await run_article_pipeline(bot, "999", "23-10-2026", events)
+
+        story.assert_not_called()
+        collage.assert_called_once()
+        draft.assert_called_once_with(bot, "999", "23-10-2026", "Venerdì", events, "/fake/collage.jpg")
+        bot.send_message.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

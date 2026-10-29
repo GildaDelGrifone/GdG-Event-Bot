@@ -9,13 +9,15 @@ from core import astro
 from core.astro.content import make_excerpt
 from core.ai_parser import generate_astro_article, generate_wordpress_article, GeminiQuotaError
 from core.db import (
-    get_article_ref_for_date, get_pending_events_for_recap, update_events_article_info, update_events_wp_info,
+    clear_article_info_for_date, clear_wp_post_info, get_article_ref_for_date, get_pending_events_for_recap,
+    update_events_article_info, update_events_wp_info,
 )
-from core.wordpress import publish_article, upload_media, update_article_status
+from core.wordpress import discard_article, publish_article, upload_media, update_article_status
 from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, create_recap_story_image
 from utils.templates.recap import recap_generate_text
 from utils.templates.wordpress import (
+    ARTICLE_ALREADY_PUBLISHED_SUFFIX, ARTICLE_DISCARDED_SUFFIX, ARTICLE_DISCARD_ERROR_SUFFIX,
     ARTICLE_PUBLISHED_SUFFIX, ARTICLE_PUBLISH_ERROR_SUFFIX, ASTRO_CREATE_ERROR, ASTRO_DRAFT_PROGRESS,
     RECAP_DISCARDED_SUFFIX, RECAP_PUBLISHED_SUFFIX, RECAP_STORY_CAPTION, RECAP_STORY_ERROR,
     WORDPRESS_CREATE_ERROR, WORDPRESS_DRAFT_PROGRESS,
@@ -121,16 +123,31 @@ async def _create_article_draft(bot, chat_id, date_str, day_str, events, collage
     await finish(bot, chat_id, date_str, day_str, events, content, collage_info)
 
 
-async def _run_post_recap_pipeline(bot, chat_id, date_str, events):
-    """Recap Instagram story preview, then the draft article on the configured backend."""
+async def _send_draft_progress(bot, chat_id):
     progress = WORDPRESS_DRAFT_PROGRESS if config.ARTICLE_BACKEND == "wordpress" else ASTRO_DRAFT_PROGRESS
     try:
         await bot.send_message(chat_id=chat_id, text=progress)
     except Exception as e:
         logger.warning(f"Failed to send article draft progress message: {e}")
+
+
+async def _build_collage(events, date_str):
+    return await asyncio.to_thread(create_collage, [ev['image_path'] for ev in events if ev.get('image_path')], config.DATA_DIR, date_str)
+
+
+async def run_article_pipeline(bot, chat_id, date_str, events):
+    """Only the article: collage, images, AI text and the draft with its publish/discard card."""
+    await _send_draft_progress(bot, chat_id)
+    collage_path = await _build_collage(events, date_str)
+    await _create_article_draft(bot, chat_id, date_str, _recap_day_name(date_str), events, collage_path)
+
+
+async def _run_post_recap_pipeline(bot, chat_id, date_str, events):
+    """Recap Instagram story preview, then the draft article on the configured backend."""
+    await _send_draft_progress(bot, chat_id)
     day_str = _recap_day_name(date_str)
 
-    collage_path = await asyncio.to_thread(create_collage, [ev['image_path'] for ev in events if ev.get('image_path')], config.DATA_DIR, date_str)
+    collage_path = await _build_collage(events, date_str)
     story_path = await asyncio.to_thread(create_recap_story_image, events, collage_path, date_str, config.DATA_DIR)
     await send_image_or_error(
         bot, chat_id, story_path,
@@ -164,7 +181,7 @@ async def handle_discard_recap(query, context, payload):
     await _append_to_card(query, RECAP_DISCARDED_SUFFIX)
 
 
-async def _append_publish_result(query, suffix):
+async def _append_article_result(query, suffix):
     try:
         await query.edit_message_text(text=f"{query.message.text}{suffix}")
     except TelegramError as e:
@@ -183,7 +200,7 @@ async def handle_publish_wordpress(query, context, payload):
     else:
         logger.warning(f"{admin_identifier} failed to publish WordPress article #{post_id}.")
         suffix = ARTICLE_PUBLISH_ERROR_SUFFIX
-    await _append_publish_result(query, suffix)
+    await _append_article_result(query, suffix)
 
 
 async def handle_publish_astro(query, context, payload):
@@ -198,4 +215,35 @@ async def handle_publish_astro(query, context, payload):
     else:
         logger.warning(f"{admin_identifier} failed to publish Astro article for {payload} (draft: {branch}).")
         suffix = ARTICLE_PUBLISH_ERROR_SUFFIX
-    await _append_publish_result(query, suffix)
+    await _append_article_result(query, suffix)
+
+
+async def _finish_discard(query, outcome, clear_info, admin_identifier, label):
+    if outcome is True:
+        clear_info()
+        logger.info(f"{admin_identifier} discarded {label}.")
+        suffix = ARTICLE_DISCARDED_SUFFIX
+    elif outcome == "published":
+        logger.info(f"{admin_identifier} tried to discard {label}, already published.")
+        suffix = ARTICLE_ALREADY_PUBLISHED_SUFFIX
+    else:
+        logger.warning(f"{admin_identifier} failed to discard {label}.")
+        suffix = ARTICLE_DISCARD_ERROR_SUFFIX
+    await _append_article_result(query, suffix)
+
+
+async def handle_discard_wordpress(query, context, payload):
+    await query.answer()
+    post_id = int(payload)
+    outcome = await asyncio.to_thread(discard_article, post_id)
+    await _finish_discard(query, outcome, lambda: clear_wp_post_info(post_id),
+                          describe_user(query.from_user), f"WordPress article #{post_id}")
+
+
+async def handle_discard_astro(query, context, payload):
+    """`payload` is the recap date (DD-MM-YYYY); the draft branch is looked up in the DB."""
+    await query.answer()
+    branch = get_article_ref_for_date(payload, "astro")
+    outcome = await asyncio.to_thread(astro.discard_article, branch) if branch else False
+    await _finish_discard(query, outcome, lambda: clear_article_info_for_date(payload),
+                          describe_user(query.from_user), f"Astro article for {payload} (draft: {branch})")

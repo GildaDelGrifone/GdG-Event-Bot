@@ -1,14 +1,21 @@
 import logging
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event, get_event_by_telegram_message_id, update_discussion_message_info
+from core.db import (
+    get_event, get_event_by_telegram_message_id, get_pending_events_for_recap, update_discussion_message_info,
+)
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
 from utils.templates.event import format_discussion_booking_message
-from utils.templates.recap import RECAP_INVALID_DATE, format_recap_done, recap_links_text
+from utils.templates.recap import (
+    RECAP_ARTICLE_INVALID_DATE, RECAP_INVALID_DATE, RECAP_NO_EVENTS_TODAY, format_recap_article_started,
+    format_recap_done, format_recap_no_events_for_date, recap_links_text,
+)
+from bot.callbacks.recap import run_article_pipeline
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
@@ -38,6 +45,28 @@ async def manual_recap_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(done_text)
         else:
             await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=done_text)
+
+
+@admin_only()
+async def recap_article_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reruns only the article (collage, images, AI text, draft) for a date, today by default."""
+    args = context.args
+    logger.info(f"{describe_user(update.effective_user)} triggered manual article regeneration (args={args}).")
+    if args:
+        parsed = parse_user_date(args[0])
+        if not parsed:
+            await update.message.reply_text(RECAP_ARTICLE_INVALID_DATE)
+            return
+        date_str, no_events = parsed[0].strftime("%d-%m-%Y"), format_recap_no_events_for_date
+    else:
+        date_str, no_events = datetime.now().strftime("%d-%m-%Y"), lambda _: RECAP_NO_EVENTS_TODAY
+
+    events = get_pending_events_for_recap(date_str)
+    if not events:
+        await update.message.reply_text(no_events(date_str))
+        return
+    await update.message.reply_text(format_recap_article_started(date_str))
+    await run_article_pipeline(context.bot, config.ADMIN_CHAT_ID, date_str, events)
 
 
 def _channel_forward_origin(message):

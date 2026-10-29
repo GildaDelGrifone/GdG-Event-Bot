@@ -244,5 +244,31 @@ class TestGithub(unittest.TestCase):
         self.assertTrue(callable(github.merge_branch) and callable(github.delete_branch))
 
 
+class TestDiscardArticle(unittest.TestCase):
+    def discard(self, responses):
+        with patched_config(**GH), patch("core.astro.client.requests.request", side_effect=responses) as req:
+            return astro.discard_article("serata/s"), req
+
+    def test_existing_branch_is_deleted(self):
+        result, req = self.discard([_response(200, {"object": {"sha": "abc"}}), _response(204)])
+
+        self.assertIs(result, True)
+        self.assertEqual([(c.args[0], c.args[1]) for c in req.call_args_list], [
+            ("GET", "https://api.github.com/repos/o/r/git/ref/heads/serata/s"),
+            ("DELETE", "https://api.github.com/repos/o/r/git/refs/heads/serata/s"),
+        ])
+
+    def test_missing_branch_means_already_published(self):
+        result, req = self.discard([_response(404)])
+
+        self.assertEqual(result, "published")
+        self.assertEqual(req.call_count, 1)
+
+    def test_failures_return_false(self):
+        self.assertIs(self.discard([_response(200, {"object": {"sha": "a"}}), _response(422)])[0], False)
+        self.assertIs(self.discard([Exception("down")])[0], False)
+        with patched_config(**{**GH, "ASTRO_GITHUB_TOKEN": None}):
+            self.assertIs(astro.discard_article("serata/s"), False)
+
 if __name__ == "__main__":
     unittest.main()
