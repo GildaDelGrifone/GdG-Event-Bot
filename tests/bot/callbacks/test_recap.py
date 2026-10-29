@@ -172,6 +172,8 @@ class TestAstroRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         last = context.bot.send_message.call_args.kwargs
         self.assertEqual(last["reply_markup"].inline_keyboard[0][0].callback_data, "publish_astro_23-10-2026")
         self.assertIn("/serate/2026-10-23-" + slug, last["text"])
+        self.assertEqual(last["parse_mode"], "HTML")
+        self.assertIs(last["disable_web_page_preview"], True)
 
     async def test_failed_draft_reports_error_without_storing(self):
         context, _up, _gen, _pub, upd, _wp_up, _wp_pub = await self._run_recap("astro", publish_result=(False, None))

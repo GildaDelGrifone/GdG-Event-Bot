@@ -97,6 +97,8 @@ async def _finish_astro_draft(bot, chat_id, date_str, day_str, events, content, 
         chat_id=chat_id,
         text=format_astro_draft_created(draft_link, astro.public_url(date_str, slug)),
         reply_markup=get_astro_publish_keyboard(date_str),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
     )
 
 

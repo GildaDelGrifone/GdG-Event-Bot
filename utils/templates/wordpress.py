@@ -1,4 +1,5 @@
 """Recap approval and article (WordPress / Astro site) texts."""
+import html
 
 RECAP_PUBLISHED_SUFFIX = "\n\n✅ RECAP PUBLISHED"
 
@@ -35,10 +36,9 @@ ASTRO_CREATE_ERROR = "❌ Errore durante la creazione dell'articolo sul sito."
 
 
 def format_astro_draft_created(draft_link, public_link):
-    return (
-        f"✅ Bozza articolo creata sul sito:\n{draft_link}\n\n"
-        f"Clicca qui sotto per pubblicarla su:\n{public_link}"
-    )
+    """One HTML line with the draft and the final page as short links (send with parse_mode="HTML")."""
+    draft, public = (html.escape(link, quote=True) for link in (draft_link, public_link))
+    return f'✅ Bozza creata: <a href="{draft}">Vedi bozza</a> · <a href="{public}">Pagina finale</a>'
 
 
 def format_astro_article_published(public_link):

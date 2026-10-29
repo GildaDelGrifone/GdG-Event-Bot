@@ -1,5 +1,6 @@
 import importlib
 import pkgutil
+import re
 import unittest
 from datetime import date
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from utils.templates.event import (
     format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
 from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
+from utils.templates.wordpress import format_astro_draft_created
 from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
 import utils.templates as templates_package
 
@@ -239,6 +241,23 @@ def _load_templates():
 
 
 templates = _load_templates()
+
+
+class TestAstroDraftMessage(unittest.TestCase):
+    def test_links_are_short_labels_and_urls_are_escaped(self):
+        text = format_astro_draft_created('https://gh/blob/x?a=1&b="2"', "https://site/serate/y/")
+
+        self.assertEqual(
+            text,
+            '✅ Bozza creata: <a href="https://gh/blob/x?a=1&amp;b=&quot;2&quot;">Vedi bozza</a>'
+            ' · <a href="https://site/serate/y/">Pagina finale</a>',
+        )
+
+    def test_visible_text_is_one_short_line(self):
+        long_url = "https://github.com/o/r/blob/" + "x" * 200
+        text = format_astro_draft_created(long_url, long_url)
+
+        self.assertEqual(re.sub(r"<[^>]+>", "", text), "✅ Bozza creata: Vedi bozza · Pagina finale")
 
 
 class TestMessageCatalogue(unittest.TestCase):
