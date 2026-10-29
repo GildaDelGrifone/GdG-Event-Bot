@@ -48,7 +48,7 @@ class TestRecapArticleCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         pipeline.assert_not_called()
 
     async def test_non_admin_is_ignored(self):
-        update = make_update(text="/ra", chat_id=1, user=MagicMock(id=1, username="x"))
+        update = make_update(text="/recap_article", chat_id=1, user=MagicMock(id=1, username="x"))
         _update, _context, load, pipeline = await self._run([], [{"id": 1}], update=update)
 
         load.assert_not_called()

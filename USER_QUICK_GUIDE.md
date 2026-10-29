@@ -86,7 +86,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 ### 7. Generazione Recap
 - **Automatica:** Il bot genera automaticamente un riepilogo giornaliero alle **16:00** nei giorni di apertura (Lunedì, Mercoledì, Venerdì, Sabato, Domenica).
 - **Manuale:** Puoi forzare un recap in qualsiasi momento inviando il comando `/recap_generate` (o `/rg`). Per fare il recap di un giorno specifico usa `/rg DD-MM-YYYY`.
-- **Articolo:** sotto la bozza dell'articolo trovi **[Pubblica sul sito]** e **[🗑️ Scarta articolo]** (la bozza si scarta solo se non è già stata pubblicata). Per rigenerare solo l'articolo di una serata usa `/ra` (oggi) o `/ra DD-MM-YYYY`.
+- **Articolo:** sotto la bozza dell'articolo trovi **[Pubblica sul sito]** e **[🗑️ Scarta articolo]** (la bozza si scarta solo se non è già stata pubblicata). Per rigenerare solo l'articolo di una serata usa `/recap_article` (oggi) o `/recap_article DD-MM-YYYY`.
   *(Nota: se non ci sono eventi in programma per la data richiesta, il bot avvisa direttamente nel gruppo admin)*.
 - Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo per il sito.
 

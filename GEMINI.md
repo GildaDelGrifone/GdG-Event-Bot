@@ -204,7 +204,7 @@ When `[Publish Recap]` is clicked:
    - `[Pubblica sul sito]` looks the branch up by date (`get_article_ref_for_date`), merges it into `ASTRO_GITHUB_BRANCH` and deletes it; Cloudflare deploys the site (~1-2 min) and the bot shows the public URL.
    - `[Pubblica su WordPress]` changes post status from `draft` to `publish` via REST API.
 5. **Discard Article:** the draft card also has `[🗑️ Scarta articolo]` (`discard_astro_<dd-mm-yyyy>` / `discard_wp_<post_id>`). Astro deletes the draft branch (a missing branch means it was already published); WordPress moves the post to the trash after checking it is not `publish`. On success the draft info is cleared from the DB (`clear_article_info_for_date` / `clear_wp_post_info`); an already published article is reported and left alone.
-6. **Article only (`/recap_article [DD-MM-YYYY]`, `/ra`, `bot/handlers/recap.py`):** `run_article_pipeline` in `bot/callbacks/recap.py` redoes collage, uploads, AI text and the draft for the date (today by default) without the recap card or Instagram story. Rerunning for the same date reuses the Astro branch and overwrites the file; WordPress creates a new draft.
+6. **Article only (`/recap_article [DD-MM-YYYY]`, `bot/handlers/recap.py`):** `run_article_pipeline` in `bot/callbacks/recap.py` redoes collage, uploads, AI text and the draft for the date (today by default) without the recap card or Instagram story. Rerunning for the same date reuses the Astro branch and overwrites the file; WordPress creates a new draft.
 
 ### 2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)
 - Automatically runs daily at **23:59** via APScheduler.

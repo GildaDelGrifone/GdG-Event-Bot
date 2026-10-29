@@ -202,7 +202,7 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ours), 2)
         self.assertTrue(all(h.block is False for h in ours))
         command_handler = next(h for h in ours if isinstance(h, CommandHandler))
-        self.assertEqual(command_handler.commands, {"recap_article", "ra"})
+        self.assertEqual(command_handler.commands, {"recap_article"})
 
     def test_publish_command_is_registered_for_text_and_caption(self):
         added = []
