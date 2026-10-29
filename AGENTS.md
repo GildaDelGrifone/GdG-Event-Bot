@@ -6,14 +6,15 @@
   - [2.1. Event Ingestion & Interception](#21-event-ingestion--interception)
   - [2.2. AI Parsing (`core/ai_parser.py`)](#22-ai-parsing-coreai_parserpy)
   - [2.3. Admin Review & Approval (`bot/callbacks/events.py`)](#23-admin-review--approval-botcallbackseventspy)
-  - [2.4. Interactive Live Booking System](#24-interactive-live-booking-system)
-  - [2.5. Cancellation System](#25-cancellation-system)
-  - [2.6. Daily Recap Generation (`core/scheduler/recap.py` & `bot/handlers/recap.py`)](#26-daily-recap-generation-coreschedulerrecappy--bothandlersrecappy)
-  - [2.7. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)](#27-post-recap-article--story-pipeline-botcallbacksrecappy)
-  - [2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `unzip_images.py`)](#28-nightly-image-archiving-coreschedulerarchivepy--unzip_imagespy)
-  - [2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#29-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
-  - [2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#210-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
-  - [2.11. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)](#211-eventbrite-integration-coreeventbrite--botserviceeventbritepy)
+  - [2.4. Public Booking, Deep-Link Participant List & Same-Day Conflict Warnings](#24-public-booking-deep-link-participant-list--same-day-conflict-warnings)
+  - [2.5. Admin Subscriber Management](#25-admin-subscriber-management)
+  - [2.6. Cancellation & Reactivation System](#26-cancellation--reactivation-system)
+  - [2.7. Daily Recap Generation (`core/scheduler/recap.py` & `bot/handlers/recap.py`)](#27-daily-recap-generation-coreschedulerrecappy--bothandlersrecappy)
+  - [2.8. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)](#28-post-recap-article--story-pipeline-botcallbacksrecappy)
+  - [2.9. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)](#29-nightly-image-archiving-coreschedulerarchivepy--scriptsunzip_imagespy)
+  - [2.10. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#210-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
+  - [2.11. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#211-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
+  - [2.12. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)](#212-eventbrite-integration-coreeventbrite--botserviceeventbritepy)
 - [3. Directory Structure](#3-directory-structure)
   - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
   - [3.2. `core/` Package Architecture](#32-core-package-architecture)
@@ -102,7 +103,7 @@ The system automates the ingestion, standardization, social sharing, and booking
     🚨 Errore Gemini AI (Crediti esauriti):
     429 Your prepayment credits are depleted.
     ```
-  - This alert is triggered during event parsing (`handle_event_extraction`) and recap WordPress article generation (`bot/callbacks/recap.py`), via the shared `notify_quota_depleted` helper in `bot/common/previews.py`.
+  - This alert is triggered during event parsing (`handle_event_extraction`) and recap article generation (`bot/callbacks/recap.py`), via the shared `notify_quota_depleted` helper in `bot/common/previews.py`.
 
 ### 2.3. Admin Review & Approval (`bot/callbacks/events.py`)
 - For messages intercepted and deleted from `PUBLIC_CHANNEL_ID`, the raw `original_text` of the event is sent to `ADMIN_CHAT_ID` as a separate message so admins can verify if the AI made any mistakes (omitted for manual `/event_process` or `/ep` triggers where the original message is already in `ADMIN_CHAT_ID`).
@@ -188,7 +189,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 5. **Approval:**
    - Sends collage + recap text to `ADMIN_CHAT_ID` with `[Publish Recap]` and `[Discard Recap]`.
 
-### 2.7. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)
+### 2.8. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)
 When `[Publish Recap]` is clicked:
 1. **Public Telegram Recap:** The collage + text is published to `PUBLIC_CHANNEL_ID`. The links message (`recap_links_text`) is NOT posted to the public channel; it is sent exclusively as a reply to the automatic channel forward in the Discussion Chat group (`DISCUSSION_GROUP_ID`).
 2. **Instagram Recap Story:**
@@ -206,19 +207,19 @@ When `[Publish Recap]` is clicked:
 5. **Discard Article:** the draft card also has `[🗑️ Scarta articolo]` (`discard_astro_<dd-mm-yyyy>` / `discard_wp_<post_id>`). Astro deletes the draft branch (a missing branch means it was already published); WordPress moves the post to the trash after checking it is not `publish`. On success the draft info is cleared from the DB (`clear_article_info_for_date` / `clear_wp_post_info`); an already published article is reported and left alone.
 6. **Article only (`/recap_article [DD-MM-YYYY]`, `bot/handlers/recap.py`):** `run_article_pipeline` in `bot/callbacks/recap.py` redoes collage, uploads, AI text and the draft for the date (today by default) without the recap card or Instagram story. Rerunning for the same date reuses the Astro branch and overwrites the file; WordPress creates a new draft.
 
-### 2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)
+### 2.9. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)
 - Automatically runs daily at **23:59** via APScheduler.
 - Checks today's folder (`[DATA_DIR]/YYYY/MM/DD/`) for images (`.jpg`, `.jpeg`, `.png`, `.webp`).
 - Compresses them into `archive.zip` inside the same folder and removes the original loose image files to save disk space.
 - Utility script `scripts/unzip_images.py` allows restoring images from `archive.zip` by specifying a folder, date, or date range.
 
-### 2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)
+### 2.10. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)
 - Application logging is recorded simultaneously to stdout/terminal and daily log files in `[DATA_DIR]/logs/bot.log`.
 - Log files rotate daily at midnight via `DailyMonthlyLogHandler` (`TimedRotatingFileHandler`).
 - Upon each daily rotation (as well as on startup and via a nightly check at 00:05 in `core/scheduler/archive.py`), the system checks whether the previous month has ended.
 - Daily logs from ended months are aggregated and compressed into `[DATA_DIR]/logs/bot_logs_YYYY-MM.zip`, and the loose daily log files for that month are deleted to save disk space.
 
-### 2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)
+### 2.11. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)
 - **Direct Reposting (`/event_repost DATE SEATS` or `/er DATE SEATS`):**
   - Allows admins to reply to any event announcement or bot preview to re-process and repost it with a single command.
   - Groups AI parsing (`/event_process`), date modification (`/event_edit_date`), and seats capacity adjustment (`/event_edit_seats`) into one operation.
@@ -242,7 +243,7 @@ When `[Publish Recap]` is clicked:
 - **Scheduled Events List (`/event_schedule_list`):**
   - Displays all scheduled repost entries stored in SQLite with their IDs, active recurring days, specific dates, and direct clickable `/event_schedule_invoke <ID>` commands for instant posting.
 
-### 2.11. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)
+### 2.12. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)
 Optional. An approved event can also be published on **Eventbrite** so people outside Telegram can book. Both platforms draw from **one seat pool**. The integration is enabled only when `EVENTBRITE_TOKEN`, `EVENTBRITE_ORGANIZATION_ID` and `EVENTBRITE_VENUE_ID` are all set (`core.eventbrite.eventbrite_enabled()`); every button and hook checks it, so with Eventbrite unconfigured the bot behaves exactly as before and no new buttons appear. There are no webhooks and no web server: Eventbrite is polled.
 
 **Seat model.** `eb_seats` is the sum of `seats_booked` over the event's reservation rows with `source='eventbrite'`; `telegram_booked = booked_seats - eb_seats`; `capacity` is `max_seats` (or `EVENTBRITE_UNLIMITED_CAPACITY` when `max_seats` is NULL). The single free ticket class gets `quantity_total = max(eb_seats, capacity - telegram_booked)`, so Eventbrite's *quantity minus sold* always equals the seats still free on Telegram. When no seat is left (`quantity <= eb_seats`) `core.eventbrite.tickets.update_ticket_capacity` closes sales instead of sending the total: Eventbrite rejects `quantity_total=0` (`NO_QUANTITY_TOTAL`) and a `sales_end` in the past (verified), so the total stays at the sold count (Eventbrite shows "Sold out"), `sales_end` is set 2 minutes ahead and, with nothing sold, the ticket class is also `hidden`. Seats freeing up push the total back with `hidden=false` and `sales_end` at the event end. A stored `eventbrite_quantity_total` of 0 therefore means "sales closed, nothing sold". A cancelled event gets `quantity_total = eb_seats`, which closes sales. The last pushed value is cached in `events.eventbrite_quantity_total` to skip no-op calls (`core.eventbrite.payload.ticket_quantity`).
@@ -326,7 +327,7 @@ GdG-Event-Bot/
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
 │   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_eventbrite_only_toggle, /bot_eventbrite_venue
-│   │   ├── public.py     # /start, /event_next, /event_subs
+│   │   ├── public.py     # /start, /event_next, /event_mine, /event_subs
 │   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
 │   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads
 │   │   ├── extraction.py # handle_event_extraction: AI parse -> pending event -> admin approval card
@@ -373,7 +374,7 @@ GdG-Event-Bot/
 │   │   ├── connection.py # get_connection, transaction(), fetch_one/fetch_all/execute, @db_safe
 │   │   ├── schema.py     # CREATE TABLEs + COLUMN_MIGRATIONS / VERSIONED_MIGRATIONS applied by init_db()
 │   │   ├── events.py     # events table: insert/update/delete, lookups, recap & upcoming queries
-│   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts
+│   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts, a user's upcoming reservations (/event_mine)
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
 │   │   └── scheduled.py  # scheduled_events (repost templates)
 │   ├── scheduler/        # APScheduler jobs
@@ -394,11 +395,11 @@ GdG-Event-Bot/
 │   │   ├── client.py     # GitHub API request helper, lazy boto3 R2 client
 │   │   ├── storage.py    # upload_media to R2 (resize, keys, public URL)
 │   │   ├── github.py     # branches, file commits, merge, delete
-│   │   └── content.py    # slug, front matter, publish_article (draft branch), update_article_status (merge)
+│   │   └── content.py    # article_slug, public_url (no date), front matter, publish_article (draft branch), update_article_status (merge), discard_article (delete branch)
 │   └── wordpress/        # WordPress REST API (public API: `from core.wordpress import ...`)
-│       ├── client.py     # Credentials, auth headers, wp_get / wp_post (with timeouts)
+│       ├── client.py     # Credentials, auth headers, wp_get / wp_post / wp_delete (with timeouts)
 │       ├── categories.py # WP_POST_CATEGORY / slug / name -> category IDs
-│       └── content.py    # upload_media, publish_article (draft), update_article_status
+│       └── content.py    # upload_media, publish_article (draft), update_article_status, discard_article (trash)
 ├── utils/
 │   ├── __init__.py
 │   ├── date_utils.py     # Date parsing, format validation (DD-MM-YYYY [HH:MM]), and anomaly checks
@@ -421,7 +422,12 @@ GdG-Event-Bot/
 │   └── bot_database.db
 ├── .env         # Environment configuration (secrets, tokens, IDs) - GIT IGNORED
 ├── .gitignore            # Git rules ignoring .env, __pycache__, and data contents
-├── requirements.txt      # Python dependencies
+├── requirements.txt      # Python dependencies (incl. boto3 for the Astro backend)
+├── requirements-dev.txt  # pytest, pyflakes
+├── run.sh                # Starts main.py with the .venv / venv interpreter
+├── USER_QUICK_GUIDE.md   # Italian quick guide for admins and users
+├── docs/plans/           # Design notes and one-off plan prompts
+├── .github/workflows/    # CI: pyflakes + unittest
 ├── main.py               # Application entry point
 ├── README.md             # User and operator manual
 ├── AGENTS.md             # This document (technical and architectural specification, read by AI coding tools)
@@ -439,7 +445,7 @@ GdG-Event-Bot/
   - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
   - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`.
   - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`; `resolve_event_id(message)` combines it with a numeric command argument (`/cmd <id>`).
-  - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap WordPress generation and `/event_generate`.
+  - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap article generation and `/event_generate`.
 - **`bot/state.py`:** `runtime_state` (`BotRuntimeState`) holds the pause flag (`is_paused`) and the last published recap (`last_recap_message_id`, `last_recap_events`). `bot/callbacks/recap.py` records a published recap via `remember_published_recap(message_id, events)`; `bot/handlers/recap.py` reads it when the recap is auto-forwarded into the discussion group.
 - **`bot/handlers/`:**
   - `albums.py` owns `media_groups` / `admin_media_groups`, module-level dicts (changed in place, never reassigned) that buffer album photos for channel ingestion and for admin `/ep` / `/event_edit_image`.
@@ -452,12 +458,12 @@ GdG-Event-Bot/
   - `booking.py` handles seat booking/unbooking and same-day conflict warnings.
   - `notices.py` provides `send_admin_action_notice` and `send_discussion_notice`.
   - `mentions.format_subscriber_tag` is the single tag formatter for stored reservations (`@username`, `tg://user` link, or name).
-  - `eventbrite/` holds the Eventbrite flows (see §2.11), split into `common`, `publish`, `sync` and `cancel`; `__init__.py` re-exports the public functions, so other modules import from `bot.service.eventbrite`. In tests, patch a name in the submodule that *calls* it (e.g. `bot.service.eventbrite.publish.publish_event_to_eventbrite`); a patch on the package does not reach calls made between submodules. `posts.update_event_messages` is the single hook point: after the Telegram sync it calls `sync_eventbrite`, and it edits the discussion reply as *text* (`format_discussion_booking_message`) so the Eventbrite link can appear. `publish.py` and `cancel.py` import `update_event_messages` inside their functions, because `posts.py` imports `sync_eventbrite` at module level (patch `bot.service.posts.update_event_messages` in tests). `eventbrite_poll.py` builds `SimpleNamespace(bot=bot)` as the context, since services only use `context.bot`.
+  - `eventbrite/` holds the Eventbrite flows (see §2.12), split into `common`, `publish`, `sync` and `cancel`; `__init__.py` re-exports the public functions, so other modules import from `bot.service.eventbrite`. In tests, patch a name in the submodule that *calls* it (e.g. `bot.service.eventbrite.publish.publish_event_to_eventbrite`); a patch on the package does not reach calls made between submodules. `posts.update_event_messages` is the single hook point: after the Telegram sync it calls `sync_eventbrite`, and it edits the discussion reply as *text* (`format_discussion_booking_message`) so the Eventbrite link can appear. `publish.py` and `cancel.py` import `update_event_messages` inside their functions, because `posts.py` imports `sync_eventbrite` at module level (patch `bot.service.posts.update_event_messages` in tests). `eventbrite_poll.py` builds `SimpleNamespace(bot=bot)` as the context, since services only use `context.bot`.
 
 
 ### 3.2. `core/` Package Architecture
 - **Configuration is read at call time** (`config.ADMIN_CHAT_ID`, `config.DB_PATH`, `config.WP_URL`, `config.IG_ACCESS_TOKEN`, …), never copied at import. Tests and scripts redirect the database by setting/patching `core.config.DB_PATH`.
-- **`core.db` and `core.wordpress` are facades.** Their `__init__.py` re-exports the public API (`__all__`), so callers write `from core.db import get_event`. The submodules call each other directly, so patch a DB/WordPress function in the module that *uses* it. HTTP for WordPress goes through `core.wordpress.client` (patch `core.wordpress.client.requests.*`). `core.scheduler` is a set of job modules with an empty `__init__.py`, the same as the `bot/` packages: import `core.scheduler.runner.start_scheduler`, `core.scheduler.recap.generate_daily_recap`, etc.
+- **`core.db`, `core.wordpress` and `core.astro` are facades.** Their `__init__.py` re-exports the public API (`__all__`), so callers write `from core.db import get_event`. The submodules call each other directly, so patch a DB/WordPress/Astro function in the module that *uses* it. HTTP for WordPress goes through `core.wordpress.client` (patch `core.wordpress.client.requests.*`); for Astro, GitHub calls go through `core.astro.client` (patch `core.astro.client.requests.request`) and the R2 client comes from `core.astro.client.r2_client` (boto3 is imported lazily, so patch `r2_client`, not boto3). `core.scheduler` is a set of job modules with an empty `__init__.py`, the same as the `bot/` packages: import `core.scheduler.runner.start_scheduler`, `core.scheduler.recap.generate_daily_recap`, etc.
 - **`core.eventbrite` is a facade too** (same rules as `core.wordpress`): `__init__.py` re-exports the public API, HTTP goes through `core.eventbrite.client` (patch `core.eventbrite.client.requests.*`), calls are synchronous with a 30 s timeout and async callers wrap them in `asyncio.to_thread`. Branch on `EventbriteError.error` (the API's error constant), never on its description. `payload.py` is pure and heavily unit-tested.
 - **DB plumbing (`core/db/connection.py`):**
   - `transaction()` yields a cursor with dict-like rows, commits or rolls back, and always closes the connection.
@@ -469,10 +475,10 @@ GdG-Event-Bot/
 - **Eventbrite columns** are written only through `set_eventbrite_info` / `clear_eventbrite_info` (a whitelist); they are deliberately not in `EDITABLE_EVENT_FIELDS`, so `/event_edit_*` cannot set them. `init_db()` also applies an `INDEXES` tuple (a unique index on `reservations(event_id, eventbrite_order_id)`).
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
-- **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`.
+- **Gemini (`core/ai_parser.py`):** `generate_text(prompt)` is the single entry point to `config.GEMINI_MODEL` and raises `GeminiQuotaError` on quota/credit errors. `strip_json_fence` and `coerce_bool` are shared with `bot/event_generator/ai.py`. `generate_wordpress_article` (HTML) and `generate_astro_article` (Markdown, wrapping fences removed by `strip_code_fence`) share one prompt brief (`_article_brief`).
 - **Texts:** all user-facing Telegram texts (replies, popups, notices, inline button labels, `BotCommand` descriptions) live in the `utils/templates/` package (one module per area, imported by name, e.g. `from utils.templates.common import POPUP_CLOSED`) as constants or `format_*` helpers; handlers, callbacks and services import them instead of using inline literals. Logging, exceptions, `callback_data` and the LLM prompt stay where they are.
 - **Scheduler:** `runner.add_interval_job(func, minutes, args)` registers a repeating, non-overlapping job on the running scheduler (the Eventbrite poller) and `runner.add_cron_job(func, hour, minute, args)` a daily one (the Eventbrite cleanup at 23:59); `core/` never imports `bot/` for them.
-- **External HTTP:** WordPress calls default to a 30 s timeout (category lookups 10 s). Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
+- **External HTTP:** WordPress and GitHub (Astro) calls default to a 30 s timeout (WordPress category lookups 10 s); R2 uploads go through boto3. Instagram Graph calls run in a worker thread (`asyncio.to_thread`) with a 30 s timeout, so a slow Meta API cannot freeze the bot.
 - **Known layering debt:** `core/scheduler/recap.py` still imports `bot.keyboards.get_recap_approval_keyboard` (core → bot). Moving the recap job into `bot/` would remove it.
 
 ### 3.3. `tests/` Layout
@@ -617,7 +623,7 @@ Every user-facing Telegram text lives in the `utils/templates/` package, one mod
 |---|---|
 | `common.py` | `format_event_title_link` (escaped, bold, linked to the channel post), `ASSOCIATION_ADDRESS`, `CAPTION_LIMIT` (Telegram caption length, 1024), `EVENTBRITE_ROW_PREFIX`, generic replies and popups (`UNAUTHORIZED_REPLY`, `POPUP_EVENT_NOT_FOUND`, `POPUP_CLOSED`, `NO_TEXT_IN_REPLIED_MESSAGE`), `format_seats_count`, `format_admin_failure/success` |
 | `event.py` | `format_public_event_message` (channel post), `format_instagram_story`, `format_event_seats`, `format_discussion_booking_message` (`👇 Gestisci qui la tua prenotazione!`, plus the Eventbrite link when the event is `live`) |
-| `recap.py` | `format_contacts` (Italian list of `RECAP_CONTACTS`), `recap_generate_text` (full recap; footer uses `RECAP_CONTACTS` and `EVENT_START_TIME`; switches to the slim variant when it exceeds the 1024-character caption limit), `recap_links_text` (discussion comment with linked titles), `/recap_generate` and recap-job messages |
+| `recap.py` | `format_contacts` (Italian list of `RECAP_CONTACTS`), `recap_generate_text` (full recap; footer uses `RECAP_CONTACTS` and `EVENT_START_TIME`; switches to the slim variant when it exceeds the 1024-character caption limit), `recap_links_text` (discussion comment with linked titles), `/recap_generate`, `/recap_article` and recap-job messages |
 | `subscribers.py` | `format_reservation_subscriber_display`, `format_event_participants_message`, the subscribers management panel (`format_subscribers_panel`), `/event_sub_add` / `/event_sub_remove` usage and the add-subscriber prompt (`ADD_SUBSCRIBER_PROMPT_MARKER` is matched by `handle_admin_reply`) |
 | `reposts.py` | `format_schedule_repost_message`, `REPOST_UPDATE_REMINDER`, `/event_repost` and `/event_schedule*` replies, the daily digest and list entries, schedule popups |
 | `control.py` | `/bot_pause`, `/bot_resume`, `/bot_status`, Eventbrite-only mode and the venue picker texts |
@@ -625,7 +631,7 @@ Every user-facing Telegram text lives in the `utils/templates/` package, one mod
 | `booking.py` | booking/unbooking notices, same-day conflict warning, admin seat-action notice, cancellation/reactivation status notice |
 | `edit.py` | `/event_edit_*` replies and errors |
 | `approval.py` | status suffixes of the admin card (`APPROVED_SUFFIX`, …; the suffix swap in `bot/callbacks/events.py` strips them by exact match), preview warnings, approval/cancellation popups, story captions |
-| `public.py` | `/event_process`, `/event_next`, `/event_subs` and `/start` texts |
+| `public.py` | `/event_process`, `/event_next`, `/event_mine`, `/event_subs` and `/start` texts |
 | `wordpress.py` | recap approval card suffixes and article (WordPress / Astro) messages |
 | `generator.py` | `/event_generate` usage, progress and results |
 | `keyboards.py` | every inline button label (`BUTTON_*`) and the label formatters used by `bot/keyboards.py` |

@@ -14,10 +14,12 @@ This application monitors a Telegram channel, extracts event information using *
 - [Running the Application](#running-the-application)
 - [Telegram Commands & Workflow](#telegram-commands--workflow)
   - [1. New Event Flow](#1-new-event-flow)
-  - [2. Live Seat Booking](#2-live-seat-booking)
+  - [2. Live Seat Booking & Same-Day Conflict Warnings](#2-live-seat-booking--same-day-conflict-warnings)
   - [3. Daily Recap Flow](#3-daily-recap-flow)
   - [4. Admin Event Editing (Reply Commands)](#4-admin-event-editing-reply-commands)
-  - [5. Bot Control Commands](#5-bot-control-commands)
+  - [5. Admin Subscriber Management](#5-admin-subscriber-management)
+  - [6. Event Cancellation & Reactivation](#6-event-cancellation--reactivation)
+  - [7. Event Overview & Bot Control Commands](#7-event-overview--bot-control-commands)
 - [Storage & Folder Structure](#storage--folder-structure)
 - [Maintenance & Diagnostic Scripts](#maintenance--diagnostic-scripts)
 - [Development & Tests](#development--tests)
@@ -28,6 +30,7 @@ This application monitors a Telegram channel, extracts event information using *
 
 - **Automated Telegram Channel Interception:** Listens to the public announcement channel. When an admin posts a message, the bot parses the content with Gemini AI. If confirmed as a bookable event, the bot deletes the raw post and routes it to an admin review chat; non-event announcements, reminders, and notices are left untouched in the channel.
 - **Interactive Live Booking System & Same-Day Conflict Warnings:** Published events feature inline `[➕ Prenota]`, `[👥 Lista]`, and `[➖ Annulla]` buttons across both the announcement channel and discussion group. Users can reserve or release seats directly in Telegram; message text updates live to reflect remaining availability, and reply notifications are posted automatically. The `[👥 Lista]` button deep-links to a private DM with the bot (`/start subs_{id}`), providing a full roster of participants without generating chat spam. If a user reserves a seat on multiple valid events on the same day, the bot automatically warns them in chat with links to all conflicting events so they can choose which to keep.
+- **Personal Event Overview:** Anyone can ask the bot for the upcoming events (`/event_next`) or only the ones they are booked to (`/event_mine`), in a private chat, in the admin chat or in the discussion group.
 - **Event Cancellation:** Admins can cancel any event at any time using a persistent `[Cancel]` button. Cancelled events update live in the channel and are flagged as `[ANNULLATO]` with zero seats in recaps and graphics.
 - **Daily Recaps & Multi-Image Collages:** Automatically runs at 16:00 on gaming days (Mon, Wed, Fri, Sat, Sun) or on-demand via `/recap_generate`. Stitches event artwork into clean collages (wrapped into multiple rows via `MAX_EVENTS_PER_ROW`) without cropping borders.
 - **Instagram Story Generator:** Programmatically builds 1080x1920 Instagram Story cards for individual events and daily recaps using Pillow (handling top banner artwork, dynamic text wrapping, seat counters, and association location footers).
@@ -52,7 +55,7 @@ This application monitors a Telegram channel, extracts event information using *
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Destard20/GdG-Event-Bot.git
+   git clone https://github.com/GildaDelGrifone/GdG-Event-Bot.git
    cd GdG-Event-Bot
    ```
 
@@ -162,7 +165,7 @@ IG_ACCOUNT_ID=178414...
 
 # Game night texts (Optional)
 # EVENT_START_TIME=20:45                   # "Ci vediamo alle ..." in the recap and story; default Eventbrite start time
-# RECAP_CONTACTS=@Destard,@ManueleAbi      # who to contact to propose an event (recap texts, WordPress article)
+# RECAP_CONTACTS=@Destard,@ManueleAbi      # who to contact to propose an event (recap texts, article)
 
 # Collage Configuration (Optional)
 MAX_EVENTS_PER_ROW=4
@@ -333,7 +336,8 @@ All maintenance utilities are located in the `scripts/` directory:
   # Generate story image overriding the event photo:
   python3 scripts/generate_story.py 1 --image /path/to/image.jpg
 
-  # Generate story image and publish directly to Instagram (via WordPress media upload):
+  # Generate story image and publish directly to Instagram (the image is first uploaded to R2, or to WordPress
+  # with ARTICLE_BACKEND=wordpress, to get a public URL):
   python3 scripts/generate_story.py 1 --publish-ig
   ```
 
@@ -411,7 +415,7 @@ All maintenance utilities are located in the `scripts/` directory:
 ## Development & Tests
 
 - **Code layout:** the `bot/` code is split into packages:
-  - `bot/handlers/`: one module per command family (`control`, `public`, `ingestion`, `albums`, `extraction`, `edit`, `subscribers`, `recap`, `repost`, `repost_schedule`, `eventbrite`).
+  - `bot/handlers/`: one module per command family (`control`, `public`, `ingestion`, `albums`, `extraction`, `edit`, `subscribers`, `recap`, `repost`, `repost_schedule`, `story`, `eventbrite`).
   - `bot/callbacks/`: inline-button handlers, dispatched by the `CALLBACK_ROUTES` prefix table in `router.py`.
   - `bot/service/`: shared Telegram side effects (post sync, booking, notices, Eventbrite publish/sync/poll).
   - `bot/event_generator/`: the `/event_generate` feature.
