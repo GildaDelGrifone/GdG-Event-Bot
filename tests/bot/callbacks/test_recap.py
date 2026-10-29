@@ -118,8 +118,9 @@ class TestPublishRecap(unittest.IsolatedAsyncioTestCase):
 
 
 ASTRO_EVENTS = [
-    sample_event(id=1, title="Catan", image_path="/fake/catan.jpg", is_roleplay=0, status="approved"),
-    sample_event(id=2, title="D&D", image_path=None, is_roleplay=1, status="approved"),
+    sample_event(id=1, title="Catan", image_path="/fake/catan.jpg", is_roleplay=0, status="approved",
+                 message_link="https://t.me/Gilda/1"),
+    sample_event(id=2, title="D&D", image_path=None, is_roleplay=1, status="approved", message_link=None),
     sample_event(id=3, title="Annullata", image_path=None, is_roleplay=0, status="cancelled"),
 ]
 
@@ -165,7 +166,8 @@ class TestAstroRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args[2:4], ("23-10-2026", slug))
         self.assertEqual(args[4], f"https://r2/serate/{slug}/fake/collage.jpg")
         self.assertEqual(args[6], [
-            {"gioco": "Catan", "tipo": "tavolo", "immagine": f"https://r2/serate/{slug}/fake/catan.jpg"},
+            {"gioco": "Catan", "tipo": "tavolo", "link": "https://t.me/Gilda/1",
+             "immagine": f"https://r2/serate/{slug}/fake/catan.jpg"},
             {"gioco": "D&D", "tipo": "gdr"},
         ])
         upd.assert_called_once_with([1, 2, 3], "astro", "serata/x", "https://github.com/o/r/blob/serata/x/f.md")

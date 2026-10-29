@@ -141,7 +141,8 @@ class TestContent(unittest.TestCase):
     def test_front_matter_matches_the_site_schema(self):
         text = astro.build_front_matter(
             "Eventi della Serata: Venerdì 23-10-2026", "2026-10-23", "https://r2/c.jpg", "Un estratto…",
-            [{"gioco": "Catan", "tipo": "tavolo", "immagine": "https://r2/catan.jpg"}, {"gioco": "D&D", "tipo": "gdr"}],
+            [{"gioco": "Catan", "tipo": "tavolo", "link": "https://t.me/Gilda/12", "immagine": "https://r2/catan.jpg"},
+             {"gioco": "D&D", "tipo": "gdr"}],
         )
         self.assertEqual(text, (
             '---\n'
@@ -150,7 +151,7 @@ class TestContent(unittest.TestCase):
             'cover: "https://r2/c.jpg"\n'
             'excerpt: "Un estratto…"\n'
             'tavoli:\n'
-            '  - { gioco: "Catan", tipo: tavolo, immagine: "https://r2/catan.jpg" }\n'
+            '  - { gioco: "Catan", tipo: tavolo, link: "https://t.me/Gilda/12", immagine: "https://r2/catan.jpg" }\n'
             '  - { gioco: "D&D", tipo: gdr }\n'
             '---\n'
         ))
@@ -161,6 +162,27 @@ class TestContent(unittest.TestCase):
         self.assertIn('excerpt: "Dice \\"ciao\\""', text)
         self.assertNotIn("cover", text)
         self.assertNotIn("tavoli", text)
+
+    def test_tavolo_without_link_or_image_has_only_name_and_type(self):
+        text = astro.build_front_matter("T", "2026-10-23", None, "e", [{"gioco": "D&D", "tipo": "gdr"}])
+        self.assertIn('  - { gioco: "D&D", tipo: gdr }\n', text)
+        self.assertNotIn("link", text)
+
+    def test_tavolo_link_is_quoted(self):
+        text = astro.build_front_matter("T", "2026-10-23", None, "e", [{"gioco": "x", "tipo": "tavolo", "link": 'https://t.me/a?b="1"'}])
+        self.assertIn('link: "https://t.me/a?b=\\"1\\""', text)
+
+    def test_tavoli_from_events_adds_type_link_and_image_and_skips_cancelled(self):
+        events = [
+            {"title": "Catan", "is_roleplay": 0, "status": "approved", "message_link": "https://t.me/G/1", "media_url": "https://r2/c.jpg"},
+            {"title": "D&D", "is_roleplay": 1, "status": "approved"},
+            {"title": "Annullata", "is_roleplay": 0, "status": "cancelled", "message_link": "https://t.me/G/3"},
+        ]
+
+        self.assertEqual(astro.tavoli_from_events(events), [
+            {"gioco": "Catan", "tipo": "tavolo", "link": "https://t.me/G/1", "immagine": "https://r2/c.jpg"},
+            {"gioco": "D&D", "tipo": "gdr"},
+        ])
 
     def test_excerpt_is_plain_text_cut_with_ellipsis(self):
         body = "### Titolo\n\n![x](https://r2/x.jpg)\n\nUna **serata** con [Catan](https://t.me/x) " + "parola " * 60

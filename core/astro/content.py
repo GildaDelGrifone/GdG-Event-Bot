@@ -52,8 +52,21 @@ def _quote(value):
     return json.dumps(str(value), ensure_ascii=False)
 
 
+def tavoli_from_events(events):
+    """The `tavoli` front matter entries of a night: one per event that is not cancelled, with its Telegram link and image when known."""
+    return [
+        {
+            'gioco': ev.get('title'),
+            'tipo': 'gdr' if ev.get('is_roleplay') else 'tavolo',
+            **({'link': ev['message_link']} if ev.get('message_link') else {}),
+            **({'immagine': ev['media_url']} if ev.get('media_url') else {}),
+        }
+        for ev in events if ev.get('status') != 'cancelled'
+    ]
+
+
 def build_front_matter(title, date_iso, cover_url, excerpt, tavoli):
-    """The Astro content-collection front matter; `tavoli` items are {'gioco', 'tipo', 'immagine'?}."""
+    """The Astro content-collection front matter; `tavoli` items are {'gioco', 'tipo', 'link'?, 'immagine'?}."""
     lines = ["---", f"title: {_quote(title)}", f"date: {date_iso}"]
     if cover_url:
         lines.append(f"cover: {_quote(cover_url)}")
@@ -62,6 +75,8 @@ def build_front_matter(title, date_iso, cover_url, excerpt, tavoli):
         lines.append("tavoli:")
         for tavolo in tavoli:
             fields = [f"gioco: {_quote(tavolo['gioco'])}", f"tipo: {tavolo['tipo']}"]
+            if tavolo.get("link"):
+                fields.append(f"link: {_quote(tavolo['link'])}")
             if tavolo.get("immagine"):
                 fields.append(f"immagine: {_quote(tavolo['immagine'])}")
             lines.append(f"  - {{ {', '.join(fields)} }}")

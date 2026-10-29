@@ -68,17 +68,6 @@ async def _finish_wordpress_draft(bot, chat_id, date_str, day_str, events, conte
     )
 
 
-def _astro_tables(events):
-    return [
-        {
-            'gioco': ev.get('title'),
-            'tipo': 'gdr' if ev.get('is_roleplay') else 'tavolo',
-            **({'immagine': ev['media_url']} if ev.get('media_url') else {}),
-        }
-        for ev in events if ev.get('status') != 'cancelled'
-    ]
-
-
 async def _finish_astro_draft(bot, chat_id, date_str, day_str, events, content, collage_info):
     slug = astro.article_slug(date_str)
     cover_url = collage_info.get('source_url') if collage_info else None
@@ -86,7 +75,7 @@ async def _finish_astro_draft(bot, chat_id, date_str, day_str, events, content, 
     draft_link, branch = await asyncio.to_thread(
         astro.publish_article,
         f"Eventi della Serata: {day_str} {date_str}", content, date_str, slug,
-        cover_url, make_excerpt(content), _astro_tables(events),
+        cover_url, make_excerpt(content), astro.tavoli_from_events(events),
     )
     if not (draft_link and branch):
         await bot.send_message(chat_id=chat_id, text=ASTRO_CREATE_ERROR)
