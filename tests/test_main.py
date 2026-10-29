@@ -107,12 +107,14 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         cmds1, kwargs1 = set_commands.call_args_list[0][0][0], set_commands.call_args_list[0][1]
         self.assertIsInstance(kwargs1.get("scope"), BotCommandScopeDefault)
         self.assertTrue(any(c.command == "start" for c in cmds1))
+        self.assertTrue(any(c.command == "event_mine" for c in cmds1))
 
         cmds2, kwargs2 = set_commands.call_args_list[1][0][0], set_commands.call_args_list[1][1]
         self.assertIsInstance(kwargs2.get("scope"), BotCommandScopeChat)
         self.assertEqual(kwargs2["scope"].chat_id, -100123456)
         cmd_names = [c.command for c in cmds2]
         self.assertIn("event_next", cmd_names)
+        self.assertIn("event_mine", cmd_names)
         self.assertIn("event_edit_title", cmd_names)
         self.assertIn("event_edit_date", cmd_names)
         self.assertNotIn("event_edit_normalized_date", cmd_names)

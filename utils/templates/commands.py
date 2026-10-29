@@ -2,6 +2,7 @@
 
 DEFAULT_COMMAND_DESCRIPTIONS = (
     ("start", "Avvia il bot e visualizza info o iscritti"),
+    ("event_mine", "Mostra gli eventi a cui sei prenotato"),
     ("event_next", "[gg-mm-aaaa|oggi|lunedì…] Mostra gli eventi in programma, o solo quelli di un giorno"),
     ("event_subs", "<id> Mostra gli iscritti di un evento"),
 )

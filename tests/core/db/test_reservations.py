@@ -1,8 +1,9 @@
 import unittest
+from datetime import date, timedelta
 
 import core.db as db
 from core.db.reservations import normalize_identity
-from tests.support.db import SUBSCRIBED_EVENT, TempDBMixin, create_subscribed_event
+from tests.support.db import SUBSCRIBED_EVENT, TempDBMixin, create_event, create_subscribed_event
 
 
 class TestNormalizeIdentity(unittest.TestCase):
@@ -71,6 +72,68 @@ class TestConflictingEvents(TempDBMixin, unittest.TestCase):
         self.assertIn(event_id, conflict_ids)
         self.assertIn(ev2_id, conflict_ids)
 
+
+class TestUserUpcomingReservations(TempDBMixin, unittest.TestCase):
+    def _event(self, days=1, status="approved", **overrides):
+        day = (date.today() + timedelta(days=days)).strftime("%d-%m-%Y")
+        return create_event(status=status, normalized_date=day, date=day, **overrides)
+
+    def _mine(self, user_id=1001, username="mario"):
+        return [(ev["id"], ev["my_seats"]) for ev in db.get_user_upcoming_reservations(user_id, username)]
+
+    def test_lists_today_and_future_events_sorted_with_my_seats(self):
+        later, today, soon = self._event(days=5), self._event(days=0), self._event(days=2)
+        for event_id, seats in ((later, 1), (today, 2), (soon, 1)):
+            for _ in range(seats):
+                db.book_seat(event_id, 1001, "mario")
+
+        self.assertEqual(self._mine(), [(today, 2), (soon, 1), (later, 1)])
+
+    def test_past_cancelled_and_discarded_events_are_left_out(self):
+        past = self._event(days=-1)
+        cancelled = self._event(status="cancelled")
+        discarded = self._event(status="discarded")
+        pending = self._event(status="pending")
+        for event_id in (past, cancelled, discarded, pending):
+            db.book_seat(event_id, 1001, "mario")
+
+        self.assertEqual(self._mine(), [])
+
+    def test_released_seats_and_other_users_are_left_out(self):
+        released, other = self._event(), self._event()
+        db.book_seat(released, 1001, "mario")
+        db.unbook_seat(released, 1001, "mario")
+        db.book_seat(other, 2002, "luigi")
+
+        self.assertEqual(self._mine(), [])
+        self.assertEqual([ev["id"] for ev in db.get_user_upcoming_reservations(2002, "luigi")], [other])
+
+    def test_matches_by_user_id_even_when_the_username_changed(self):
+        event_id = self._event()
+        db.book_seat(event_id, 1001, "mario")
+
+        self.assertEqual(self._mine(user_id=1001, username="mario_new"), [(event_id, 1)])
+        self.assertEqual(self._mine(user_id=1001, username=None), [(event_id, 1)])
+
+    def test_matches_admin_added_rows_by_username_only(self):
+        event_id = self._event()
+        db.admin_add_subscriber(event_id, "@Mario", seats=2)
+
+        self.assertEqual(self._mine(user_id=1001, username="mario"), [(event_id, 2)])
+        self.assertEqual(self._mine(user_id=1001, username="someone_else"), [])
+
+    def test_eventbrite_attendees_never_match(self):
+        event_id = self._event()
+        db.apply_eventbrite_order(event_id, "ord-1", "mario", 1)
+
+        self.assertEqual(self._mine(), [])
+
+    def test_no_identity_returns_nothing(self):
+        event_id = self._event()
+        db.book_seat(event_id, 1001, "mario")
+
+        self.assertEqual(db.get_user_upcoming_reservations(None, None), [])
+        self.assertEqual(db.get_user_upcoming_reservations(None, "  @ "), [])
 
 if __name__ == "__main__":
     unittest.main()

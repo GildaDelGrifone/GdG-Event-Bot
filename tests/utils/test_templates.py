@@ -12,6 +12,7 @@ from utils.templates.event import (
     format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
 from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
+from utils.templates.public import format_event_mine_entry, format_event_mine_prefix
 from utils.templates.wordpress import format_astro_draft_created
 from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
 import utils.templates as templates_package
@@ -258,6 +259,24 @@ class TestAstroDraftMessage(unittest.TestCase):
         text = format_astro_draft_created(long_url, long_url)
 
         self.assertEqual(re.sub(r"<[^>]+>", "", text), "✅ Bozza creata: Vedi bozza · Pagina finale")
+
+
+class TestEventMineTemplates(unittest.TestCase):
+    def test_entry_shows_the_users_seats_and_links(self):
+        entry = format_event_mine_entry(7, "Catan", "05-09-2099", 2, ["<a href=\"x\">Canale Eventi</a>", "👥 Iscritti (1/4)"])
+
+        self.assertEqual(entry, (
+            "• <b>Catan</b> (ID 7)\n"
+            "  🗓️ Data: 05-09-2099\n"
+            "  🪑 Posti prenotati da te: 2\n"
+            "  🔗 <a href=\"x\">Canale Eventi</a> | 👥 Iscritti (1/4)\n"
+        ))
+
+    def test_prefix_mentions_that_eventbrite_bookings_are_not_included(self):
+        prefix = format_event_mine_prefix()
+
+        self.assertIn("Le tue prenotazioni", prefix)
+        self.assertIn("Eventbrite", prefix)
 
 
 class TestMessageCatalogue(unittest.TestCase):

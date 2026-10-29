@@ -18,7 +18,7 @@ from bot.handlers.control import bot_pause_command, bot_resume_command, bot_even
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
-from bot.handlers.public import event_next_command, event_subs_command, start_command
+from bot.handlers.public import event_mine_command, event_next_command, event_subs_command, start_command
 from bot.handlers.recap import manual_recap_command, recap_article_command, handle_discussion_forward
 from bot.handlers.repost import event_repost_command, event_schedule_invoke_command
 from bot.handlers.repost_schedule import (
@@ -122,6 +122,7 @@ def main():
     application.add_handler(CommandHandler("ep", manual_trigger_command, block=False))
     application.add_handler(CommandHandler("event_generate", event_generate_command, block=False))
     application.add_handler(CommandHandler("event_next", event_next_command))
+    application.add_handler(CommandHandler("event_mine", event_mine_command))
     application.add_handler(CommandHandler(["event_subs", "subs"], event_subs_command))
     application.add_handler(MessageHandler(filters.Regex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)") | filters.CaptionRegex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)"), event_subs_command))
     application.add_handler(CommandHandler("recap_generate", manual_recap_command))

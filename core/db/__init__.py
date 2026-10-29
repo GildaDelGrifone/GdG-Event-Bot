@@ -31,6 +31,7 @@ from core.db.reservations import (
     get_reservation,
     get_reservation_by_user,
     get_user_conflicting_events,
+    get_user_upcoming_reservations,
     get_eventbrite_reservations,
     eventbrite_seat_count,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "get_reservation",
     "get_reservation_by_user",
     "get_user_conflicting_events",
+    "get_user_upcoming_reservations",
     "get_eventbrite_reservations",
     "eventbrite_seat_count",
     "book_seat",

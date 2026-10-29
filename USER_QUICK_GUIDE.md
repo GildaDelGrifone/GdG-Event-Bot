@@ -96,7 +96,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 - `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa) e la modalità solo Eventbrite.
 - `/bot_eventbrite_venue`: Se sono configurate più sedi Eventbrite, mostra i pulsanti per sceglierne una: vale per tutti gli eventi pubblicati su Eventbrite da quel momento (ogni evento mantiene la propria). Riavviando il bot si torna alla sede predefinita.
 - `/bot_eventbrite_only_toggle`: Attiva/disattiva la modalità solo Eventbrite: le nuove anteprime non hanno i pulsanti per pubblicare solo su Telegram e la storia Instagram non viene generata.
-- `/start`: Presenta il bot e mostra i comandi pubblici (`/event_next`, `/event_subs`); con i link diretti `?start=event_next` e `?start=subs_<id>` apre la lista eventi o gli iscritti di un evento.
+- `/start`: Presenta il bot e mostra i comandi pubblici (`/event_next`, `/event_mine`, `/event_subs`); con i link diretti `?start=event_next` e `?start=subs_<id>` apre la lista eventi o gli iscritti di un evento.
 - `/event_next [data]`: Mostra la lista di tutti gli eventi di oggi e futuri in ordine cronologico con data e link rapidi. Con una data (`gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato`, `domenica`) mostra solo gli eventi di quel giorno; un giorno della settimana indica la prima occorrenza, oggi compreso (es. `/event_next venerdì`). Questo comando è **accessibile anche pubblicamente agli utenti** sia in chat privata col bot che nel gruppo discussione (disattivabile nel gruppo discussione tramite variabile d'ambiente `ALLOW_GROUP_EVENT_NEXT=false` per prevenire spam).
 
 ---
@@ -105,6 +105,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 
 La prenotazione e la consultazione dei tavoli per i giocatori è semplicissima:
 - **Per Consultare gli Eventi (`/event_next`):** Invia `/event_next` in chat privata col bot, clicca sul deep link diretto (`https://t.me/GdG_Event_bot?start=event_next`), oppure invialo nel gruppo discussione per visualizzare l'elenco cronologico di tutti gli eventi di oggi e futuri con i rispettivi link ai canali e alle discussioni.
+- **Per Vedere le Tue Prenotazioni (`/event_mine`):** Invia `/event_mine` in chat privata col bot (o usa il link `https://t.me/GdG_Event_bot?start=event_mine`) per vedere solo gli eventi di oggi e dei prossimi giorni a cui sei prenotato, con i posti che hai riservato. Funziona anche nel gruppo discussione (se `/event_next` è attivo lì). Le prenotazioni fatte su Eventbrite non compaiono, perché non sono collegate al tuo account Telegram.
 - **Per Prenotarsi:** Clicca sul pulsante inline **[➕ Prenota]** (oppure **[🚫 Esauriti]** se non ci sono più posti disponibili). Il contatore dei posti si aggiornerà in tempo reale e il bot confermerà la prenotazione taggandoti nei commenti.
 - **Per Vedere gli Iscritti:** 
   - Clicca sul pulsante **[👥 Lista]** sotto il messaggio dell'evento nel canale o nel gruppo discussione (il bot ti aprirà una chat privata mostrando l'elenco completo dei partecipanti senza intasare la chat di gruppo).
