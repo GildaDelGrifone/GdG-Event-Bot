@@ -66,6 +66,7 @@ This application monitors a Telegram channel, extracts event information using *
    ```bash
    pip install -r requirements.txt
    ```
+   After pulling a new version, run `pip install -r requirements.txt` again inside the same virtual environment so new dependencies (e.g. `boto3`) are installed.
 
 4. **Set up configuration:**
    ```bash

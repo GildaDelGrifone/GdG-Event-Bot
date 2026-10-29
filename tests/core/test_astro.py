@@ -87,6 +87,14 @@ class TestUpload(unittest.TestCase):
         self.assertIsNone(self.upload(path, client))
 
 
+    def test_missing_boto3_returns_none_instead_of_raising(self):
+        path = image_file(self.tmp.name, "a.jpg", 10, 10)
+        with patched_config(**R2), patch("core.astro.storage.r2_client", side_effect=ImportError("boto3")), \
+             self.assertLogs("core.astro.storage", level="ERROR") as logs:
+            self.assertIsNone(storage.upload_media(path, "serate/slug"))
+        self.assertIn("boto3 is not installed", logs.output[0])
+
+
 class TestRealR2Client(unittest.TestCase):
     def test_client_uses_the_r2_endpoint_and_requires_all_settings(self):
         from core.astro.client import r2_client

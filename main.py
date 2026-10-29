@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import logging
 from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
@@ -88,12 +89,19 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
     else:
         logger.error("Eccezione non gestita durante l'elaborazione di un update:", exc_info=context.error)
 
+def warn_if_boto3_missing():
+    """The Astro backend uploads to R2 with boto3; a venv that was not updated after a pull would only fail at the first recap."""
+    if config.ARTICLE_BACKEND == "astro" and importlib.util.find_spec("boto3") is None:
+        logger.warning("ARTICLE_BACKEND=astro ma boto3 non è installato: gli upload su R2 falliranno. Esegui: pip install -r requirements.txt")
+
+
 def main():
     missing = config.missing_required_settings()
     if missing:
         logger.error(f"Impostazioni obbligatorie mancanti nel file .env: {', '.join(missing)}. Il bot non può avviarsi.")
         return
-        
+
+    warn_if_boto3_missing()
     init_db()
     
     application = (

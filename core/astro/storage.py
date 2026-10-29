@@ -37,18 +37,20 @@ def _prepare_image(filepath):
 
 def upload_media(filepath, key_prefix):
     """Uploads a file to R2 as '<key_prefix>/<filename>'; returns {'id': key, 'source_url'} or None."""
-    client = r2_client()
-    if not client:
-        logger.warning("R2 credentials not fully configured for media upload.")
-        return None
-
     filename = os.path.basename(filepath)
     key = f"{key_prefix.strip('/')}/{filename}"
     try:
+        client = r2_client()
+        if not client:
+            logger.warning("R2 credentials not fully configured for media upload.")
+            return None
         logger.info(f"R2: Uploading media file '{filename}' as '{key}'...")
         body, content_type = _prepare_image(filepath)
         client.put_object(Bucket=config.R2_BUCKET, Key=key, Body=body, ContentType=content_type)
         return {"id": key, "source_url": f"{config.R2_PUBLIC_URL}/{key}"}
+    except ImportError:
+        logger.error("R2: boto3 is not installed; run: pip install -r requirements.txt")
+        return None
     except Exception as e:
         logger.error(f"R2: Failed to upload '{filename}': {e}")
         return None

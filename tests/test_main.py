@@ -6,7 +6,7 @@ from telegram import BotCommandScopeChat, BotCommandScopeDefault, Chat, Message,
 from telegram.error import NetworkError
 from telegram.ext import CommandHandler, filters
 
-from main import global_error_handler, main, post_init
+from main import global_error_handler, main, post_init, warn_if_boto3_missing
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
@@ -133,6 +133,23 @@ class TestRequiredSettings(unittest.TestCase):
         builder.assert_not_called()
         init_db.assert_not_called()
         self.assertIn("TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID", mock_logger.error.call_args.args[0])
+
+
+class TestBoto3Warning(unittest.TestCase):
+    def warnings_for(self, backend, boto3_spec):
+        with patched_config(ARTICLE_BACKEND=backend), patch("main.importlib.util.find_spec", return_value=boto3_spec), \
+             patch("main.logger") as mock_logger:
+            warn_if_boto3_missing()
+        return mock_logger.warning.call_args_list
+
+    def test_warns_when_the_astro_backend_has_no_boto3(self):
+        calls = self.warnings_for("astro", None)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("boto3", calls[0].args[0])
+
+    def test_silent_when_boto3_is_installed_or_backend_is_wordpress(self):
+        self.assertEqual(self.warnings_for("astro", object()), [])
+        self.assertEqual(self.warnings_for("wordpress", None), [])
 
 
 class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
