@@ -3,7 +3,7 @@ import mimetypes
 import os
 
 from core.wordpress.categories import get_category_ids
-from core.wordpress.client import site_credentials, wp_post
+from core.wordpress.client import site_credentials, wp_delete, wp_get, wp_post
 
 logger = logging.getLogger(__name__)
 
@@ -86,4 +86,30 @@ def update_article_status(post_id, status='publish'):
         return True
     except Exception as e:
         logger.error(f"WordPress: Error updating article {post_id} status to '{status}': {e}")
+        return False
+
+
+def discard_article(post_id):
+    """Moves an unpublished article to the WordPress trash. Returns True, False on error, or "published" if it is already live."""
+    creds = site_credentials()
+    if not creds:
+        logger.warning("WordPress credentials not fully configured.")
+        return False
+    base_url, headers = creds
+
+    try:
+        response = wp_get(base_url, headers, f"posts/{post_id}", params={'context': 'edit'}, timeout=30)
+        if response.status_code not in _SUCCESS:
+            logger.error(f"WordPress: Failed to read article {post_id}: {response.status_code} - {response.text}")
+            return False
+        if response.json().get('status') == 'publish':
+            return "published"
+        response = wp_delete(base_url, headers, f"posts/{post_id}")
+        if response.status_code not in _SUCCESS:
+            logger.error(f"WordPress: Failed to discard article {post_id}: {response.status_code} - {response.text}")
+            return False
+        logger.info(f"WordPress: Article {post_id} moved to trash.")
+        return True
+    except Exception as e:
+        logger.error(f"WordPress: Error discarding article {post_id}: {e}")
         return False

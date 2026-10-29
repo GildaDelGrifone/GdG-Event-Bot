@@ -2,7 +2,7 @@
 
 Automated social media and event management bot for **Gilda del Grifone**, a tabletop gaming association based in Turin, Italy.
 
-This application monitors a Telegram channel, extracts event information using **Google Gemini AI**, generates standardized social media graphics (Instagram Stories, Collages), handles live seat bookings via interactive buttons, and publishes recap articles to **WordPress**.
+This application monitors a Telegram channel, extracts event information using **Google Gemini AI**, generates standardized social media graphics (Instagram Stories, Collages), handles live seat bookings via interactive buttons, and publishes recap articles to the **Astro website** (or, optionally, **WordPress**).
 
 ---
 
@@ -32,7 +32,7 @@ This application monitors a Telegram channel, extracts event information using *
 - **Daily Recaps & Multi-Image Collages:** Automatically runs at 16:00 on gaming days (Mon, Wed, Fri, Sat, Sun) or on-demand via `/recap_generate`. Stitches event artwork into clean collages (wrapped into multiple rows via `MAX_EVENTS_PER_ROW`) without cropping borders.
 - **Instagram Story Generator:** Programmatically builds 1080x1920 Instagram Story cards for individual events and daily recaps using Pillow (handling top banner artwork, dynamic text wrapping, seat counters, and association location footers).
 - **Eventbrite Integration (Optional):** Admins can also publish an event on Eventbrite (`[🚀 Publish + Eventbrite]`, `[🎟️ Solo Eventbrite]`, `[🎟️ Pubblica su Eventbrite]` or `/event_publish_eventbrite`). Telegram and Eventbrite share one seat pool: bookings on either side update the other, Eventbrite bookings are polled every few minutes and announced in the discussion group, and edits/cancellations made in Telegram are mirrored on Eventbrite. The bot behaves exactly as before when Eventbrite is not configured.
-- **WordPress REST API Integration:** AI writes an Italian recap article embedding event details, Telegram message links, and individual event pictures (max 400x400). The recap collage is set as the featured image. Posts can be published publicly directly from Telegram.
+- **Article Publishing (Astro site or WordPress):** AI writes an Italian recap article embedding event details, Telegram message links, and individual event pictures. With the default `ARTICLE_BACKEND=astro` the article is a Markdown file committed to a draft branch of the website repo (images in Cloudflare R2) and publishing merges the branch; with `ARTICLE_BACKEND=wordpress` it is a WordPress draft with the collage as featured image. Either can be published directly from Telegram.
 
 ---
 
@@ -42,7 +42,8 @@ This application monitors a Telegram channel, extracts event information using *
 - **SQLite 3**
 - Telegram Bot token (from `@BotFather`) with admin rights on your public channel
 - Google Gemini API key (Google AI Studio)
-- WordPress site with REST API and an Application Password enabled
+- For `ARTICLE_BACKEND=astro` (default): a GitHub fine-grained token (Contents read/write on the website repo only) and a Cloudflare R2 bucket with an API token (Object Read & Write)
+- For `ARTICLE_BACKEND=wordpress`: a WordPress site with REST API and an Application Password enabled
 - (Optional) Meta Developer Account with Instagram Graph API access
 
 ---
@@ -65,6 +66,7 @@ This application monitors a Telegram channel, extracts event information using *
    ```bash
    pip install -r requirements.txt
    ```
+   After pulling a new version, run `pip install -r requirements.txt` again inside the same virtual environment so new dependencies (e.g. `boto3`) are installed.
 
 4. **Set up configuration:**
    ```bash
@@ -95,7 +97,24 @@ GEMINI_MODEL=gemini-3.1-flash-lite
 # then a web image search whose results Gemini must confirm.
 # BGG_API_TOKEN=your_bgg_api_token_here
 
-# WordPress REST API Configuration
+# Article backend: astro (default) or wordpress
+# ARTICLE_BACKEND=astro
+
+# Astro site (ARTICLE_BACKEND=astro)
+ASTRO_GITHUB_REPO=GildaDelGrifone/GdG-Website
+ASTRO_GITHUB_BRANCH=main
+ASTRO_GITHUB_TOKEN=github_pat_xxxx
+ASTRO_CONTENT_DIR=src/content/serate
+ASTRO_BASE_URL=https://www.gildadelgrifonetorino.it
+
+# Cloudflare R2 (article images and Instagram stories)
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+R2_BUCKET=gdg-media
+R2_PUBLIC_URL=https://pub-xxxxxxxx.r2.dev
+
+# WordPress REST API Configuration (ARTICLE_BACKEND=wordpress)
 WP_URL=https://www.gildadelgrifonetorino.it
 WP_USERNAME=your_wp_username
 WP_APP_PASSWORD=xxxx xxxx xxxx xxxx
@@ -149,6 +168,8 @@ IG_ACCOUNT_ID=178414...
 MAX_EVENTS_PER_ROW=4
 ```
 
+> **Note on the Astro site:** `ASTRO_GITHUB_TOKEN` must be a fine-grained personal access token limited to the website repo with *Contents: Read and write*. The R2 token needs *Object Read & Write* on `R2_BUCKET`, and the bucket must have public access enabled (`R2_PUBLIC_URL`, no trailing slash). Without `ARTICLE_BACKEND` set the bot uses the Astro backend, so set `ARTICLE_BACKEND=wordpress` to keep publishing to WordPress.
+
 > **Note on WordPress:** `WP_APP_PASSWORD` must be generated in WordPress Admin under **Users > Profile > Application Passwords**, not your primary login password. It must also have no spaces.
 >
 > **Note on Telegram Channel:** The bot **must be added as an Administrator** in the public channel with permissions to read, send, and delete messages.
@@ -191,8 +212,10 @@ python3 main.py
 - **Manual Trigger:** Send `/recap_generate` (or shortcut `/rg`) in `ADMIN_CHAT_ID` (or `/recap_generate DD-MM-YYYY` / `/rg DD-MM-YYYY` for any target date). If there are no scheduled events for today (or the target date), the bot notifies the admin directly in `ADMIN_CHAT_ID` (`Nessun evento in programma per oggi.`) without generating an empty recap.
 - **Recap Card & Collage:** The bot generates a horizontal image collage of all scheduled games and compiles the formatted Italian recap text (using slim fallback if >1024 characters).
 - **Review:** Admin reviews the collage and recap in Telegram with `[Publish Recap]` or `[Discard Recap]`.
-- **Publishing:** Clicking `[Publish Recap]` sends the recap message to the public channel, renders the recap Instagram Story, uploads images to WordPress, and creates a draft blog post.
-- **WordPress One-Click Live:** The bot returns the WordPress edit URL and a `[Pubblica su WordPress]` button to publish the post live immediately.
+- **Publishing:** Clicking `[Publish Recap]` sends the recap message to the public channel, renders the recap Instagram Story, uploads images (R2 or WordPress), and creates a draft article (a `serata/<slug>` branch of the website repo, or a WordPress draft).
+- **One-Click Live:** The bot returns the draft link and a `[Pubblica sul sito]` (Astro: merges the branch, the page goes live at `<ASTRO_BASE_URL>/serate/<slug>/` after the Cloudflare deploy, ~1-2 min) or `[Pubblica su WordPress]` button.
+- **Discard Article:** Next to the publish button, `[🗑️ Scarta articolo]` throws the draft away while it is not yet published (Astro: deletes the `serata/<slug>` branch; WordPress: moves the post to the trash). An already published article is never touched.
+- **Article only:** `/recap_article [DD-MM-YYYY]` reruns only the article for a date (collage, image uploads, AI text, new draft with publish/discard buttons) without rebuilding the recap card or the Instagram story. Without a date it uses today.
 
 ### 4. Admin Event Editing (Reply Commands)
 In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already published) to update fields live in SQLite and edit the message in the channel:
@@ -237,6 +260,7 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 ### 7. Event Overview & Bot Control Commands
 - `/event_next [date]`: Public command displaying today's and upcoming events in chronological order (or only the events of one day when given `gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato` or `domenica`; a weekday means its next occurrence, today included), with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
+- `/event_mine`: Public command listing only the events **you** are booked to, today and in the future, with the seats you hold and the same quick links as `/event_next`. It answers in the same places as `/event_next` (private chat, `ADMIN_CHAT_ID`, and the discussion group unless `ALLOW_GROUP_EVENT_NEXT=false`) and has the deep link `t.me/{bot_username}?start=event_mine`. Matching is by Telegram user id, or by username for seats an admin added for you; bookings made on Eventbrite carry no Telegram identity and are not shown.
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
@@ -397,6 +421,7 @@ All maintenance utilities are located in the `scripts/` directory:
     - `core/db/`: SQLite data access, imported as `from core.db import ...`.
     - `core/scheduler/`: the APScheduler jobs (recap, archiving, repost digest) plus `runner.py`.
     - `core/wordpress/`: the WordPress REST client, imported as `from core.wordpress import ...`.
+    - `core/astro/`: the Astro site publisher (R2 uploads, GitHub draft branch/merge, front matter), imported as `from core.astro import ...`.
     - `core/eventbrite/`: the Eventbrite REST client and payload builders, imported as `from core.eventbrite import ...`.
     - `ai_parser.py` (Gemini), `instagram.py`, `log_utils.py` and `config.py`.
   - Modules read settings at call time via `core.config`. Tests patch `core.config.*` for settings (including `DB_PATH` for a temporary database) and the *using* module for functions (e.g. `bot.handlers.extraction.parse_event_message`).

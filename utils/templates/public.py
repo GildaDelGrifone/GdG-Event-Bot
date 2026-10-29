@@ -33,6 +33,18 @@ EVENT_NEXT_TITLE_DEFAULT = "Eventi di oggi e prossimi in programma"
 EVENT_NEXT_HINT = "<i>Per visualizzare i partecipanti usa /event_subs &lt;id&gt; oppure clicca su 👥 Iscritti.</i>"
 
 
+EVENT_MINE_NONE = (
+    "Non risulti prenotato a nessun evento di oggi o dei prossimi giorni.\n"
+    "Le prenotazioni fatte su Eventbrite non sono collegate al tuo account Telegram e non compaiono qui."
+)
+
+
+EVENT_MINE_TITLE = "Le tue prenotazioni"
+
+
+EVENT_MINE_HINT = "<i>Per liberare un posto usa il pulsante ➖ Annulla sul post dell'evento. Le prenotazioni su Eventbrite non sono incluse.</i>"
+
+
 EVENT_SUBS_USAGE = "❌ Specifica l'ID dell'evento (es. /event_subs 123 o /subs 123)."
 
 
@@ -51,6 +63,7 @@ START_WELCOME = (
     "Inoltre puoi visualizzare facilmente gli eventi in programma e i partecipanti con i seguenti comandi:\n"
     "/event_next [data] - Visualizza gli eventi in programma, o solo quelli di un giorno (gg-mm-aaaa, oggi, lunedì, mercoledì, venerdì, sabato, domenica)\n"
     "/event_subs <id> - Visualizza i partecipanti a un evento specifico\n"
+    "/event_mine - Visualizza gli eventi a cui sei prenotato\n"
 )
 
 
@@ -67,6 +80,19 @@ def format_event_next_entry(event_id, escaped_title, status_suffix, escaped_date
     return (
         f"• <b>{escaped_title}</b> (ID {event_id}){status_suffix}\n"
         f"  🗓️ Data: {escaped_date}\n"
+        f"  🔗 {' | '.join(links)}\n"
+    )
+
+
+def format_event_mine_prefix():
+    return f"🎟️ <b>{EVENT_MINE_TITLE}:</b>\n{EVENT_MINE_HINT}\n\n"
+
+
+def format_event_mine_entry(event_id, escaped_title, escaped_date, my_seats, links):
+    return (
+        f"• <b>{escaped_title}</b> (ID {event_id})\n"
+        f"  🗓️ Data: {escaped_date}\n"
+        f"  🪑 Posti prenotati da te: {my_seats}\n"
         f"  🔗 {' | '.join(links)}\n"
     )
 

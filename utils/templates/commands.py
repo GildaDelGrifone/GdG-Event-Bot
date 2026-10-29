@@ -2,6 +2,7 @@
 
 DEFAULT_COMMAND_DESCRIPTIONS = (
     ("start", "Avvia il bot e visualizza info o iscritti"),
+    ("event_mine", "Mostra gli eventi a cui sei prenotato"),
     ("event_next", "[gg-mm-aaaa|oggi|lunedì…] Mostra gli eventi in programma, o solo quelli di un giorno"),
     ("event_subs", "<id> Mostra gli iscritti di un evento"),
 )
@@ -13,6 +14,7 @@ ADMIN_COMMAND_DESCRIPTIONS = (
     ("event_generate", "<istruzioni> Genera evento e locandina con AI"),
     ("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
     ("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
+    ("recap_article", "[DD-MM-YYYY] Rigenera solo l'articolo della serata"),
     ("bot_pause", "Mette in pausa l'intercettazione automatica"),
     ("bot_resume", "Riattiva l'intercettazione automatica"),
     ("bot_status", "Mostra lo stato operativo del bot"),

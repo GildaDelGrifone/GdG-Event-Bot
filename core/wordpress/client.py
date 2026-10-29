@@ -27,6 +27,11 @@ def wp_get(base_url, headers, path, params=None, timeout=10):
     return requests.get(api_url(base_url, path), headers=headers, params=params, timeout=timeout)
 
 
+def wp_delete(base_url, headers, path, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    return requests.delete(api_url(base_url, path), headers=headers, **kwargs)
+
+
 def wp_post(base_url, headers, path, **kwargs):
     kwargs.setdefault("timeout", REQUEST_TIMEOUT)
     return requests.post(api_url(base_url, path), headers=headers, **kwargs)

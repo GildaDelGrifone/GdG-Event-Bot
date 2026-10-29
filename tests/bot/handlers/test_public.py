@@ -3,11 +3,11 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import core.db as db
-from bot.handlers.public import event_next_command, event_subs_command, start_command
+from bot.handlers.public import event_mine_command, event_next_command, event_subs_command, start_command
 from tests.support.config import patched_config
 from utils.date_utils import DAYS_IT
 from tests.support.db import TempDBMixin, create_deep_link_event, create_event
-from tests.support.telegram import make_context, make_update
+from tests.support.telegram import make_context, make_update, make_user
 
 ADMIN_CHAT = "-100999999"
 DISCUSSION_GROUP = "-100888888"
@@ -141,6 +141,73 @@ class TestEventNextCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
                                             ALLOW_GROUP_EVENT_NEXT=False)
 
         reply_text.assert_not_called()
+
+
+class TestEventMineCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def _event(self, title, days=1, **overrides):
+        day = (datetime.now() + timedelta(days=days)).strftime("%d-%m-%Y")
+        return create_event(status="approved", original_text="raw", title=title, date=day, normalized_date=day, **overrides)
+
+    async def _event_mine(self, chat_id, chat_type="private", user=None, **config_values):
+        update = make_update(chat_id=chat_id, chat_type=chat_type, user=user or make_user(1001, "mario"))
+        config_values.setdefault("ALLOW_GROUP_EVENT_NEXT", True)
+        with patched_config(ADMIN_CHAT_ID=ADMIN_CHAT, DISCUSSION_GROUP_ID=DISCUSSION_GROUP, **config_values):
+            await event_mine_command(update, make_context(bot_username="GdG_Event_bot"))
+        return update.message.reply_text
+
+    async def test_lists_only_the_callers_events_with_their_seats(self):
+        mine, someone_elses = self._event("Mio Evento"), self._event("Evento Di Luigi")
+        db.book_seat(mine, 1001, "mario")
+        db.book_seat(mine, 1001, "mario")
+        db.book_seat(someone_elses, 2002, "luigi")
+
+        reply_text = await self._event_mine(12345)
+
+        reply_text.assert_called_once()
+        text, kwargs = reply_text.call_args[0][0], reply_text.call_args[1]
+        self.assertIn("Le tue prenotazioni", text)
+        self.assertIn("Mio Evento", text)
+        self.assertIn(f"(ID {mine})", text)
+        self.assertIn("Posti prenotati da te: 2", text)
+        self.assertNotIn("Evento Di Luigi", text)
+        self.assertIn(f"start=subs_{mine}", text)
+        self.assertEqual(kwargs.get("parse_mode"), "HTML")
+
+    async def test_no_bookings_gets_the_empty_message(self):
+        self._event("Evento Libero")
+
+        reply_text = await self._event_mine(12345)
+
+        self.assertIn("Non risulti prenotato", reply_text.call_args[0][0])
+
+    async def test_past_events_are_not_listed(self):
+        past = self._event("Evento Passato", days=-2)
+        db.book_seat(past, 1001, "mario")
+
+        reply_text = await self._event_mine(12345)
+
+        self.assertIn("Non risulti prenotato", reply_text.call_args[0][0])
+
+    async def test_answers_in_admin_chat_private_chat_and_discussion_group(self):
+        db.book_seat(self._event("Mio Evento"), 1001, "mario")
+
+        for chat_id, chat_type in ((ADMIN_CHAT, "group"), (12345, "private"), (DISCUSSION_GROUP, "supergroup")):
+            with self.subTest(chat_id=chat_id):
+                reply_text = await self._event_mine(chat_id, chat_type)
+                self.assertIn("Mio Evento", reply_text.call_args[0][0])
+
+    async def test_discussion_group_can_be_switched_off_and_other_chats_are_ignored(self):
+        db.book_seat(self._event("Mio Evento"), 1001, "mario")
+
+        (await self._event_mine(DISCUSSION_GROUP, "supergroup", ALLOW_GROUP_EVENT_NEXT=False)).assert_not_called()
+        (await self._event_mine(55555, "supergroup")).assert_not_called()
+
+    async def test_start_deep_link_opens_the_personal_list(self):
+        update = make_update(chat_type="private")
+        with patch("bot.handlers.public.event_mine_command", new_callable=AsyncMock) as mine:
+            await start_command(update, make_context(args=("event_mine",)))
+
+        mine.assert_awaited_once()
 
 
 class TestStartCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):

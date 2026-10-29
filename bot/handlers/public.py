@@ -7,12 +7,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event, get_reservations_for_event, get_upcoming_events
+from core.db import get_event, get_reservations_for_event, get_upcoming_events, get_user_upcoming_reservations
 from utils.templates.event import format_event_seats
 from utils.templates.public import (
-    EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE,
+    EVENT_MINE_NONE, EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE,
     EVENT_NEXT_PENDING_SUFFIX, EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID,
-    START_WELCOME, format_event_next_entry, format_event_next_none_for_day, format_event_next_prefix,
+    START_WELCOME, format_event_mine_entry, format_event_mine_prefix, format_event_next_entry, format_event_next_none_for_day, format_event_next_prefix,
     format_event_next_subscribers_link,
 )
 from utils.templates.subscribers import format_event_participants_message
@@ -23,17 +23,7 @@ from bot.common.messages import private_chat_link, reply_in_chunks, resolve_mess
 logger = logging.getLogger(__name__)
 
 
-def _format_event_next_entry(ev, bot_username):
-    ev_id = ev['id']
-    escaped_title = html.escape(ev.get('title') or 'Senza Titolo')
-    escaped_date = html.escape(ev.get('date') or ev.get('normalized_date') or 'N/A')
-
-    status_suffix = ""
-    if ev.get('status') == 'pending':
-        status_suffix = EVENT_NEXT_PENDING_SUFFIX
-    elif ev.get('status') == 'cancelled':
-        status_suffix = EVENT_NEXT_CANCELLED_SUFFIX
-
+def _event_links(ev, bot_username):
     links = []
     if ev.get('admin_message_id'):
         links.append(private_chat_link(config.ADMIN_CHAT_ID, ev['admin_message_id'], "Admin", "Admin msg"))
@@ -46,9 +36,32 @@ def _format_event_next_entry(ev, bot_username):
     if ev.get('message_link'):
         links.append(f'<a href="{ev["message_link"]}">Canale Eventi</a>')
 
-    links.append(format_event_next_subscribers_link(format_event_seats(ev), bot_username, ev_id))
+    links.append(format_event_next_subscribers_link(format_event_seats(ev), bot_username, ev['id']))
+    return links
 
-    return format_event_next_entry(ev_id, escaped_title, status_suffix, escaped_date, links)
+
+def _event_title_and_date(ev):
+    return (
+        html.escape(ev.get('title') or 'Senza Titolo'),
+        html.escape(ev.get('date') or ev.get('normalized_date') or 'N/A'),
+    )
+
+
+def _format_event_next_entry(ev, bot_username):
+    escaped_title, escaped_date = _event_title_and_date(ev)
+
+    status_suffix = ""
+    if ev.get('status') == 'pending':
+        status_suffix = EVENT_NEXT_PENDING_SUFFIX
+    elif ev.get('status') == 'cancelled':
+        status_suffix = EVENT_NEXT_CANCELLED_SUFFIX
+
+    return format_event_next_entry(ev['id'], escaped_title, status_suffix, escaped_date, _event_links(ev, bot_username))
+
+
+def _format_event_mine_entry(ev, bot_username):
+    escaped_title, escaped_date = _event_title_and_date(ev)
+    return format_event_mine_entry(ev['id'], escaped_title, escaped_date, ev['my_seats'], _event_links(ev, bot_username))
 
 
 def _day_argument(message):
@@ -59,23 +72,26 @@ def _day_argument(message):
     return parts[1].strip() if len(parts) > 1 else ""
 
 
+def _event_listing_allowed(update):
+    """/event_next and /event_mine answer in the admin chat, in private chats and in the discussion group (unless ALLOW_GROUP_EVENT_NEXT is off)."""
+    chat = update.effective_chat
+    is_admin = is_admin_chat(update)
+    is_discussion_group = bool(config.DISCUSSION_GROUP_ID and str(chat.id) == str(config.DISCUSSION_GROUP_ID))
+    is_private_chat = getattr(chat, "type", "") == "private"
+
+    if not (is_admin or is_private_chat or is_discussion_group):
+        return False
+    return not (is_discussion_group and not is_admin and not config.ALLOW_GROUP_EVENT_NEXT)
+
+
 async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
-    if not message or not update.effective_chat:
+    if not message or not update.effective_chat or not _event_listing_allowed(update):
         return
 
     chat = update.effective_chat
     chat_id_str = str(chat.id)
     chat_type = getattr(chat, "type", "")
-
-    is_admin = is_admin_chat(update)
-    is_discussion_group = bool(config.DISCUSSION_GROUP_ID and chat_id_str == str(config.DISCUSSION_GROUP_ID))
-    is_private_chat = chat_type == "private"
-
-    if not (is_admin or is_private_chat or is_discussion_group):
-        return
-    if is_discussion_group and not is_admin and not config.ALLOW_GROUP_EVENT_NEXT:
-        return
 
     logger.info(f"{describe_user(update.effective_user, role='User')} requested upcoming events (/event_next) in chat {chat_id_str} ({chat_type}).")
 
@@ -104,6 +120,30 @@ async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         [_format_event_next_entry(ev, bot_username) for ev in events],
         limit=3800,
         prefix=format_event_next_prefix(day_label),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
+
+async def event_mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The events the calling user is booked to, today and in the future."""
+    message = resolve_message(update)
+    user = update.effective_user
+    if not message or not user or not update.effective_chat or not _event_listing_allowed(update):
+        return
+
+    logger.info(f"{describe_user(user, role='User')} requested their bookings (/event_mine) in chat {update.effective_chat.id}.")
+    events = get_user_upcoming_reservations(user.id, user.username)
+    if not events:
+        await message.reply_text(EVENT_MINE_NONE)
+        return
+
+    bot_username = getattr(getattr(context, 'bot', None), 'username', None) or config.TELEGRAM_BOT_USERNAME
+    await reply_in_chunks(
+        message,
+        [_format_event_mine_entry(ev, bot_username) for ev in events],
+        limit=3800,
+        prefix=format_event_mine_prefix(),
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -153,6 +193,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     arg = context.args[0] if context.args else None
     if arg == "event_next":
         await event_next_command(update, context)
+        return
+    if arg == "event_mine":
+        await event_mine_command(update, context)
         return
     if arg and arg.startswith("subs_"):
         try:

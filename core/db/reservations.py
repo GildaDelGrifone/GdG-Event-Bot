@@ -1,6 +1,8 @@
+from datetime import date
+
 from core.db.connection import db_safe, fetch_all, fetch_one
 from core.db.events import get_event
-from utils.date_utils import are_events_on_same_day
+from utils.date_utils import are_events_on_same_day, event_date_tuple
 
 # Matches a reservation by stored username or, for users without one, by display name
 NAME_MATCH_SQL = (
@@ -102,3 +104,33 @@ def get_user_conflicting_events(event_id, user_id=None, username=None):
         tuple(params),
     )
     return [ev for ev in candidates if are_events_on_same_day(target_event, ev)]
+
+
+@db_safe(default=list)
+def get_user_upcoming_reservations(user_id=None, username=None):
+    """Approved events dated today or later that the Telegram user holds seats on, with the user's seats as `my_seats`.
+
+    Matches like book_seat: by user_id, or by username on rows an admin added (no user_id yet). Eventbrite attendees
+    carry no Telegram identity, so they never match."""
+    username = clean_username(username)
+    if user_id is None and not username:
+        return []
+    rows = fetch_all(
+        "SELECT events.*, reservations.seats_booked AS my_seats FROM events "
+        "JOIN reservations ON events.id = reservations.event_id "
+        f"WHERE events.status = 'approved' AND reservations.seats_booked > 0 AND {NOT_EVENTBRITE_SQL} "
+        "AND (reservations.user_id = ? OR (reservations.user_id IS NULL AND reservations.username IS NOT NULL "
+        "AND LOWER(reservations.username) = LOWER(?)))",
+        (user_id, username),
+    )
+    today = date.today()
+    dated = []
+    undated = []
+    for row in rows:
+        day = event_date_tuple(row)
+        if not day:
+            undated.append(row)
+        elif day >= (today.year, today.month, today.day):
+            dated.append((day, row))
+    dated.sort(key=lambda item: (item[0], item[1]['id']))
+    return [row for _, row in dated] + sorted(undated, key=lambda row: row['id'])

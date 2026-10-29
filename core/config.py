@@ -1,3 +1,4 @@
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -52,6 +53,15 @@ def _env_weekdays(name, default):
     return days
 
 
+def _env_choice(name, choices, default):
+    """One of `choices` from the environment (case-insensitive); anything else logs a warning and falls back to the default."""
+    value = os.getenv(name, default).strip().lower()
+    if value in choices:
+        return value
+    logging.getLogger(__name__).warning("Invalid %s=%r, falling back to %r", name, value, default)
+    return default
+
+
 def _env_list(name, default):
     return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
 
@@ -73,6 +83,21 @@ BGG_API_TOKEN = os.getenv("BGG_API_TOKEN")
 EVENT_START_TIME = "%02d:%02d" % _env_time("EVENT_START_TIME", "20:45")
 # Telegram handles that members can contact to propose an event (recap texts, WordPress article)
 RECAP_CONTACTS = _env_list("RECAP_CONTACTS", "@Destard,@ManueleAbi")
+
+# Where the post-recap article goes: "astro" (static site via GitHub + R2) or "wordpress"
+ARTICLE_BACKEND = _env_choice("ARTICLE_BACKEND", ("astro", "wordpress"), "astro")
+
+ASTRO_GITHUB_REPO = os.getenv("ASTRO_GITHUB_REPO", "GildaDelGrifone/GdG-Website")
+ASTRO_GITHUB_BRANCH = os.getenv("ASTRO_GITHUB_BRANCH", "main")
+ASTRO_GITHUB_TOKEN = os.getenv("ASTRO_GITHUB_TOKEN")
+ASTRO_CONTENT_DIR = os.getenv("ASTRO_CONTENT_DIR", "src/content/serate")
+ASTRO_BASE_URL = os.getenv("ASTRO_BASE_URL", "https://www.gildadelgrifonetorino.it").rstrip("/")
+
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET = os.getenv("R2_BUCKET", "gdg-media")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
 
 WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")

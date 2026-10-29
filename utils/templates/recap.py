@@ -91,6 +91,13 @@ def format_recap_done(date_str):
     return f"Recap generato per la data: {date_str or 'Oggi'}"
 
 
+RECAP_ARTICLE_INVALID_DATE = "❌ Formato data non valido.\nUsa il formato DD-MM-YYYY (es. /recap_article 05-09-2026)."
+
+
+def format_recap_article_started(date_str):
+    return f"⏳ Rigenerazione dell'articolo per la data: {date_str}"
+
+
 RECAP_NO_EVENTS_TODAY = "Nessun evento in programma per oggi."
 
 

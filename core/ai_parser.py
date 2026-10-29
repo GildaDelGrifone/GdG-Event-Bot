@@ -23,6 +23,13 @@ class GeminiQuotaError(Exception):
     """Raised when Gemini API quota is exceeded or prepayment credits are depleted."""
 
 
+def strip_code_fence(text):
+    """Removes a wrapping ```lang ... ``` fence, whatever the language tag."""
+    text = text.strip()
+    match = re.match(r"^```[\w-]*[ \t]*\n(.*?)\n?```$", text, re.DOTALL)
+    return match.group(1).strip() if match else text
+
+
 def strip_json_fence(text):
     text = text.strip()
     if text.startswith("```json"):
@@ -155,34 +162,57 @@ def parse_event_message(message_text):
         return None
 
 
-def _article_prompt(recap_text, event_list):
+def _event_links(event_list):
     events_details = ""
     for ev in event_list:
         link = ev.get('message_link') or 'Link non disponibile'
-        img_url = ev.get('wp_media_url')
+        img_url = ev.get('media_url') or ev.get('wp_media_url')
         img_info = f" | Image URL: {img_url}" if img_url else ""
         events_details += f"- {ev.get('title')}: {link}{img_info}\n"
+    return events_details
+
+
+def _article_brief(recap_text, event_list, target, image_rule, output_rule):
+    """Instructions shared by every article format; `image_rule` and `output_rule` are format specific."""
     names = [handle.lstrip("@") for handle in config.RECAP_CONTACTS]
     examples = [f'"l\'utente Telegram @{name} (https://t.me/{name})"' for name in names]
 
     return f"""
-    You are an AI generating an engaging article for a tabletop games association's WordPress blog.
+    You are an AI generating an engaging article for {target}.
     Write an article in Italian summarizing the events for the upcoming game nights based on the recap text.
     Make it enthusiastic and welcoming.
 
     CRITICAL INSTRUCTIONS:
     - You must include the direct Telegram event link for each event in the article text, using the provided list below. Do not use placeholders like [Inserisci qui i link diretti agli eventi].
     - If you cite {" or ".join(names)}, specify clearly that they are Telegram usernames. For example, use {" and ".join(examples)}.
-    - If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using an HTML <img> tag with a maximum size constraint (e.g., <img src="..." alt="..." style="max-width:400px; max-height:400px; width:auto; height:auto; margin-bottom:15px;">). Do not mention or include HTML tags for the daily collage, as the system will automatically attach it as the article's featured image (Immagine in evidenza).
+    - {image_rule}
 
     Recap Info:
     {recap_text}
 
     Event Links to include:
-    {events_details}
+    {_event_links(event_list)}
 
-    Return the response as HTML (just the content to put in the post body, no <html> or <body> tags).
+    {output_rule}
     """
+
+
+def _article_prompt(recap_text, event_list):
+    return _article_brief(
+        recap_text, event_list,
+        "a tabletop games association's WordPress blog",
+        'If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using an HTML <img> tag with a maximum size constraint (e.g., <img src="..." alt="..." style="max-width:400px; max-height:400px; width:auto; height:auto; margin-bottom:15px;">). Do not mention or include HTML tags for the daily collage, as the system will automatically attach it as the article\'s featured image (Immagine in evidenza).',
+        "Return the response as HTML (just the content to put in the post body, no <html> or <body> tags).",
+    )
+
+
+def _astro_article_prompt(recap_text, event_list):
+    return _article_brief(
+        recap_text, event_list,
+        "a tabletop games association's website",
+        'If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using a Markdown image: ![<event title>](<Image URL>). Do not mention or include the daily collage, as the system attaches it automatically as the article cover.',
+        "Return the response as Markdown (just the article body): use ### for headings, no HTML tags, no front matter, and no H1 title (the site renders the title).",
+    )
 
 
 def generate_wordpress_article(recap_text, event_list):
@@ -196,4 +226,18 @@ def generate_wordpress_article(recap_text, event_list):
         raise
     except Exception as e:
         logger.error(f"Error generating WP article with AI: {e}")
+        return None
+
+
+def generate_astro_article(recap_text, event_list):
+    try:
+        logger.info("AI Parser: Requesting Astro article generation from Gemini...")
+        article = strip_code_fence(generate_text(_astro_article_prompt(recap_text, event_list)))
+        logger.info("AI Parser: Successfully generated Astro article content.")
+        return article
+    except GeminiQuotaError as e:
+        logger.error(f"Error generating Astro article with AI: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error generating Astro article with AI: {e}")
         return None
