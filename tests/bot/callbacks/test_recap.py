@@ -130,7 +130,7 @@ class TestAstroRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
                                          caption="Recap caption")
         context = make_context()
         events = [dict(ev) for ev in ASTRO_EVENTS]
-        overrides = {"PUBLIC_CHANNEL_ID": None}
+        overrides = {"PUBLIC_CHANNEL_ID": None, "ASTRO_BASE_URL": "https://example.org"}
         if backend:
             overrides["ARTICLE_BACKEND"] = backend
         with patched_config(**overrides), \
@@ -171,7 +171,8 @@ class TestAstroRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         upd.assert_called_once_with([1, 2, 3], "astro", "serata/x", "https://github.com/o/r/blob/serata/x/f.md")
         last = context.bot.send_message.call_args.kwargs
         self.assertEqual(last["reply_markup"].inline_keyboard[0][0].callback_data, "publish_astro_23-10-2026")
-        self.assertIn("/serate/2026-10-23-" + slug, last["text"])
+        self.assertIn(f'href="https://example.org/serate/{slug}/"', last["text"])
+        self.assertNotIn("2026-10-23", last["text"])
         self.assertEqual(last["parse_mode"], "HTML")
         self.assertIs(last["disable_web_page_preview"], True)
 
@@ -197,7 +198,8 @@ class TestPublishArticle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
             event_id = create_event(normalized_date="23-10-2026")
             update_events_article_info([event_id], "astro", "serata/eventi-della-serata-venerdi-23-10-2026", "link")
         update, query = callback_update("publish_astro_23-10-2026", text="Bozza creata")
-        with patch("bot.callbacks.recap.astro.update_article_status", return_value=merged) as upd:
+        with patched_config(ASTRO_BASE_URL="https://example.org"), \
+             patch("bot.callbacks.recap.astro.update_article_status", return_value=merged) as upd:
             await handle_callback_query(update, make_context())
         return upd, query.edit_message_text.call_args.kwargs["text"]
 
@@ -205,7 +207,8 @@ class TestPublishArticle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         upd, text = await self._publish_astro(True)
 
         upd.assert_called_once_with("serata/eventi-della-serata-venerdi-23-10-2026", "publish")
-        self.assertIn("/serate/2026-10-23-eventi-della-serata-venerdi-23-10-2026/", text)
+        self.assertIn("https://example.org/serate/eventi-della-serata-venerdi-23-10-2026/", text)
+        self.assertNotIn("2026-10-23", text)
         self.assertIn("Cloudflare", text)
 
     async def test_astro_publish_failure_shows_error(self):

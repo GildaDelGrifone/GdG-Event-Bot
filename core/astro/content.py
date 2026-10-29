@@ -30,7 +30,9 @@ def file_stem(date_str, slug):
 
 
 def public_url(date_str, slug):
-    return f"{config.ASTRO_BASE_URL}/serate/{file_stem(date_str, slug)}/"
+    """The page on the site: it strips the date from the file name, so the URL is just /serate/<slug>/.
+    `slug` must be the bare slug (see article_slug), never the dated file stem."""
+    return f"{config.ASTRO_BASE_URL}/serate/{slug}/"
 
 
 def make_excerpt(markdown, limit=EXCERPT_LIMIT):

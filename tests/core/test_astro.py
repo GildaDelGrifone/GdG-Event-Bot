@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import re
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -117,8 +118,25 @@ class TestContent(unittest.TestCase):
         with patched_config(**GH):
             self.assertEqual(
                 astro.public_url("23-10-2026", "eventi-della-serata-venerdi-23-10-2026"),
-                "https://example.org/serate/2026-10-23-eventi-della-serata-venerdi-23-10-2026/",
+                "https://example.org/serate/eventi-della-serata-venerdi-23-10-2026/",
             )
+
+    def test_file_path_carries_the_date_while_the_public_url_does_not(self):
+        slug = content.article_slug("23-10-2026")
+        self.assertFalse(re.match(r"\d{4}-\d{2}-\d{2}-", slug))
+
+        with patched_config(**GH), patch("core.astro.client.requests.request", side_effect=[
+            _response(200, {"object": {"sha": "abc"}}), _response(201), _response(404), _response(201),
+        ]) as req:
+            draft_link, branch = astro.publish_article("T", "B", "23-10-2026", slug, None, "e", [])
+            url = astro.public_url("23-10-2026", slug)
+
+        self.assertEqual(content.file_stem("23-10-2026", slug), f"2026-10-23-{slug}")
+        self.assertTrue(draft_link.endswith(f"/src/content/serate/2026-10-23-{slug}.md"))
+        self.assertEqual(branch, f"serata/{slug}")
+        self.assertEqual(req.call_args_list[3].args[1].rsplit("/", 1)[-1], f"2026-10-23-{slug}.md")
+        self.assertEqual(url, f"https://example.org/serate/{slug}/")
+        self.assertNotIn("2026-10-23", url)
 
     def test_front_matter_matches_the_site_schema(self):
         text = astro.build_front_matter(
