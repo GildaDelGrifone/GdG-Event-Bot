@@ -11,7 +11,7 @@ Questa guida illustra le funzionalità principali del Bot e spiega come utilizza
 - **Prenotazioni Live (Inline):** Gli utenti possono prenotare o disdire il proprio posto direttamente dai pulsanti interattivi sotto i messaggi del canale Telegram.
 - **Prevenzione Conflitti:** Il bot avvisa automaticamente gli utenti se si prenotano a più di un evento nello stesso giorno.
 - **Prenotazioni anche su Eventbrite (opzionale):** Un evento può essere pubblicato anche su Eventbrite, così chi non usa Telegram può prenotare da lì. I posti sono unici: una prenotazione su una delle due piattaforme aggiorna subito la disponibilità dell'altra.
-- **Recap Giornalieri:** Generazione automatica di collage di immagini e riepiloghi testuali per Telegram, con integrazione diretta verso le storie di Instagram e bozze per gli articoli di WordPress.
+- **Recap Giornalieri:** Generazione automatica di collage di immagini e riepiloghi testuali per Telegram, con integrazione diretta verso le storie di Instagram e bozze per gli articoli del sito (Astro o WordPress).
 
 ---
 
@@ -87,7 +87,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 - **Automatica:** Il bot genera automaticamente un riepilogo giornaliero alle **16:00** nei giorni di apertura (Lunedì, Mercoledì, Venerdì, Sabato, Domenica).
 - **Manuale:** Puoi forzare un recap in qualsiasi momento inviando il comando `/recap_generate` (o `/rg`). Per fare il recap di un giorno specifico usa `/rg DD-MM-YYYY`.
   *(Nota: se non ci sono eventi in programma per la data richiesta, il bot avvisa direttamente nel gruppo admin)*.
-- Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo WordPress.
+- Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo per il sito.
 
 ### 8. Controlli Generali del Bot
 - `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale).

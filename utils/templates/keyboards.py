@@ -82,6 +82,9 @@ BUTTON_DISCARD_RECAP = "Discard Recap"
 BUTTON_PUBLISH_WORDPRESS = "Pubblica su WordPress"
 
 
+BUTTON_PUBLISH_ASTRO = "Pubblica sul sito"
+
+
 BUTTON_FULL = "🚫 Esauriti"
 
 

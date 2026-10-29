@@ -5,3 +5,4 @@ Pillow==10.4.0
 pilmoji==2.0.5
 requests==2.32.3
 APScheduler==3.10.4
+boto3==1.35.99

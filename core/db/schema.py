@@ -78,6 +78,8 @@ COLUMN_MIGRATIONS = {
         "eventbrite_content_version": "INTEGER DEFAULT 0",
         "eventbrite_synced_at": "TEXT",
         "eventbrite_venue_id": "TEXT",
+        "article_backend": "TEXT",
+        "article_ref": "TEXT",
     },
     "scheduled_events": {
         "advance_days": "INTEGER DEFAULT 0",

@@ -24,6 +24,7 @@ CALLBACK_ROUTES = (
     ("publish_recap_", recap.handle_publish_recap),
     ("discard_recap_", recap.handle_discard_recap),
     ("publish_wp_", recap.handle_publish_wordpress),
+    ("publish_astro_", recap.handle_publish_astro),
     ("full_", booking.handle_full),
     ("book_", booking.handle_book),
     ("unbook_", booking.handle_unbook),

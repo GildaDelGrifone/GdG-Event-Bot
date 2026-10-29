@@ -76,6 +76,7 @@ class TestGenerateStoryScript(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         mock_bot.send_photo.assert_called_once()
 
+    @patch("scripts.generate_story.config.ARTICLE_BACKEND", "wordpress")
     @patch("scripts.generate_story.WP_URL", "https://example.com")
     @patch("scripts.generate_story.WP_USERNAME", "admin")
     @patch("scripts.generate_story.WP_APP_PASSWORD", "secret")
@@ -91,6 +92,24 @@ class TestGenerateStoryScript(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         mock_wp.assert_called_once_with("/fake/story.jpg")
         mock_ig.assert_called_once_with("https://example.com/wp-content/story.jpg")
+
+    @patch("scripts.generate_story.IG_ACCESS_TOKEN", "token")
+    @patch("scripts.generate_story.IG_ACCOUNT_ID", "12345")
+    @patch("core.config.R2_PUBLIC_URL", "https://pub.r2.dev")
+    @patch("core.config.R2_SECRET_ACCESS_KEY", "s")
+    @patch("core.config.R2_ACCESS_KEY_ID", "k")
+    @patch("core.config.R2_ACCOUNT_ID", "acc")
+    @patch("core.config.ARTICLE_BACKEND", "astro")
+    @patch("core.instagram.publish_instagram_story", new_callable=AsyncMock)
+    @patch("core.astro.upload_media")
+    async def test_publish_story_to_instagram_uses_r2_for_astro(self, mock_r2, mock_ig):
+        mock_r2.return_value = {"id": "stories/story.jpg", "source_url": "https://pub.r2.dev/stories/story.jpg"}
+        mock_ig.return_value = (True, "ok")
+
+        ok = await publish_story_to_instagram("/fake/story.jpg")
+        self.assertTrue(ok)
+        mock_r2.assert_called_once_with("/fake/story.jpg", "stories")
+        mock_ig.assert_called_once_with("https://pub.r2.dev/stories/story.jpg")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,24 @@ class TestLogLevel(unittest.TestCase):
         self.assertEqual(self.level("verbose"), "INFO")
 
 
+class TestEnvChoice(unittest.TestCase):
+    def choice(self, value):
+        with patch.dict("os.environ", {} if value is None else {"ARTICLE_BACKEND": value}, clear=True):
+            return config._env_choice("ARTICLE_BACKEND", ("astro", "wordpress"), "astro")
+
+    def test_default_when_unset(self):
+        self.assertEqual(self.choice(None), "astro")
+
+    def test_valid_values_are_case_insensitive(self):
+        self.assertEqual(self.choice("WordPress"), "wordpress")
+        self.assertEqual(self.choice(" astro "), "astro")
+
+    def test_invalid_value_falls_back_and_warns(self):
+        with self.assertLogs("core.config", level="WARNING") as logs:
+            self.assertEqual(self.choice("drupal"), "astro")
+        self.assertIn("ARTICLE_BACKEND", logs.output[0])
+
+
 class TestEnvTime(unittest.TestCase):
     def time(self, value):
         with patch.dict("os.environ", {} if value is None else {"JOB_TIME": value}, clear=True):

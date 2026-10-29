@@ -9,7 +9,7 @@
   - [2.4. Interactive Live Booking System](#24-interactive-live-booking-system)
   - [2.5. Cancellation System](#25-cancellation-system)
   - [2.6. Daily Recap Generation (`core/scheduler/recap.py` & `bot/handlers/recap.py`)](#26-daily-recap-generation-coreschedulerrecappy--bothandlersrecappy)
-  - [2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks/recap.py`)](#27-post-recap-wordpress--story-pipeline-botcallbacksrecappy)
+  - [2.7. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)](#27-post-recap-article--story-pipeline-botcallbacksrecappy)
   - [2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `unzip_images.py`)](#28-nightly-image-archiving-coreschedulerarchivepy--unzip_imagespy)
   - [2.9. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#29-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
   - [2.10. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#210-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
@@ -34,7 +34,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - Tracks reservations per user and manages seat availability in real time.
 - Compiles daily recap messages and multi-image collages on game days (default Mon, Wed, Fri, Sat, Sun; `RECAP_WEEKDAYS`).
 - Generates Instagram Story images (1080x1920) for both individual events and daily recaps using Pillow.
-- Generates engaging recap articles using Gemini AI and drafts/publishes them on WordPress via the WordPress REST API.
+- Generates engaging recap articles using Gemini AI and drafts/publishes them on the Astro website (Markdown file on a GitHub draft branch, images on Cloudflare R2) or, with `ARTICLE_BACKEND=wordpress`, on WordPress via the REST API.
 
 ---
 
@@ -188,7 +188,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 5. **Approval:**
    - Sends collage + recap text to `ADMIN_CHAT_ID` with `[Publish Recap]` and `[Discard Recap]`.
 
-### 2.7. Post-Recap WordPress & Story Pipeline (`bot/callbacks/recap.py`)
+### 2.7. Post-Recap Article & Story Pipeline (`bot/callbacks/recap.py`)
 When `[Publish Recap]` is clicked:
 1. **Public Telegram Recap:** The collage + text is published to `PUBLIC_CHANNEL_ID`. The links message (`recap_links_text`) is NOT posted to the public channel; it is sent exclusively as a reply to the automatic channel forward in the Discussion Chat group (`DISCUSSION_GROUP_ID`).
 2. **Instagram Recap Story:**
@@ -196,15 +196,13 @@ When `[Publish Recap]` is clicked:
    - Collage pinned at top, header `Proposte del [Data]`, bulleted event list with seats, and footer:
      `Ci vediamo alle {EVENT_START_TIME}, alla {ASSOCIATION_ADDRESS}!` (default: `Ci vediamo alle 20:45, alla Gilda del Grifone, Via Ada Negri 8/A, Torino!`)
    - Sent to `ADMIN_CHAT_ID` for review.
-3. **WordPress Article Generation (`core/wordpress/` & `core/ai_parser.py`):**
-   - Uploads each individual event image to WordPress Media Library (style set to max 400x400px).
-   - Uploads the recap collage as `featured_media`.
-   - Calls Gemini AI with event details, links, and image URLs to write an engaging recap article in Italian.
-   - Creates a WordPress post as `draft`.
-   - Updates `wp_post_id` and `wp_post_url` in the database.
-   - Sends editor link to `ADMIN_CHAT_ID` with inline button `[Pubblica su WordPress]`.
-4. **WordPress One-Click Publish:**
-   - Clicking `[Pubblica su WordPress]` changes post status from `draft` to `publish` via REST API.
+3. **Article Generation (`_create_article_draft`, backend chosen by `ARTICLE_BACKEND`, default `astro`):**
+   - **`astro`** (`core/astro/` & `generate_astro_article`): uploads each event image and the collage to R2 under `serate/<slug>/` (JPEG/PNG resized to max 1600px wide), asks Gemini for a Markdown body, builds the front matter (`title`, `date`, `cover`, `excerpt`, `tavoli` with `gioco`/`tipo`/`immagine`) and commits `ASTRO_CONTENT_DIR/<YYYY-MM-DD>-<slug>.md` on a new branch `serata/<slug>` (slug: `eventi-della-serata-<giorno>-<dd-mm-yyyy>`). Stores `article_backend='astro'`, `article_ref` (branch) and `wp_post_url` (draft link), then sends the draft link with `[Pubblica sul sito]` (`publish_astro_<dd-mm-yyyy>`).
+   - **`wordpress`** (`core/wordpress/` & `generate_wordpress_article`): uploads each event image to the WordPress Media Library (style set to max 400x400px), the collage as `featured_media`, and creates a `draft` post. Updates `wp_post_id` and `wp_post_url`, then sends the editor link with `[Pubblica su WordPress]` (`publish_wp_<post_id>`).
+   - Gemini receives event details, links and image URLs to write the article in Italian (HTML for WordPress, Markdown for Astro; shared instructions in `_article_brief`).
+4. **One-Click Publish:**
+   - `[Pubblica sul sito]` looks the branch up by date (`get_article_ref_for_date`), merges it into `ASTRO_GITHUB_BRANCH` and deletes it; Cloudflare deploys the site (~1-2 min) and the bot shows the public URL.
+   - `[Pubblica su WordPress]` changes post status from `draft` to `publish` via REST API.
 
 ### 2.8. Nightly Image Archiving (`core/scheduler/archive.py` & `scripts/unzip_images.py`)
 - Automatically runs daily at **23:59** via APScheduler.
@@ -341,7 +339,7 @@ GdG-Event-Bot/
 │   │   ├── router.py     # handle_callback_query + CALLBACK_ROUTES prefix table
 │   │   ├── events.py     # Publish / discard / cancel / reactivate event cards, Eventbrite publish/recreate buttons
 │   │   ├── notices.py    # Cancellation / reactivation notices to the discussion group
-│   │   ├── recap.py      # Publish / discard recap, WordPress draft & publish
+│   │   ├── recap.py      # Publish / discard recap, article draft (Astro / WordPress) & publish
 │   │   ├── booking.py    # ➕ Prenota / 🚫 Esauriti / ➖ Annulla
 │   │   ├── subscribers.py # 👥 Gestisci Iscritti panel (± seats, add prompt, close)
 │   │   ├── schedule.py   # Repost schedule weekday toggles, delete, close
@@ -366,7 +364,7 @@ GdG-Event-Bot/
 ├── core/
 │   ├── __init__.py
 │   ├── config.py         # Loads environment variables (.env), paths, constants
-│   ├── ai_parser.py      # Gemini: generate_text, event extraction (+ seat safety net), WP article writing
+│   ├── ai_parser.py      # Gemini: generate_text, event extraction (+ seat safety net), article writing (HTML for WP, Markdown for Astro)
 │   ├── log_utils.py      # Daily rotating log handler, monthly log zip archiving, JobLinesToDebug filter (poller job lines)
 │   ├── instagram.py      # Meta Graph API: container creation & story publishing
 │   ├── db/               # SQLite data access (public API: `from core.db import ...`)
@@ -390,6 +388,11 @@ GdG-Event-Bot/
 │   │   ├── tickets.py    # Free ticket class create / quantity update / close sales when full
 │   │   ├── media.py      # Three-step logo upload (2:1 padding, browser User-Agent, retries)
 │   │   └── orders.py     # fetch_active_orders (names and seat counts only)
+│   ├── astro/            # Astro site publishing (public API: `from core.astro import ...`)
+│   │   ├── client.py     # GitHub API request helper, lazy boto3 R2 client
+│   │   ├── storage.py    # upload_media to R2 (resize, keys, public URL)
+│   │   ├── github.py     # branches, file commits, merge, delete
+│   │   └── content.py    # slug, front matter, publish_article (draft branch), update_article_status (merge)
 │   └── wordpress/        # WordPress REST API (public API: `from core.wordpress import ...`)
 │       ├── client.py     # Credentials, auth headers, wp_get / wp_post (with timeouts)
 │       ├── categories.py # WP_POST_CATEGORY / slug / name -> category IDs
@@ -507,7 +510,9 @@ GdG-Event-Bot/
 | `message_link` | TEXT | | Link to message in public channel |
 | `telegram_message_id`| INTEGER | | Telegram Message ID of published event post |
 | `wp_post_id` | INTEGER | | Associated WordPress post ID |
-| `wp_post_url` | TEXT | | Associated WordPress post edit/view URL |
+| `wp_post_url` | TEXT | | Associated article draft link (WordPress edit URL or GitHub file URL) |
+| `article_backend` | TEXT | | `astro` when the article was drafted by the Astro backend |
+| `article_ref` | TEXT | | Astro draft reference (the `serata/<slug>` branch) |
 | `is_roleplay` | INTEGER | DEFAULT 0 | 1 if roleplaying event (Master), 0 if non-RPG (Host) |
 | `discussion_message_id` | INTEGER | | Message ID of the booking reply in the discussion group |
 | `discussion_chat_id` | TEXT | | Chat holding that reply |
@@ -556,7 +561,17 @@ GdG-Event-Bot/
 | `GEMINI_API_KEY` | Google AI Studio API Key | `AIzaSy...` |
 | `GEMINI_MODEL` | Gemini model name | `gemini-3.1-flash-lite` |
 | `BGG_API_TOKEN` | (Optional) BoardGameGeek API token for the `/event_generate` box covers; without it (or on a 401 / no result) covers come from BGG by ID (from Wikidata or Gemini's checked guess), then Wikipedia, then a Gemini-verified Bing image search | `xxxxxxxx` |
-| `WP_URL` | WordPress base URL | `https://www.gildadelgrifonetorino.it` |
+| `ARTICLE_BACKEND` | (Optional) `astro` (default) or `wordpress`; an invalid value logs a warning and falls back to `astro` | `astro` |
+| `ASTRO_GITHUB_REPO` | (Optional) Website repo | `GildaDelGrifone/GdG-Website` |
+| `ASTRO_GITHUB_BRANCH` | (Optional) Branch the site deploys from | `main` |
+| `ASTRO_GITHUB_TOKEN` | Fine-grained token, Contents read/write on the website repo only | `github_pat_xxxx` |
+| `ASTRO_CONTENT_DIR` | (Optional) Content folder of the articles in the repo | `src/content/serate` |
+| `ASTRO_BASE_URL` | (Optional) Public site URL used for the published link | `https://www.gildadelgrifonetorino.it` |
+| `R2_ACCOUNT_ID` | Cloudflare account id | `abc123` |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token credentials (Object Read & Write) | `xxxx` |
+| `R2_BUCKET` | (Optional) R2 bucket | `gdg-media` |
+| `R2_PUBLIC_URL` | Public base URL of the bucket, no trailing slash | `https://pub-xxxx.r2.dev` |
+| `WP_URL` | WordPress base URL (only with `ARTICLE_BACKEND=wordpress`) | `https://www.gildadelgrifonetorino.it` |
 | `WP_USERNAME` | WordPress username | `direttivogilda` |
 | `WP_APP_PASSWORD` | WordPress Application Password | `xxxx xxxx xxxx xxxx` |
 | `WP_POST_CATEGORY` | (Optional) Category ID or name for generated posts | `12` or `Eventi` |
@@ -567,7 +582,7 @@ GdG-Event-Bot/
 | `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
 | `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
 | `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
-| `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the WordPress article prompt | `@Destard,@ManueleAbi` |
+| `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the article prompt | `@Destard,@ManueleAbi` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages. Numeric settings (this and the `EVENTBRITE_*` numbers) fall back to their default on a typo (`_env_int` / `_env_float`) | `4` |
 | `ALLOW_GROUP_EVENT_NEXT` | (Optional) Enable/disable `/event_next` in discussion group (`true`/`false`) | `true` |
 | `EVENTBRITE_TOKEN` | (Optional) Eventbrite private OAuth token | `ABC...` |
@@ -607,7 +622,7 @@ Every user-facing Telegram text lives in the `utils/templates/` package, one mod
 | `edit.py` | `/event_edit_*` replies and errors |
 | `approval.py` | status suffixes of the admin card (`APPROVED_SUFFIX`, …; the suffix swap in `bot/callbacks/events.py` strips them by exact match), preview warnings, approval/cancellation popups, story captions |
 | `public.py` | `/event_process`, `/event_next`, `/event_subs` and `/start` texts |
-| `wordpress.py` | recap approval card suffixes and WordPress article messages |
+| `wordpress.py` | recap approval card suffixes and article (WordPress / Astro) messages |
 | `generator.py` | `/event_generate` usage, progress and results |
 | `keyboards.py` | every inline button label (`BUTTON_*`) and the label formatters used by `bot/keyboards.py` |
 | `commands.py` | `DEFAULT_COMMAND_DESCRIPTIONS` / `ADMIN_COMMAND_DESCRIPTIONS`, the (command, description) pairs `main.post_init` registers |
@@ -632,4 +647,4 @@ Every user-facing Telegram text lives in the `utils/templates/` package, one mod
    - Run `me/accounts?fields=instagram_business_account` to get numeric `IG_ACCOUNT_ID`.
    - Extend token in [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/) to get 60-day `IG_ACCESS_TOKEN`.
 4. Update `.env` with `IG_ACCESS_TOKEN` and `IG_ACCOUNT_ID`.
-5. Call `core.instagram.publish_instagram_story()` (after a temporary WordPress media upload for a public image URL) from `_send_story_preview` in `bot/callbacks/events.py` and from `_run_post_recap_pipeline` in `bot/callbacks/recap.py`.
+5. Call `core.instagram.publish_instagram_story()` (after a media upload for a public image URL: R2 with `ARTICLE_BACKEND=astro`, WordPress otherwise) from `_send_story_preview` in `bot/callbacks/events.py` and from `_run_post_recap_pipeline` in `bot/callbacks/recap.py`.

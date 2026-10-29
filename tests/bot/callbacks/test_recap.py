@@ -5,8 +5,9 @@ from bot.callbacks.router import handle_callback_query
 from bot.handlers.recap import handle_discussion_forward
 from bot.state import runtime_state
 from core.ai_parser import GeminiQuotaError
+from core.db import update_events_article_info
 from tests.support.config import patched_config
-from tests.support.db import TempDBMixin, sample_event
+from tests.support.db import TempDBMixin, create_event, sample_event
 from tests.support.telegram import callback_update, make_context, make_message, make_update
 
 
@@ -23,7 +24,7 @@ class TestGeminiQuotaDepletionAlert(TempDBMixin, unittest.IsolatedAsyncioTestCas
         )]
 
         err_text = "429 Your prepayment credits are depleted."
-        with patched_config(PUBLIC_CHANNEL_ID="-100111111"), \
+        with patched_config(PUBLIC_CHANNEL_ID="-100111111", ARTICLE_BACKEND="wordpress"), \
              patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
              patch("bot.callbacks.recap.generate_wordpress_article", side_effect=GeminiQuotaError(err_text)), \
              patch("bot.callbacks.recap.upload_media", return_value=None), \
@@ -57,7 +58,7 @@ class TestPublishRecap(unittest.IsolatedAsyncioTestCase):
             "image_path": None,
         }]
 
-        with patched_config(PUBLIC_CHANNEL_ID="-100111111"), \
+        with patched_config(PUBLIC_CHANNEL_ID="-100111111", ARTICLE_BACKEND="wordpress"), \
              patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
              patch("bot.callbacks.recap.generate_wordpress_article", return_value=None), \
              patch("bot.callbacks.recap.upload_media", return_value=None), \
@@ -100,7 +101,7 @@ class TestPublishRecap(unittest.IsolatedAsyncioTestCase):
 
         test_events = [sample_event(id=1, title="Avventura D&D", image_path=None)]
 
-        with patched_config(PUBLIC_CHANNEL_ID="-100111111"), \
+        with patched_config(PUBLIC_CHANNEL_ID="-100111111", ARTICLE_BACKEND="wordpress"), \
              patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=test_events), \
              patch("bot.callbacks.recap.create_collage", return_value=None), \
              patch("bot.callbacks.recap.create_recap_story_image", return_value=__file__), \
@@ -112,6 +113,115 @@ class TestPublishRecap(unittest.IsolatedAsyncioTestCase):
         mock_gen.assert_called_once()
         mock_pub.assert_called_once()
         mock_upd.assert_called_once_with([1], 10, "https://example.com/?p=10")
+
+
+ASTRO_EVENTS = [
+    sample_event(id=1, title="Catan", image_path="/fake/catan.jpg", is_roleplay=0, status="approved"),
+    sample_event(id=2, title="D&D", image_path=None, is_roleplay=1, status="approved"),
+    sample_event(id=3, title="Annullata", image_path=None, is_roleplay=0, status="cancelled"),
+]
+
+
+class TestAstroRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def _run_recap(self, backend=None, publish_result=("https://github.com/o/r/blob/serata/x/f.md", "serata/x")):
+        update, _query = callback_update("publish_recap_23-10-2026", chat_id=9999, message_id=123, text=None,
+                                         caption="Recap caption")
+        context = make_context()
+        events = [dict(ev) for ev in ASTRO_EVENTS]
+        overrides = {"PUBLIC_CHANNEL_ID": None}
+        if backend:
+            overrides["ARTICLE_BACKEND"] = backend
+        with patched_config(**overrides), \
+             patch("bot.callbacks.recap.get_pending_events_for_recap", return_value=events), \
+             patch("bot.callbacks.recap.create_collage", return_value="/fake/collage.jpg"), \
+             patch("bot.callbacks.recap.create_recap_story_image", return_value=None), \
+             patch("bot.callbacks.recap.astro.upload_media",
+                   side_effect=lambda path, prefix: {"id": f"{prefix}/{path}", "source_url": f"https://r2/{prefix}{path}"}) as up, \
+             patch("bot.callbacks.recap.generate_astro_article", return_value="Articolo **md**") as gen, \
+             patch("bot.callbacks.recap.astro.publish_article", return_value=publish_result) as pub, \
+             patch("bot.callbacks.recap.update_events_article_info") as upd, \
+             patch("bot.callbacks.recap.upload_media") as wp_up, \
+             patch("bot.callbacks.recap.generate_wordpress_article", return_value="<p>x</p>"), \
+             patch("bot.callbacks.recap.update_events_wp_info"), \
+             patch("bot.callbacks.recap.publish_article", return_value=("https://wp/edit", 10)) as wp_pub:
+            await handle_callback_query(update, context)
+        return context, up, gen, pub, upd, wp_up, wp_pub
+
+    async def test_default_backend_is_astro_and_creates_draft_branch(self):
+        context, up, gen, pub, upd, wp_up, wp_pub = await self._run_recap()
+
+        wp_up.assert_not_called()
+        wp_pub.assert_not_called()
+        slug = "eventi-della-serata-venerdi-23-10-2026"
+        self.assertEqual(
+            [call.args for call in up.call_args_list],
+            [("/fake/catan.jpg", f"serate/{slug}"), ("/fake/collage.jpg", f"serate/{slug}")],
+        )
+        gen.assert_called_once()
+        args = pub.call_args.args
+        self.assertEqual(args[0], "Eventi della Serata: Venerdì 23-10-2026")
+        self.assertEqual(args[2:4], ("23-10-2026", slug))
+        self.assertEqual(args[4], f"https://r2/serate/{slug}/fake/collage.jpg")
+        self.assertEqual(args[6], [
+            {"gioco": "Catan", "tipo": "tavolo", "immagine": f"https://r2/serate/{slug}/fake/catan.jpg"},
+            {"gioco": "D&D", "tipo": "gdr"},
+        ])
+        upd.assert_called_once_with([1, 2, 3], "astro", "serata/x", "https://github.com/o/r/blob/serata/x/f.md")
+        last = context.bot.send_message.call_args.kwargs
+        self.assertEqual(last["reply_markup"].inline_keyboard[0][0].callback_data, "publish_astro_23-10-2026")
+        self.assertIn("/serate/2026-10-23-" + slug, last["text"])
+
+    async def test_failed_draft_reports_error_without_storing(self):
+        context, _up, _gen, _pub, upd, _wp_up, _wp_pub = await self._run_recap("astro", publish_result=(False, None))
+
+        upd.assert_not_called()
+        self.assertIn("❌", context.bot.send_message.call_args.kwargs["text"])
+
+    async def test_wordpress_backend_does_not_touch_astro(self):
+        context, up, gen, pub, _upd, wp_up, wp_pub = await self._run_recap("wordpress")
+
+        up.assert_not_called()
+        gen.assert_not_called()
+        pub.assert_not_called()
+        wp_pub.assert_called_once()
+        self.assertTrue(wp_up.called)
+
+
+class TestPublishArticle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def _publish_astro(self, merged, store_ref=True):
+        if store_ref:
+            event_id = create_event(normalized_date="23-10-2026")
+            update_events_article_info([event_id], "astro", "serata/eventi-della-serata-venerdi-23-10-2026", "link")
+        update, query = callback_update("publish_astro_23-10-2026", text="Bozza creata")
+        with patch("bot.callbacks.recap.astro.update_article_status", return_value=merged) as upd:
+            await handle_callback_query(update, make_context())
+        return upd, query.edit_message_text.call_args.kwargs["text"]
+
+    async def test_astro_publish_merges_branch_and_shows_public_url(self):
+        upd, text = await self._publish_astro(True)
+
+        upd.assert_called_once_with("serata/eventi-della-serata-venerdi-23-10-2026", "publish")
+        self.assertIn("/serate/2026-10-23-eventi-della-serata-venerdi-23-10-2026/", text)
+        self.assertIn("Cloudflare", text)
+
+    async def test_astro_publish_failure_shows_error(self):
+        _upd, text = await self._publish_astro(False)
+
+        self.assertIn("Errore durante la pubblicazione", text)
+
+    async def test_astro_publish_without_stored_draft_shows_error(self):
+        upd, text = await self._publish_astro(True, store_ref=False)
+
+        upd.assert_not_called()
+        self.assertIn("Errore durante la pubblicazione", text)
+
+    async def test_wordpress_publish_still_uses_post_id(self):
+        update, query = callback_update("publish_wp_10", text="Bozza")
+        with patch("bot.callbacks.recap.update_article_status", return_value=True) as upd:
+            await handle_callback_query(update, make_context())
+
+        upd.assert_called_once_with(10, "publish")
+        self.assertIn("PUBBLICATO", query.edit_message_text.call_args.kwargs["text"])
 
 
 if __name__ == "__main__":

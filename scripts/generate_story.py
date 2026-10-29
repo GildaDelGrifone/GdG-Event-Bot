@@ -31,6 +31,7 @@ import sqlite3
 # Ensure repository root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from core import config
 from core.config import (
     DATA_DIR,
     TELEGRAM_BOT_TOKEN,
@@ -105,8 +106,14 @@ async def send_story_to_telegram(photo_path, event):
 
 
 async def publish_story_to_instagram(photo_path):
-    """Upload image to WordPress and publish as an Instagram Story via Meta Graph API."""
-    if not WP_URL or not WP_USERNAME or not WP_APP_PASSWORD:
+    """Upload image to the article backend's media storage (R2 or WordPress) and publish as an Instagram Story via Meta Graph API."""
+    use_astro = config.ARTICLE_BACKEND != "wordpress"
+    storage = "R2" if use_astro else "WordPress"
+    if use_astro:
+        if not (config.R2_ACCOUNT_ID and config.R2_ACCESS_KEY_ID and config.R2_SECRET_ACCESS_KEY and config.R2_PUBLIC_URL):
+            print("⚠️  Credenziali R2 non configurate: impossibile caricare l'immagine per Instagram.")
+            return False
+    elif not WP_URL or not WP_USERNAME or not WP_APP_PASSWORD:
         print("⚠️  Credenziali WordPress non configurate: impossibile caricare l'immagine per Instagram.")
         return False
     if not IG_ACCESS_TOKEN or not IG_ACCOUNT_ID:
@@ -114,17 +121,21 @@ async def publish_story_to_instagram(photo_path):
         return False
 
     try:
-        from core.wordpress import upload_media
         from core.instagram import publish_instagram_story
 
-        print("⏳ Caricamento immagine su WordPress per ottenere un URL pubblico...")
-        media_info = upload_media(photo_path)
+        print(f"⏳ Caricamento immagine su {storage} per ottenere un URL pubblico...")
+        if use_astro:
+            from core.astro import upload_media
+            media_info = upload_media(photo_path, "stories")
+        else:
+            from core.wordpress import upload_media
+            media_info = upload_media(photo_path)
         if not media_info or not media_info.get("source_url"):
-            print("❌ Errore durante l'upload dell'immagine su WordPress.")
+            print(f"❌ Errore durante l'upload dell'immagine su {storage}.")
             return False
 
         public_url = media_info["source_url"]
-        print(f"✅ Immagine caricata su WordPress: {public_url}")
+        print(f"✅ Immagine caricata su {storage}: {public_url}")
 
         print("⏳ Pubblicazione storia su Instagram...")
         success, msg = await publish_instagram_story(public_url)

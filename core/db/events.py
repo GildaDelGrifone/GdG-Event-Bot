@@ -140,6 +140,26 @@ def update_events_wp_info(event_ids, post_id, post_url):
 
 
 @db_safe()
+def update_events_article_info(event_ids, backend, ref, url):
+    """Stores the draft of a non-WordPress article: the backend, its draft reference (e.g. a branch) and the draft link."""
+    execute_many(
+        'UPDATE events SET article_backend = ?, article_ref = ?, wp_post_url = ? WHERE id = ?',
+        [(backend, ref, url, eid) for eid in event_ids],
+    )
+
+
+@db_safe()
+def get_article_ref_for_date(date_str, backend):
+    """The draft reference stored by update_events_article_info for the events of date_str (DD-MM-YYYY), or None."""
+    row = fetch_one(
+        "SELECT article_ref FROM events WHERE normalized_date = ? AND article_backend = ? AND article_ref IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (date_str, backend),
+    )
+    return row['article_ref'] if row else None
+
+
+@db_safe()
 def update_telegram_message_info(event_id, message_id, message_link):
     execute('UPDATE events SET telegram_message_id = ?, message_link = ? WHERE id = ?', (message_id, message_link, event_id))
 
