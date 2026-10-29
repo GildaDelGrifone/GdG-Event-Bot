@@ -11,11 +11,13 @@ from core.ai_parser import (
     generate_text,
     strip_code_fence,
     _article_prompt,
+    _astro_article_prompt,
     generate_wordpress_article,
     is_quota_error,
     parse_event_message,
     strip_json_fence,
 )
+from tests.support.config import patched_config
 
 DEPLETED_ERROR = (
     "429 Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects "
@@ -135,6 +137,23 @@ class TestAstroArticle(unittest.TestCase):
         prompt = model.generate_content.call_args.kwargs["contents"]
         self.assertIn("Image URL: https://r2/serate/x/catan.jpg", prompt)
         self.assertIn("Markdown", prompt)
+        self.assertNotIn("<img", prompt)
+
+    def test_prompt_prescribes_the_layout_of_the_older_articles(self):
+        with patched_config(EVENT_START_TIME="20:45"):
+            prompt = _astro_article_prompt("Recap", self.EVENTS)
+
+        self.assertIn("one plain paragraph with NO heading", prompt)
+        self.assertIn("One section for EACH event", prompt)
+        self.assertIn("Never merge or group events", prompt)
+        self.assertIn("a cancelled event gets its own section too", prompt)
+        self.assertIn("**annullato**", prompt)
+        self.assertIn("never as a bare URL", prompt)
+        self.assertIn("do not list them again", prompt)
+        self.assertIn("a line containing only ---", prompt)
+        self.assertIn('"Vi aspettiamo in sede alle **20:45**"', prompt)
+        self.assertLess(prompt.index("![<Event title>]"), prompt.index("[<Short call to action"))
+        self.assertIn("after the text and before the link", prompt)
         self.assertNotIn("<img", prompt)
 
     def test_unfenced_markdown_is_returned_as_is(self):

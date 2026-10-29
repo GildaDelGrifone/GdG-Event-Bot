@@ -206,12 +206,30 @@ def _article_prompt(recap_text, event_list):
     )
 
 
+_ASTRO_LAYOUT = """Return the response as Markdown: just the article body, with no front matter, no HTML tags and no H1 or H2 title. The site renders the title and already shows the list of the games above the article, so do not list them again. Use EXACTLY this layout:
+
+    1. An introduction: one plain paragraph with NO heading. Welcome the readers, put the **Gilda del Grifone** and the date of the night in bold, and end it with a short line such as "Ecco cosa bolle in pentola per stasera:".
+
+    2. One section for EACH event of the list, in the same order. Never merge or group events: a cancelled event gets its own section too. Each section is:
+
+    ### <Event title> (<system>)
+    <One or two lively sentences about the table that state its status from the recap info: seats still free, full table, open to everyone or, for a cancelled event, that it is **annullato**. Never invent seat numbers.>
+
+    ![<Event title>](<Image URL>)
+
+    [<Short call to action, e.g. "Prenotati qui su Telegram">](<Telegram event link>)
+
+    Leave out the parentheses of the heading when the system is unknown, and put no emojis in the headings. Always write links as [text](url), never as a bare URL.
+
+    3. After the last event, a line containing only ---, then the closing: a bold hook for full tables (for example "**Tutto pieno? Non temere!**") saying that the Gilda has a games library of over 400 titles, an invitation to propose a night that names the Telegram contacts as described above, and a last line starting with "Vi aspettiamo in sede alle **{start_time}**" and ending with the 🦅 emoji."""
+
+
 def _astro_article_prompt(recap_text, event_list):
     return _article_brief(
         recap_text, event_list,
         "a tabletop games association's website",
-        'If an "Image URL" is provided for an event in the list below, you MUST embed it in the article body exactly where that event is described using a Markdown image: ![<event title>](<Image URL>). Do not mention or include the daily collage, as the system attaches it automatically as the article cover.',
-        "Return the response as Markdown (just the article body): use ### for headings, no HTML tags, no front matter, and no H1 title (the site renders the title).",
+        'If an "Image URL" is provided for an event in the list below, put it in that event\'s section as a Markdown image on its own line, after the text and before the link: ![<event title>](<Image URL>). Do not mention or include the daily collage, as the system attaches it automatically as the article cover.',
+        _ASTRO_LAYOUT.format(start_time=config.EVENT_START_TIME),
     )
 
 
