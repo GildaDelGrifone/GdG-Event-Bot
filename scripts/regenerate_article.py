@@ -3,7 +3,8 @@
 Regenerate the Astro article of a past game night from the events in the database.
 
 It reuses the images already uploaded to R2 (their address is derived from the event image file name, so the
-original files are not needed) and the cover of the article that is already on the website. Nothing is written to
+original files are not needed) and the cover of the article that is already on the website (or, when it has none,
+the newest collage of the night, if it is in R2). Nothing is written to
 the database.
 
 Usage Examples:
@@ -16,12 +17,11 @@ Usage Examples:
     # Same, and publish it (merges the branch, the site deploys):
     python3 scripts/regenerate_article.py 28-10-2026 --publish
 
-    # Use a specific cover instead of the one of the existing article:
+    # Use a specific cover instead of the existing article's one (or the newest collage):
     python3 scripts/regenerate_article.py 28-10-2026 --cover https://media.example.org/collage.jpg
 """
 
 import argparse
-import base64
 import json
 import os
 import re
@@ -35,14 +35,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from core import astro, config
 from core.ai_parser import GeminiQuotaError, generate_astro_article
-from core.astro.client import gh_request
-from core.astro.content import build_front_matter, file_stem, make_excerpt
+from core.astro.content import build_front_matter, make_excerpt
 from core.db import get_pending_events_for_recap
 from utils.date_utils import DAYS_IT
+from utils.night_images import candidate_folders, newest_collage
 from utils.templates.recap import recap_generate_text
 
 MAX_ATTEMPTS = 3
-IMAGE_CHECK_TIMEOUT = 10
 
 
 def _parse_date(date_str):
@@ -57,12 +56,8 @@ def attach_image_urls(events, slug):
     for ev in events:
         if not ev.get('image_path'):
             continue
-        url = f"{config.R2_PUBLIC_URL}/serate/{slug}/{os.path.basename(ev['image_path'])}"
-        try:
-            reachable = requests.head(url, timeout=IMAGE_CHECK_TIMEOUT, allow_redirects=True).status_code == 200
-        except requests.RequestException:
-            reachable = False
-        if reachable:
+        url = astro.media_url(f"serate/{slug}/{os.path.basename(ev['image_path'])}")
+        if astro.is_reachable(url):
             ev['media_url'] = url
         else:
             print(f"⚠️  Immagine non raggiungibile su R2, la salto: {url}")
@@ -71,17 +66,27 @@ def attach_image_urls(events, slug):
 
 def existing_cover(date_str, slug):
     """The `cover` of the article already on the website branch, or None."""
-    path = f"{config.ASTRO_CONTENT_DIR.strip('/')}/{file_stem(date_str, slug)}.md"
     try:
-        response = gh_request("GET", f"contents/{path}", params={"ref": config.ASTRO_GITHUB_BRANCH})
+        text = astro.published_article_text(date_str, slug)
     except (RuntimeError, requests.RequestException) as e:
         print(f"⚠️  Impossibile leggere l'articolo esistente: {e}")
         return None
-    if response.status_code != 200:
-        return None
-    text = base64.b64decode(response.json().get("content", "")).decode("utf-8", "replace")
-    match = re.search(r'^cover:\s*("(?:[^"\\]|\\.)*")\s*$', text, re.M)
+    match = re.search(r'^cover:\s*("(?:[^"\\]|\\.)*")\s*$', text or "", re.M)
     return json.loads(match.group(1)) if match else None
+
+
+def latest_collage_cover(date, date_str, slug, events):
+    """The cover from the newest collage of the night in the data folders, if it is already in R2; else None."""
+    name = newest_collage(candidate_folders(date, events))
+    if not name:
+        return None
+    url = astro.media_url(f"serate/{slug}/{name}")
+    if astro.is_reachable(url):
+        print(f"ℹ️  Copertina: il collage più recente della serata ({name}).")
+        return url
+    print(f"⚠️  Il collage più recente ({name}) non è su R2: esegui prima "
+          f"`python3 scripts/sync_images_to_r2.py {date_str} --all`.")
+    return None
 
 
 def check_structure(body, events):
@@ -143,7 +148,7 @@ def run(args):
 
     slug = astro.article_slug(date_str)
     attach_image_urls(events, slug)
-    cover = args.cover or existing_cover(date_str, slug)
+    cover = args.cover or existing_cover(date_str, slug) or latest_collage_cover(date, date_str, slug, events)
     if not cover:
         print("⚠️  Nessuna copertina: l'articolo verrà creato senza.")
 
@@ -191,7 +196,8 @@ def parse_args(argv=None):
     parser.add_argument("date", help="Data della serata nel formato DD-MM-YYYY.")
     parser.add_argument("--dry-run", action="store_true", help="Non scrive su GitHub: salva o stampa l'articolo.")
     parser.add_argument("-o", "--output", default=None, help="Con --dry-run, file in cui salvare l'articolo.")
-    parser.add_argument("--cover", default=None, help="URL della copertina (default: quella dell'articolo esistente).")
+    parser.add_argument("--cover", default=None,
+                        help="URL della copertina (default: quella dell'articolo esistente, altrimenti il collage più recente).")
     parser.add_argument("--publish", action="store_true", help="Dopo la bozza, la pubblica (merge sul ramo del sito).")
     args = parser.parse_args(argv)
     if args.publish and args.dry_run:

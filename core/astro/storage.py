@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import os
 
+import requests
 from PIL import Image, ImageOps
 
 from core import config
@@ -11,6 +12,7 @@ from core.astro.client import r2_client
 logger = logging.getLogger(__name__)
 
 MAX_IMAGE_WIDTH = 1600
+HEAD_TIMEOUT = 10
 _RESIZABLE = {"image/jpeg": "JPEG", "image/png": "PNG"}
 
 
@@ -54,3 +56,16 @@ def upload_media(filepath, key_prefix):
     except Exception as e:
         logger.error(f"R2: Failed to upload '{filename}': {e}")
         return None
+
+
+def media_url(key):
+    """The public address of an object of the bucket."""
+    return f"{config.R2_PUBLIC_URL}/{key}"
+
+
+def is_reachable(url):
+    """True when a HEAD request on `url` answers 200 (a network error counts as not reachable)."""
+    try:
+        return requests.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True).status_code == 200
+    except requests.RequestException:
+        return False

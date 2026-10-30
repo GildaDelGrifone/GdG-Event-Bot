@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
 from PIL import Image
 
 from core import astro
@@ -94,6 +95,21 @@ class TestUpload(unittest.TestCase):
              self.assertLogs("core.astro.storage", level="ERROR") as logs:
             self.assertIsNone(storage.upload_media(path, "serate/slug"))
         self.assertIn("boto3 is not installed", logs.output[0])
+
+
+class TestPublicUrls(unittest.TestCase):
+    def test_media_url_joins_the_public_base_and_the_key(self):
+        with patched_config(**R2):
+            self.assertEqual(storage.media_url("serate/s/a.jpg"), "https://pub.r2.dev/serate/s/a.jpg")
+
+    def test_is_reachable_only_for_200_and_network_errors_count_as_not_reachable(self):
+        with patch("core.astro.storage.requests.head", return_value=MagicMock(status_code=200)):
+            self.assertTrue(storage.is_reachable("https://x/a.jpg"))
+        with patch("core.astro.storage.requests.head", return_value=MagicMock(status_code=404)):
+            self.assertFalse(storage.is_reachable("https://x/a.jpg"))
+        with patch("core.astro.storage.requests.head", side_effect=requests.ConnectionError("down")) as head:
+            self.assertFalse(storage.is_reachable("https://x/a.jpg"))
+        self.assertEqual(head.call_args.kwargs["timeout"], 10)
 
 
 class TestRealR2Client(unittest.TestCase):
@@ -282,6 +298,26 @@ class TestGithub(unittest.TestCase):
 
     def test_github_helpers_are_importable(self):
         self.assertTrue(callable(github.merge_branch) and callable(github.delete_branch))
+
+
+class TestPublishedArticleText(unittest.TestCase):
+    def test_reads_the_dated_file_on_the_site_branch(self):
+        encoded = base64.b64encode("---\ntitle: T\n---\nCorpo".encode()).decode()
+        with patched_config(**GH), patch("core.astro.client.requests.request",
+                                         return_value=_response(200, {"content": encoded})) as req:
+            text = astro.published_article_text("23-10-2026", "eventi-della-serata-venerdi-23-10-2026")
+
+        self.assertEqual(text, "---\ntitle: T\n---\nCorpo")
+        self.assertEqual(req.call_args.args[1],
+                         "https://api.github.com/repos/o/r/contents/src/content/serate/2026-10-23-eventi-della-serata-venerdi-23-10-2026.md")
+        self.assertEqual(req.call_args.kwargs["params"], {"ref": "main"})
+
+    def test_missing_file_gives_none_and_missing_credentials_raise(self):
+        with patched_config(**GH), patch("core.astro.client.requests.request", return_value=_response(404)):
+            self.assertIsNone(astro.published_article_text("23-10-2026", "s"))
+        with patched_config(**{**GH, "ASTRO_GITHUB_TOKEN": None}):
+            with self.assertRaises(RuntimeError):
+                astro.published_article_text("23-10-2026", "s")
 
 
 class TestDiscardArticle(unittest.TestCase):

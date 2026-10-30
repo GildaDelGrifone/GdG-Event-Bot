@@ -1,14 +1,13 @@
-import base64
+import datetime
 import os
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-import requests
-
 from scripts import regenerate_article as script
 from tests.support.config import patched_config
 from tests.support.db import TempDBMixin, create_event
+from tests.support.folders import FolderTestCase
 
 DATE = "28-10-2026"
 SLUG = "eventi-della-serata-mercoledi-28-10-2026"
@@ -65,7 +64,7 @@ class TestImageUrls(unittest.TestCase):
             {"image_path": "data/2026/10/28/event_b.jpg"},
             {"image_path": None},
         ]
-        with patched_config(**CONFIG), patch("scripts.regenerate_article.requests.head",
+        with patched_config(**CONFIG), patch("core.astro.storage.requests.head",
                                              side_effect=[_head(200), _head(404)]) as head:
             script.attach_image_urls(events, SLUG)
 
@@ -74,39 +73,60 @@ class TestImageUrls(unittest.TestCase):
         self.assertNotIn("media_url", events[2])
         self.assertEqual(head.call_count, 2)
 
-    def test_a_network_error_counts_as_unreachable(self):
-        events = [{"image_path": "/x/event_a.jpg"}]
-        with patched_config(**CONFIG), patch("scripts.regenerate_article.requests.head",
-                                             side_effect=requests.ConnectionError("down")):
-            script.attach_image_urls(events, SLUG)
-
-        self.assertNotIn("media_url", events[0])
-
 
 class TestExistingCover(unittest.TestCase):
-    def _response(self, status, text=""):
-        response = MagicMock(status_code=status)
-        response.json.return_value = {"content": base64.b64encode(text.encode()).decode()}
-        return response
-
     def test_cover_is_read_from_the_front_matter_of_the_existing_article(self):
         text = '---\ntitle: "T"\ncover: "https://media.example.org/collage.jpg"\nexcerpt: "e"\n---\n'
-        with patched_config(**CONFIG), patch("scripts.regenerate_article.gh_request",
-                                             return_value=self._response(200, text)) as gh:
+        with patch("scripts.regenerate_article.astro.published_article_text", return_value=text) as read:
             cover = script.existing_cover(DATE, SLUG)
 
         self.assertEqual(cover, "https://media.example.org/collage.jpg")
-        self.assertEqual(gh.call_args.args[1], f"contents/src/content/serate/2026-10-28-{SLUG}.md")
-        self.assertEqual(gh.call_args.kwargs["params"], {"ref": "main"})
+        read.assert_called_once_with(DATE, SLUG)
 
     def test_missing_article_or_cover_gives_none(self):
-        with patched_config(**CONFIG):
-            with patch("scripts.regenerate_article.gh_request", return_value=self._response(404)):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
-            with patch("scripts.regenerate_article.gh_request", return_value=self._response(200, "---\ntitle: T\n---\n")):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
-            with patch("scripts.regenerate_article.gh_request", side_effect=RuntimeError("no credentials")):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
+        target = "scripts.regenerate_article.astro.published_article_text"
+        with patch(target, return_value=None):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
+        with patch(target, return_value="---\ntitle: T\n---\n"):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
+        with patch(target, side_effect=RuntimeError("no credentials")):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
+
+
+class TestLatestCollageCover(FolderTestCase):
+    EVENTS = [{"image_path": "data/2026/10/28/event_a.jpg"}]
+    NIGHT = datetime.datetime(2026, 10, 28)
+
+    def cover(self, status=200):
+        with patched_config(**CONFIG, DATA_DIR=self.data), patch("core.astro.storage.requests.head", return_value=_head(status)):
+            return script.latest_collage_cover(self.NIGHT, DATE, SLUG, self.EVENTS)
+
+    def test_the_newest_collage_becomes_the_cover_when_it_is_in_r2(self):
+        old, new = self.write("collage_old.jpg"), self.write("collage_new.jpg")
+        os.utime(old, (1_000_000, 1_000_000))
+        os.utime(new, (2_000_000, 2_000_000))
+
+        self.assertEqual(self.cover(), f"https://media.example.org/serate/{SLUG}/collage_new.jpg")
+
+    def test_a_collage_that_is_not_in_r2_gives_no_cover_and_says_how_to_upload_it(self):
+        self.write("collage_new.jpg")
+
+        with patch("builtins.print") as printed:
+            cover = self.cover(404)
+
+        self.assertIsNone(cover)
+        self.assertIn(f"sync_images_to_r2.py {DATE} --all", printed.call_args.args[0])
+        self.assertIn("collage_new.jpg", printed.call_args.args[0])
+
+    def test_no_collage_on_disk_gives_no_cover(self):
+        self.write("event_a.jpg")
+
+        self.assertIsNone(self.cover())
+
+    def test_a_zipped_collage_is_found_too(self):
+        self.zip({"collage_zipped.jpg": b"z"})
+
+        self.assertEqual(self.cover(), f"https://media.example.org/serate/{SLUG}/collage_zipped.jpg")
 
 
 class TestRun(TempDBMixin, unittest.TestCase):
@@ -120,7 +140,7 @@ class TestRun(TempDBMixin, unittest.TestCase):
     def run_script(self, *argv, articles=(GOOD_ARTICLE,), cover="https://media.example.org/collage.jpg"):
         args = script.parse_args(list(argv))
         with patched_config(**CONFIG), \
-             patch("scripts.regenerate_article.requests.head", return_value=_head(200)), \
+             patch("core.astro.storage.requests.head", return_value=_head(200)), \
              patch("scripts.regenerate_article.existing_cover", return_value=cover), \
              patch("scripts.regenerate_article.generate_astro_article", side_effect=list(articles)) as gen, \
              patch("scripts.regenerate_article.astro.publish_article",
@@ -167,7 +187,7 @@ class TestRun(TempDBMixin, unittest.TestCase):
 
     def test_cover_option_overrides_the_existing_one(self):
         args = script.parse_args([DATE, "--cover", "https://other/c.jpg"])
-        with patched_config(**CONFIG), patch("scripts.regenerate_article.requests.head", return_value=_head()), \
+        with patched_config(**CONFIG), patch("core.astro.storage.requests.head", return_value=_head()), \
              patch("scripts.regenerate_article.existing_cover") as existing, \
              patch("scripts.regenerate_article.generate_astro_article", return_value=GOOD_ARTICLE), \
              patch("scripts.regenerate_article.astro.publish_article", return_value=("l", "b")) as publish:
@@ -175,6 +195,22 @@ class TestRun(TempDBMixin, unittest.TestCase):
 
         existing.assert_not_called()
         self.assertEqual(publish.call_args.args[4], "https://other/c.jpg")
+
+    def test_cover_precedence_option_then_existing_article_then_newest_collage(self):
+        def publish_cover(*argv, existing):
+            args = script.parse_args([DATE, *argv])
+            with patched_config(**CONFIG), patch("core.astro.storage.requests.head", return_value=_head()), \
+                 patch("scripts.regenerate_article.existing_cover", return_value=existing), \
+                 patch("scripts.regenerate_article.latest_collage_cover", return_value="https://media.example.org/latest.jpg") as latest, \
+                 patch("scripts.regenerate_article.generate_astro_article", return_value=GOOD_ARTICLE), \
+                 patch("scripts.regenerate_article.astro.publish_article", return_value=("l", "b")) as publish:
+                script.run(args)
+            return publish.call_args.args[4], latest.called
+
+        self.assertEqual(publish_cover("--cover", "https://other/c.jpg", existing="https://x/existing.jpg"),
+                         ("https://other/c.jpg", False))
+        self.assertEqual(publish_cover(existing="https://x/existing.jpg"), ("https://x/existing.jpg", False))
+        self.assertEqual(publish_cover(existing=None), ("https://media.example.org/latest.jpg", True))
 
     def test_a_bad_article_is_retried_and_the_good_one_is_used(self):
         code, gen, publish, _merge = self.run_script(DATE, articles=("### Solo titolo\n", GOOD_ARTICLE))
