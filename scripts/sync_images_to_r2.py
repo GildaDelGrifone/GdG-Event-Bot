@@ -25,13 +25,10 @@ Usage Examples:
 """
 
 import argparse
-import glob
 import os
 import re
-import shutil
 import sys
 import tempfile
-import zipfile
 from datetime import datetime
 
 import requests
@@ -41,9 +38,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from core import astro, config
 from core.db import get_pending_events_for_recap
-
-HEAD_TIMEOUT = 10
-ARCHIVE_NAME = "archive.zip"
+from utils.night_images import candidate_folders, collage_names, extract_member, find_local_file
 
 
 def article_image_refs(text, base_url):
@@ -57,72 +52,11 @@ def article_image_refs(text, base_url):
     return refs
 
 
-def day_folder(date):
-    return os.path.join(config.DATA_DIR, date.strftime("%Y"), date.strftime("%m"), date.strftime("%d"))
-
-
-def candidate_folders(date, events):
-    """The folders that can hold the night's images: the ones of the stored event image paths, then the day folder."""
-    folders = []
-    for ev in events:
-        if not ev.get('image_path'):
-            continue
-        folder = os.path.dirname(ev['image_path'])
-        folders.append(folder)
-        parts = folder.split(os.sep)
-        if not os.path.isabs(folder) and parts[0] == "data":  # stored relative to the repo; DATA_DIR may live elsewhere
-            folders.append(os.path.join(config.DATA_DIR, *parts[1:]))
-    folders.append(day_folder(date))
-    return list(dict.fromkeys(folders))
-
-
-def find_local_file(name, folders):
-    """(path, None) for a loose file, (zip path, member) for one inside an archive.zip, or None. Loose files win."""
-    for folder in folders:
-        path = os.path.join(folder, name)
-        if os.path.isfile(path):
-            return path, None
-    for folder in folders:
-        zip_path = os.path.join(folder, ARCHIVE_NAME)
-        if not os.path.isfile(zip_path):
-            continue
-        with zipfile.ZipFile(zip_path) as archive:
-            members = [info for info in archive.infolist() if os.path.basename(info.filename) == name]
-        if members:
-            return zip_path, max(members, key=lambda info: info.date_time).filename
-    return None
-
-
-def extract_member(zip_path, member, target_dir):
-    path = os.path.join(target_dir, os.path.basename(member))
-    with zipfile.ZipFile(zip_path) as archive, archive.open(member) as source, open(path, "wb") as target:
-        shutil.copyfileobj(source, target)
-    return path
-
-
-def collage_names(folders):
-    names = []
-    for folder in folders:
-        names += [os.path.basename(path) for path in glob.glob(os.path.join(folder, "collage_*"))]
-        zip_path = os.path.join(folder, ARCHIVE_NAME)
-        if os.path.isfile(zip_path):
-            with zipfile.ZipFile(zip_path) as archive:
-                names += [os.path.basename(n) for n in archive.namelist() if os.path.basename(n).startswith("collage_")]
-    return list(dict.fromkeys(names))
-
-
 def refs_from_database(date_str, events, folders):
     """Without the article: every event image of the night plus every collage, under the night's own prefix."""
     prefix = f"serate/{astro.article_slug(date_str)}"
     names = [os.path.basename(ev['image_path']) for ev in events if ev.get('image_path')] + collage_names(folders)
     return [(prefix, name) for name in dict.fromkeys(names)]
-
-
-def reachable(url):
-    try:
-        return requests.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True).status_code == 200
-    except requests.RequestException:
-        return False
 
 
 def missing_settings(args):
@@ -177,8 +111,8 @@ def run(args):
     with tempfile.TemporaryDirectory() as tmp:
         for prefix, name in refs:
             key = f"{prefix}/{name}"
-            url = f"{config.R2_PUBLIC_URL}/{key}"
-            if not args.force and reachable(url):
+            url = astro.media_url(key)
+            if not args.force and astro.is_reachable(url):
                 present.append(key)
                 print(f"✔️  Già raggiungibile: {key}")
                 continue
@@ -200,7 +134,7 @@ def run(args):
                 print(f"❌ Caricamento non riuscito: {key} (vedi i log)")
                 continue
             uploaded.append(key)
-            if not reachable(url):
+            if not astro.is_reachable(url):
                 unreachable.append(key)
                 print(f"⚠️  Caricato ma non raggiungibile: {url} (controlla l'accesso pubblico del bucket e R2_PUBLIC_URL)")
 

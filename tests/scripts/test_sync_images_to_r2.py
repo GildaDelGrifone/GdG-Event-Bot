@@ -1,13 +1,11 @@
 import os
 import unittest
-import zipfile
 from unittest.mock import MagicMock, patch
-
-import requests
 
 from scripts import sync_images_to_r2 as script
 from tests.support.config import patched_config
 from tests.support.db import TempDBMixin, create_event
+from tests.support.folders import FolderTestCase
 
 DATE = "28-10-2026"
 SLUG = "eventi-della-serata-mercoledi-28-10-2026"
@@ -42,62 +40,6 @@ class TestPureHelpers(unittest.TestCase):
         self.assertEqual(script.article_image_refs("![x](https://other.example.org/serate/s/a.jpg)", BASE), [])
 
 
-class FolderTestCase(unittest.TestCase):
-    def setUp(self):
-        import tempfile
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.data = os.path.join(self.tmp.name, "data")
-        self.day = os.path.join(self.data, "2026", "10", "28")
-        os.makedirs(self.day)
-
-    def write(self, name, content=b"img", folder=None):
-        path = os.path.join(folder or self.day, name)
-        with open(path, "wb") as f:
-            f.write(content)
-        return path
-
-    def zip(self, members, folder=None):
-        path = os.path.join(folder or self.day, "archive.zip")
-        with zipfile.ZipFile(path, "w") as archive:
-            for name, content in members.items():
-                archive.writestr(name, content)
-        return path
-
-
-class TestFindLocalFile(FolderTestCase):
-    def test_loose_file_wins_over_the_archive(self):
-        loose = self.write("event_a.jpg")
-        self.zip({"event_a.jpg": b"zipped"})
-
-        self.assertEqual(script.find_local_file("event_a.jpg", [self.day]), (loose, None))
-
-    def test_file_inside_the_archive(self):
-        archive = self.zip({"event_a.jpg": b"zipped"})
-
-        self.assertEqual(script.find_local_file("event_a.jpg", [self.day]), (archive, "event_a.jpg"))
-        self.assertIsNone(script.find_local_file("missing.jpg", [self.day]))
-
-    def test_extract_member_writes_the_bytes_to_the_target_dir(self):
-        archive = self.zip({"sub/event_a.jpg": b"zipped"})
-        target = os.path.join(self.tmp.name, "out")
-        os.makedirs(target)
-
-        path = script.extract_member(archive, "sub/event_a.jpg", target)
-
-        self.assertEqual(path, os.path.join(target, "event_a.jpg"))
-        with open(path, "rb") as f:
-            self.assertEqual(f.read(), b"zipped")
-
-    def test_candidate_folders_rebase_relative_data_paths_onto_data_dir(self):
-        import datetime
-        with patched_config(DATA_DIR="/var/gdg"):
-            folders = script.candidate_folders(
-                datetime.datetime(2026, 10, 28), [{"image_path": "data/2026/10/28/event_a.jpg"}, {"image_path": None}])
-
-        self.assertEqual(folders, ["data/2026/10/28", "/var/gdg/2026/10/28"])
-
-
 class TestRun(TempDBMixin, FolderTestCase):
     def setUp(self):
         TempDBMixin.setUp(self)
@@ -125,7 +67,7 @@ class TestRun(TempDBMixin, FolderTestCase):
             return {"id": "k", "source_url": "u"} if upload_ok else None
 
         with patched_config(**self.config), \
-             patch("scripts.sync_images_to_r2.requests.head", side_effect=head), \
+             patch("core.astro.storage.requests.head", side_effect=head), \
              patch("scripts.sync_images_to_r2.astro.published_article_text", return_value=article), \
              patch("scripts.sync_images_to_r2.astro.upload_media", side_effect=upload) as upload_mock:
             code = script.run(script.parse_args(list(argv)))
@@ -177,7 +119,7 @@ class TestRun(TempDBMixin, FolderTestCase):
         article = f"![x]({BASE}/{PREFIX}/event_a.jpg)"
 
         with patched_config(**self.config), \
-             patch("scripts.sync_images_to_r2.requests.head", return_value=_head(404)), \
+             patch("core.astro.storage.requests.head", return_value=_head(404)), \
              patch("scripts.sync_images_to_r2.astro.published_article_text", return_value=article), \
              patch("scripts.sync_images_to_r2.astro.upload_media", return_value={"id": "k", "source_url": "u"}):
             code = script.run(script.parse_args([DATE]))
@@ -234,10 +176,6 @@ class TestRun(TempDBMixin, FolderTestCase):
     def test_all_and_article_file_cannot_be_combined(self):
         with self.assertRaises(SystemExit):
             script.parse_args([DATE, "--all", "--article-file", "x.md"])
-
-    def test_a_network_error_counts_as_not_reachable(self):
-        with patch("scripts.sync_images_to_r2.requests.head", side_effect=requests.ConnectionError("down")):
-            self.assertFalse(script.reachable("https://x"))
 
 
 if __name__ == "__main__":

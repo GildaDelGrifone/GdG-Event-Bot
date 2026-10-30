@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
 from PIL import Image
 
 from core import astro
@@ -94,6 +95,21 @@ class TestUpload(unittest.TestCase):
              self.assertLogs("core.astro.storage", level="ERROR") as logs:
             self.assertIsNone(storage.upload_media(path, "serate/slug"))
         self.assertIn("boto3 is not installed", logs.output[0])
+
+
+class TestPublicUrls(unittest.TestCase):
+    def test_media_url_joins_the_public_base_and_the_key(self):
+        with patched_config(**R2):
+            self.assertEqual(storage.media_url("serate/s/a.jpg"), "https://pub.r2.dev/serate/s/a.jpg")
+
+    def test_is_reachable_only_for_200_and_network_errors_count_as_not_reachable(self):
+        with patch("core.astro.storage.requests.head", return_value=MagicMock(status_code=200)):
+            self.assertTrue(storage.is_reachable("https://x/a.jpg"))
+        with patch("core.astro.storage.requests.head", return_value=MagicMock(status_code=404)):
+            self.assertFalse(storage.is_reachable("https://x/a.jpg"))
+        with patch("core.astro.storage.requests.head", side_effect=requests.ConnectionError("down")) as head:
+            self.assertFalse(storage.is_reachable("https://x/a.jpg"))
+        self.assertEqual(head.call_args.kwargs["timeout"], 10)
 
 
 class TestRealR2Client(unittest.TestCase):
