@@ -404,13 +404,14 @@ GdG-Event-Bot/
 │   ├── __init__.py
 │   ├── date_utils.py     # Date parsing, format validation (DD-MM-YYYY [HH:MM]), and anomaly checks
 │   ├── image_utils.py    # Pillow image manipulation: collages, story generation, date folder resolution
+│   ├── night_images.py   # Where a night's images are on disk (loose or in archive.zip), newest collage; used by the R2 repair scripts
 │   └── templates/        # Every user-facing text, one module per area
 │       ├── common.py, event.py, recap.py, subscribers.py, reposts.py, control.py, eventbrite.py
 │       └── booking.py, edit.py, approval.py, public.py, wordpress.py, generator.py, keyboards.py, commands.py
 ├── scripts/              # Utility and maintenance scripts
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
-│   ├── regenerate_article.py # Regenerate the Astro article of a past night (reuses the images already in R2; --dry-run / --publish)
+│   ├── regenerate_article.py # Regenerate the Astro article of a past night (reuses the images already in R2; cover: --cover, existing, else newest collage; --dry-run / --publish)
 │   ├── sync_images_to_r2.py # Upload a night's images (loose or in archive.zip) to R2 so a published article's links work (--dry-run / --force / --all)
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
@@ -434,6 +435,7 @@ GdG-Event-Bot/
 ├── README.md             # User and operator manual
 ├── AGENTS.md             # This document (technical and architectural specification, read by AI coding tools)
 ├── CLAUDE.md             # Points Claude Code at AGENTS.md (`@AGENTS.md`)
+├── .claude/skills/       # Project skills: eventbrite-venues, restore-article-images
 └── .gemini/settings.json # Points Gemini CLI at AGENTS.md (`context.fileName`)
 ```
 
