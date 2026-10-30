@@ -395,7 +395,7 @@ GdG-Event-Bot/
 │   │   ├── client.py     # GitHub API request helper, lazy boto3 R2 client
 │   │   ├── storage.py    # upload_media to R2 (resize, keys, public URL)
 │   │   ├── github.py     # branches, file commits, merge, delete
-│   │   └── content.py    # article_slug, public_url (no date), front matter, tavoli_from_events, publish_article (draft branch), update_article_status (merge), discard_article (delete branch)
+│   │   └── content.py    # article_slug, public_url (no date), published_article_text, front matter, tavoli_from_events, publish_article (draft branch), update_article_status (merge), discard_article (delete branch)
 │   └── wordpress/        # WordPress REST API (public API: `from core.wordpress import ...`)
 │       ├── client.py     # Credentials, auth headers, wp_get / wp_post / wp_delete (with timeouts)
 │       ├── categories.py # WP_POST_CATEGORY / slug / name -> category IDs
@@ -411,6 +411,7 @@ GdG-Event-Bot/
 │   ├── generate_story.py # Utility script to manually generate Instagram Stories by event ID
 │   ├── fix_event_keyboards.py # Utility script to synchronize event inline buttons with SQLite IDs
 │   ├── regenerate_article.py # Regenerate the Astro article of a past night (reuses the images already in R2; --dry-run / --publish)
+│   ├── sync_images_to_r2.py # Upload a night's images (loose or in archive.zip) to R2 so a published article's links work (--dry-run / --force / --all)
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
 │   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create/update venues, create collections

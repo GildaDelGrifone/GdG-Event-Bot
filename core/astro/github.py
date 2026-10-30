@@ -38,6 +38,14 @@ def get_file(path, branch):
     return None
 
 
+def get_file_text(path, branch):
+    """The decoded text of `path` on `branch`, or None when it does not exist. Raises when GitHub is not configured."""
+    response = gh_request("GET", f"contents/{quote(path)}", params={"ref": branch})
+    if response.status_code != 200:
+        return None
+    return base64.b64decode(response.json().get("content", "")).decode("utf-8", "replace")
+
+
 def put_file(path, content, message, branch):
     """Creates or updates `path` on `branch` with the text `content`."""
     payload = {

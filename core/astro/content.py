@@ -88,6 +88,12 @@ def _branch_name(slug):
     return f"serata/{slug}"
 
 
+def published_article_text(date_str, slug):
+    """The Markdown file of the night's article on the site branch (front matter included), or None if there is none."""
+    path = f"{config.ASTRO_CONTENT_DIR.strip('/')}/{file_stem(date_str, slug)}.md"
+    return github.get_file_text(path, config.ASTRO_GITHUB_BRANCH)
+
+
 def publish_article(title, markdown_body, date, slug, cover_url, excerpt, tavoli):
     """Creates the draft: a branch with the article file. Returns (draft_link, branch) or (False, None)."""
     creds = github_credentials()

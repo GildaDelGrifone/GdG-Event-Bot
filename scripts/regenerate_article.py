@@ -21,7 +21,6 @@ Usage Examples:
 """
 
 import argparse
-import base64
 import json
 import os
 import re
@@ -35,8 +34,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from core import astro, config
 from core.ai_parser import GeminiQuotaError, generate_astro_article
-from core.astro.client import gh_request
-from core.astro.content import build_front_matter, file_stem, make_excerpt
+from core.astro.content import build_front_matter, make_excerpt
 from core.db import get_pending_events_for_recap
 from utils.date_utils import DAYS_IT
 from utils.templates.recap import recap_generate_text
@@ -71,16 +69,12 @@ def attach_image_urls(events, slug):
 
 def existing_cover(date_str, slug):
     """The `cover` of the article already on the website branch, or None."""
-    path = f"{config.ASTRO_CONTENT_DIR.strip('/')}/{file_stem(date_str, slug)}.md"
     try:
-        response = gh_request("GET", f"contents/{path}", params={"ref": config.ASTRO_GITHUB_BRANCH})
+        text = astro.published_article_text(date_str, slug)
     except (RuntimeError, requests.RequestException) as e:
         print(f"⚠️  Impossibile leggere l'articolo esistente: {e}")
         return None
-    if response.status_code != 200:
-        return None
-    text = base64.b64decode(response.json().get("content", "")).decode("utf-8", "replace")
-    match = re.search(r'^cover:\s*("(?:[^"\\]|\\.)*")\s*$', text, re.M)
+    match = re.search(r'^cover:\s*("(?:[^"\\]|\\.)*")\s*$', text or "", re.M)
     return json.loads(match.group(1)) if match else None
 
 

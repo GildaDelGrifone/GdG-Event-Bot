@@ -284,6 +284,26 @@ class TestGithub(unittest.TestCase):
         self.assertTrue(callable(github.merge_branch) and callable(github.delete_branch))
 
 
+class TestPublishedArticleText(unittest.TestCase):
+    def test_reads_the_dated_file_on_the_site_branch(self):
+        encoded = base64.b64encode("---\ntitle: T\n---\nCorpo".encode()).decode()
+        with patched_config(**GH), patch("core.astro.client.requests.request",
+                                         return_value=_response(200, {"content": encoded})) as req:
+            text = astro.published_article_text("23-10-2026", "eventi-della-serata-venerdi-23-10-2026")
+
+        self.assertEqual(text, "---\ntitle: T\n---\nCorpo")
+        self.assertEqual(req.call_args.args[1],
+                         "https://api.github.com/repos/o/r/contents/src/content/serate/2026-10-23-eventi-della-serata-venerdi-23-10-2026.md")
+        self.assertEqual(req.call_args.kwargs["params"], {"ref": "main"})
+
+    def test_missing_file_gives_none_and_missing_credentials_raise(self):
+        with patched_config(**GH), patch("core.astro.client.requests.request", return_value=_response(404)):
+            self.assertIsNone(astro.published_article_text("23-10-2026", "s"))
+        with patched_config(**{**GH, "ASTRO_GITHUB_TOKEN": None}):
+            with self.assertRaises(RuntimeError):
+                astro.published_article_text("23-10-2026", "s")
+
+
 class TestDiscardArticle(unittest.TestCase):
     def discard(self, responses):
         with patched_config(**GH), patch("core.astro.client.requests.request", side_effect=responses) as req:

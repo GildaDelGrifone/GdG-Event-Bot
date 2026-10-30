@@ -1,4 +1,3 @@
-import base64
 import os
 import tempfile
 import unittest
@@ -84,29 +83,22 @@ class TestImageUrls(unittest.TestCase):
 
 
 class TestExistingCover(unittest.TestCase):
-    def _response(self, status, text=""):
-        response = MagicMock(status_code=status)
-        response.json.return_value = {"content": base64.b64encode(text.encode()).decode()}
-        return response
-
     def test_cover_is_read_from_the_front_matter_of_the_existing_article(self):
         text = '---\ntitle: "T"\ncover: "https://media.example.org/collage.jpg"\nexcerpt: "e"\n---\n'
-        with patched_config(**CONFIG), patch("scripts.regenerate_article.gh_request",
-                                             return_value=self._response(200, text)) as gh:
+        with patch("scripts.regenerate_article.astro.published_article_text", return_value=text) as read:
             cover = script.existing_cover(DATE, SLUG)
 
         self.assertEqual(cover, "https://media.example.org/collage.jpg")
-        self.assertEqual(gh.call_args.args[1], f"contents/src/content/serate/2026-10-28-{SLUG}.md")
-        self.assertEqual(gh.call_args.kwargs["params"], {"ref": "main"})
+        read.assert_called_once_with(DATE, SLUG)
 
     def test_missing_article_or_cover_gives_none(self):
-        with patched_config(**CONFIG):
-            with patch("scripts.regenerate_article.gh_request", return_value=self._response(404)):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
-            with patch("scripts.regenerate_article.gh_request", return_value=self._response(200, "---\ntitle: T\n---\n")):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
-            with patch("scripts.regenerate_article.gh_request", side_effect=RuntimeError("no credentials")):
-                self.assertIsNone(script.existing_cover(DATE, SLUG))
+        target = "scripts.regenerate_article.astro.published_article_text"
+        with patch(target, return_value=None):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
+        with patch(target, return_value="---\ntitle: T\n---\n"):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
+        with patch(target, side_effect=RuntimeError("no credentials")):
+            self.assertIsNone(script.existing_cover(DATE, SLUG))
 
 
 class TestRun(TempDBMixin, unittest.TestCase):

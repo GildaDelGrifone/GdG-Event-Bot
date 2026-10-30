@@ -357,6 +357,23 @@ All maintenance utilities are located in the `scripts/` directory:
   ```
   Reads the night's events from the database, reuses the images already in R2 (their address comes from the event image file name, so the original files are not needed; unreachable ones are skipped) and the cover of the article already on the site, and asks Gemini for the article. It checks the layout (plain intro, one `###` section per event, `---` rule, event links as Markdown links) and asks again up to 3 times; if it still does not match, nothing is published. Needs the `ASTRO_GITHUB_*` and `R2_PUBLIC_URL` settings (`--dry-run` only needs `R2_PUBLIC_URL`). It never writes to the database.
 
+- **Repair Missing Article Images (R2):**
+  ```bash
+  # See what is missing from R2 and where each file would come from (nothing is uploaded):
+  python3 scripts/sync_images_to_r2.py 28-10-2026 --dry-run
+
+  # Upload the missing images (same keys the article already points at):
+  python3 scripts/sync_images_to_r2.py 28-10-2026
+
+  # Upload again even the images that are already reachable:
+  python3 scripts/sync_images_to_r2.py 28-10-2026 --force
+
+  # Read the article from a local file instead of GitHub, or skip the article and take every event image and collage of the night:
+  python3 scripts/sync_images_to_r2.py 28-10-2026 --article-file /tmp/article.md
+  python3 scripts/sync_images_to_r2.py 28-10-2026 --all
+  ```
+  For an article that is already published with broken image links. It reads the article from the website repo, takes every image it hosts on `R2_PUBLIC_URL`, and uploads the missing ones from the `data/` folder of that night, loose or inside `archive.zip` (nothing is extracted into `data/`). Images are resized like a normal upload and each URL is checked afterwards: one that is uploaded but still unreachable points at the bucket's public access or `R2_PUBLIC_URL`. The article and the database are never modified. Needs the `R2_*` settings and `ASTRO_GITHUB_*` (not for `--all` / `--article-file`; `--dry-run` only needs `R2_PUBLIC_URL`).
+
 - **Fix / Synchronize Inline Keyboards:**
   ```bash
   # Synchronize keyboards across approved event messages (Channel, Discussion, Admin):
