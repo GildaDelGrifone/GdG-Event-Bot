@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 media_groups = {}        # albums posted in the public channel, awaiting extraction
 admin_media_groups = {}  # albums sent in the admin chat, kept for /ep and /event_edit_image
 
+# Waiting times (seconds) when reading a cached admin album.
+ALBUM_ARRIVAL_TIMEOUT = 3.5     # for the album to show up in the cache at all
+ALBUM_DEBOUNCE = 2.0            # silence after the last photo before the album counts as complete
+ALBUM_DOWNLOAD_TIMEOUT = 30.0   # cap on waiting for slow photo downloads
+
 
 def _build_collage(images, label):
     if len(images) > 1:
@@ -77,12 +82,21 @@ async def cache_admin_media_group(update: Update, context: ContextTypes.DEFAULT_
 async def get_media_group_data_from_cache(
     media_group_id: str,
     wait_if_missing: bool = True,
-    timeout: float = 3.5,
-    debounce: float = 1.0,
+    timeout: float = None,
+    debounce: float = None,
+    download_timeout: float = None,
 ):
-    """Returns (image_bytes, first_caption) for a cached admin album once its downloads have settled."""
+    """Returns (image_bytes, first_caption) for a cached admin album once its downloads have settled.
+
+    `timeout` only bounds the wait for the album to appear in the cache; once it is there we wait for
+    `debounce` seconds of silence and for every pending download, up to `download_timeout`.
+    """
     if not media_group_id:
         return None, None
+
+    timeout = ALBUM_ARRIVAL_TIMEOUT if timeout is None else timeout
+    debounce = ALBUM_DEBOUNCE if debounce is None else debounce
+    download_timeout = ALBUM_DOWNLOAD_TIMEOUT if download_timeout is None else download_timeout
 
     loop = asyncio.get_event_loop()
     start_wait = loop.time()
@@ -95,11 +109,18 @@ async def get_media_group_data_from_cache(
         return None, None
 
     group_entry = admin_media_groups[media_group_id]
-    while loop.time() - start_wait < timeout:
-        if group_entry.get("pending_downloads", 0) > 0 or loop.time() - group_entry.get("last_received", 0) < debounce:
-            await asyncio.sleep(0.1)
-            continue
-        break
+    settle_start = loop.time()
+    while True:
+        pending = group_entry.get("pending_downloads", 0)
+        if pending <= 0 and loop.time() - group_entry.get("last_received", 0) >= debounce:
+            break
+        if loop.time() - settle_start >= download_timeout:
+            logger.warning(
+                f"Admin media group {media_group_id}: gave up waiting after {download_timeout}s "
+                f"({len(group_entry.get('images', {}))} images cached, {pending} downloads still pending)."
+            )
+            break
+        await asyncio.sleep(0.1)
 
     images_dict = group_entry.get("images", {})
     cached_images = [images_dict[mid] for mid in sorted(images_dict) if images_dict[mid]]

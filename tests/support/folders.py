@@ -8,6 +8,10 @@ class FolderTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        # Relative "data/..." image paths resolve against the working directory: keep them away from the real repo data.
+        previous_cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.addCleanup(os.chdir, previous_cwd)
         self.data = os.path.join(self.tmp.name, "data")
         self.day = os.path.join(self.data, "2026", "10", "28")
         os.makedirs(self.day)
