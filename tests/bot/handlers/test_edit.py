@@ -200,6 +200,46 @@ class TestEventEditImage(OldEventMixin, unittest.IsolatedAsyncioTestCase):
         mock_collage.assert_called_once_with([bytearray(b"early_raw1"), bytearray(b"early_raw2")])
         self.assertEqual(db.get_event(self.event_id)["image_path"], new_path)
 
+    async def test_event_edit_image_media_group_slow_downloads_are_awaited(self):
+        """Photo downloads slower than the arrival timeout must still end up in the collage."""
+        mg_id = "slow_download_album"
+        updates = [self._album_message(mg_id, 3000 + i, f"slow{i}".encode(),
+                                       caption=f"/event_edit_image {self.event_id}" if i == 1 else None)
+                   for i in (1, 2, 3)]
+        new_path = self._file("slow_collage.png", b"slow_collage")
+
+        async def slow_download(msg):
+            await asyncio.sleep(0.4)
+            return bytearray(msg.photo[-1].data)
+
+        async def arrive():
+            await asyncio.gather(*(cache_admin_media_group(u, self.context) for u in updates))
+
+        save_patch, update_patch = self._edit_patches(new_path)
+        with as_admin_chat(), save_patch, update_patch, \
+             patch("bot.handlers.albums.ALBUM_ARRIVAL_TIMEOUT", 0.1), \
+             patch("bot.handlers.albums.ALBUM_DEBOUNCE", 0.05), \
+             patch("bot.handlers.albums.ALBUM_DOWNLOAD_TIMEOUT", 5.0), \
+             patch("bot.handlers.albums.download_first_image", side_effect=slow_download), \
+             patch("bot.handlers.albums.create_collage_from_bytes", return_value=b"stitched") as mock_collage:
+            await asyncio.gather(asyncio.create_task(arrive()),
+                                 asyncio.create_task(event_edit_command(updates[0], self.context)))
+
+        self.assertEqual(len(mock_collage.call_args[0][0]), 3)
+        self.assertEqual(db.get_event(self.event_id)["image_path"], new_path)
+
+    async def test_media_group_cache_gives_up_on_stuck_downloads_with_warning(self):
+        from bot.handlers.albums import get_media_group_data_from_cache
+        admin_media_groups["stuck_album"] = {
+            "images": {1: bytearray(b"only")}, "captions": {},
+            "last_received": asyncio.get_event_loop().time(), "pending_downloads": 1,
+        }
+        with self.assertLogs("bot.handlers.albums", level="WARNING") as logs:
+            image, _ = await get_media_group_data_from_cache(
+                "stuck_album", wait_if_missing=False, debounce=0.05, download_timeout=0.3)
+        self.assertEqual(image, bytearray(b"only"))
+        self.assertIn("gave up waiting", logs.output[0])
+
     async def test_event_edit_image_missing_photo_shows_error(self):
         update = admin_update("/event_edit_image", reply_to=admin_card(self.event_id))
 
