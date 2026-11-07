@@ -62,3 +62,29 @@ def format_caption_overflow_warning(length, limit):
 
 def format_edit_done(field):
     return f"✅ Campo '{field}' aggiornato con successo!"
+
+
+# ✏️ Modifica menu of the admin card: (key in callback_data, button label, /event_edit_* command, hint for the prompt)
+EDIT_MENU_FIELDS = (
+    ("title", "Titolo", "/event_edit_title", ""),
+    ("date", "Data", "/event_edit_date", "Formato DD-MM-YYYY o DD-MM-YYYY HH:MM."),
+    ("system", "Sistema", "/event_edit_system", ""),
+    ("seats", "Posti", "/event_edit_seats", "X/Y (liberi/totali), un numero (totale), oppure illimitati."),
+    ("host", "Host", "/event_edit_host", ""),
+    ("extra", "Extra", "/event_edit_extra", "Scrivi nessuno per svuotarlo."),
+    ("desc", "Descrizione", "/event_edit_description", ""),
+)
+
+EDIT_PROMPT_MARKER = "✏️ Modifica evento #"
+
+
+def format_edit_prompt(event_id, label, current_value, hint=""):
+    current = str(current_value).strip() if current_value not in (None, "") else "(vuoto)"
+    if len(current) > 600:
+        current = current[:600] + "…"
+    text = (f"{EDIT_PROMPT_MARKER}{event_id} — {label}\n\nValore attuale:\n{current}\n\n"
+            "Rispondi a questo messaggio con il nuovo valore.")
+    return text + (f"\n{hint}" if hint else "") + "\nPer l'immagine usa /event_edit_image rispondendo alla scheda."
+
+
+EDIT_PROMPT_EXPIRED = "Questa richiesta di modifica non è più valida: riapri ✏️ Modifica sulla scheda dell'evento."

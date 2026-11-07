@@ -10,11 +10,12 @@ from utils.templates.keyboards import (
     BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
-    BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE,
+    BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE, BUTTON_EDIT_MENU, format_edit_type_button,
     BUTTON_UNBOOK, BUTTON_CALENDAR, BUTTON_RELEASE_SEAT, SUBSCRIBER_FALLBACK_NAME, format_release_seat_button, format_decrement_seat_button, format_eventbrite_order_row_button,
     format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
 )
 from utils.templates.common import ASSOCIATION_ADDRESS
+from utils.templates.edit import EDIT_MENU_FIELDS
 from utils.templates.subscribers import format_reservation_subscriber_display
 from utils.date_utils import google_calendar_url
 
@@ -55,8 +56,35 @@ def get_approval_keyboard(event_id):
         ])
     elif eventbrite_enabled():
         rows.append([InlineKeyboardButton(BUTTON_PUBLISH_PLUS_EB, callback_data=f"publish_eb_event_{event_id}")])
-    rows.append([_manage_subs_button(event_id)])
+    rows.append([_manage_subs_button(event_id), _edit_menu_button(event_id)])
     return InlineKeyboardMarkup(rows)
+
+
+def _edit_menu_button(event_id):
+    return InlineKeyboardButton(BUTTON_EDIT_MENU, callback_data=f"editmenu_{event_id}")
+
+
+def get_edit_menu_keyboard(event):
+    """✏️ Modifica: one button per editable field (two per row), the type toggle and ↩️ Indietro."""
+    event_id = event['id']
+    buttons = [InlineKeyboardButton(label, callback_data=f"editfield_{event_id}_{key}")
+               for key, label, _cmd, _hint in EDIT_MENU_FIELDS]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton(format_edit_type_button(event.get('is_roleplay')), callback_data=f"edittype_{event_id}")])
+    rows.append([InlineKeyboardButton(BUTTON_BACK, callback_data=f"editback_{event_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_card_keyboard(event):
+    """The buttons the admin card shows for the event's current status."""
+    status, event_id = event.get('status'), event['id']
+    if status == 'approved':
+        return get_approved_event_keyboard(event_id, event)
+    if status == 'cancelled':
+        return get_cancelled_event_keyboard(event_id)
+    if status == 'discarded':
+        return get_discarded_event_keyboard(event_id)
+    return get_approval_keyboard(event_id)
 
 
 def get_approved_event_keyboard(event_id, event=None):
@@ -69,6 +97,7 @@ def get_approved_event_keyboard(event_id, event=None):
             rows.append(_eventbrite_row(event_id, event))
         else:
             rows.append([InlineKeyboardButton(BUTTON_EB_PUBLISH, callback_data=f"eb_publish_{event_id}")])
+    rows.append([_edit_menu_button(event_id)])
     return InlineKeyboardMarkup(rows)
 
 

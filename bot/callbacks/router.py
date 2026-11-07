@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.callbacks import booking, events, recap, schedule, subscribers, venues
+from bot.callbacks import booking, edit_menu, events, recap, schedule, subscribers, venues
 
 # Ordered (prefix, handler) pairs; each handler receives (query, context, payload-after-prefix).
 CALLBACK_ROUTES = (
@@ -18,6 +18,10 @@ CALLBACK_ROUTES = (
     ("ebvenue_", venues.handle_venue_pick),
     ("discard_event_", events.handle_discard_event),
     ("restore_event_", events.handle_restore_event),
+    ("editmenu_", edit_menu.handle_edit_menu),
+    ("editback_", edit_menu.handle_edit_back),
+    ("editfield_", edit_menu.handle_edit_field),
+    ("edittype_", edit_menu.handle_edit_type),
     ("cancel_event_", events.handle_cancel_event),
     ("cancel_confirm_", events.handle_cancel_confirm),
     ("cancel_abort_", events.handle_cancel_abort),

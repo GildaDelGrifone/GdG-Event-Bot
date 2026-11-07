@@ -123,8 +123,10 @@ class TestEventbriteKeyboards(unittest.TestCase):
     def test_unconfigured_keyboards_are_exactly_as_before(self):
         with patched_config(EVENTBRITE_TOKEN=None, EVENTBRITE_ORGANIZATION_ID=None, EVENTBRITE_VENUE_ID=None):
             self.assertEqual(len(get_approval_keyboard(5).inline_keyboard), 2)
-            self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 1)
-            self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 1)
+            # [✏️ Modifica] is the only row added since
+            self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 2)
+            self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 2)
+            self.assertEqual(get_approved_event_keyboard(5).inline_keyboard[-1][0].callback_data, "editmenu_5")
 
     def test_pending_card_offers_publish_plus_eventbrite_by_default(self):
         with eventbrite_credentials(), patch.object(runtime_state, "eventbrite_only", False):

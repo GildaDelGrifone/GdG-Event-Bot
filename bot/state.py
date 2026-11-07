@@ -23,11 +23,23 @@ class BotRuntimeState:
     # event ids in flight (a second press for the same event is refused)
     eventbrite_tasks: set = field(default_factory=set)
     eventbrite_publishing: set = field(default_factory=set)
+    # ✏️ Modifica prompts waiting for the admin's reply: prompt message id -> (event_id, command, admin card message)
+    edit_prompts: dict = field(default_factory=dict)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
 
 
 runtime_state = BotRuntimeState()
+
+
+EDIT_PROMPTS_KEPT = 50
+
+
+def remember_edit_prompt(prompt_message_id, event_id, command, card_message):
+    prompts = runtime_state.edit_prompts
+    prompts[prompt_message_id] = (event_id, command, card_message)
+    while len(prompts) > EDIT_PROMPTS_KEPT:
+        prompts.pop(next(iter(prompts)))
 
 
 def load_persisted_state():

@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from core.db import get_event, admin_add_subscriber, admin_remove_subscriber, get_reservation_by_user
 from bot.common.auth import admin_only, describe_user
 from bot.common.parsing import extract_event_id_from_reply
+from bot.handlers.edit import handle_edit_reply, is_edit_prompt
 from bot.service.notices import send_admin_action_notice
 from bot.service.posts import update_event_messages
 from utils.templates.common import format_admin_failure, format_admin_success
@@ -43,6 +44,9 @@ async def _add_subscriber_and_notify(update, context, event_id, username, seats,
 @admin_only()
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.reply_to_message:
+        return
+    if is_edit_prompt(update.message.reply_to_message):
+        await handle_edit_reply(update, context)
         return
 
     replied_text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""

@@ -287,7 +287,7 @@ class TestEventMineTemplates(unittest.TestCase):
 class TestMessageCatalogue(unittest.TestCase):
     def test_public_text_constants_are_non_empty_strings(self):
         for name in dir(templates):
-            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
+            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "EDIT_MENU_FIELDS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
                 with self.subTest(name=name):
                     value = getattr(templates, name)
                     self.assertIsInstance(value, str)

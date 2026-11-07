@@ -232,6 +232,8 @@ python3 main.py
 - **Article only:** `/recap_article [DD-MM-YYYY]` reruns only the article for a date (collage, image uploads, AI text, new draft with publish/discard buttons) without rebuilding the recap card or the Instagram story. Without a date it uses today.
 
 ### 4. Admin Event Editing (Reply Commands)
+The quickest way: press `[✏️ Modifica]` on the event card (pending or published), pick the field, and reply to the bot's prompt with the new value; `[🎲 Tipo]` switches roleplay/board game at once and `[↩️ Indietro]` puts the normal buttons back. The values are checked exactly like the commands below, and the channel post updates too. The image is changed with `/event_edit_image`.
+
 In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already published) to update fields live in SQLite and edit the message in the channel:
 - `/event_edit_title <Titolo>`
 - `/event_edit_date <DD-MM-YYYY [HH:MM] o DD/MM/YYYY [HH:MM]>` (calcola automaticamente il giorno della settimana in italiano e sincronizza sia `date` che `normalized_date`)

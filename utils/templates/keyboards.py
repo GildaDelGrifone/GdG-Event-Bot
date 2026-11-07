@@ -34,6 +34,14 @@ BUTTON_DISCARD = "Discard"
 BUTTON_RESTORE = "↩️ Ripristina"
 
 
+BUTTON_EDIT_MENU = "✏️ Modifica"
+
+
+def format_edit_type_button(is_roleplay):
+    """Toggles the event type; shows the current one."""
+    return "🎲 Tipo: Gioco di ruolo → Tavolo" if is_roleplay else "🎲 Tipo: Gioco da tavolo → GdR"
+
+
 BUTTON_PUBLISH_TELEGRAM_AND_EB = "🚀 Telegram + EB"
 
 

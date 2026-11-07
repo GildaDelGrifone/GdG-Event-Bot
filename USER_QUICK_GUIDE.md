@@ -30,7 +30,9 @@ Gli amministratori gestiscono il bot tramite il **Gruppo Admin**.
   `/event_process` (oppure `/ep`)
 
 ### 2. Modificare un Evento (Prima o Dopo la Pubblicazione)
-Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere i dati in tempo reale **rispondendo al messaggio dell'evento** (l'anteprima nel gruppo admin o il post già pubblicato) con uno di questi comandi:
+Il modo più rapido: premi **[✏️ Modifica]** sulla scheda dell'evento nel gruppo admin, scegli il campo (Titolo, Data, Posti, …) e rispondi al messaggio del bot con il nuovo valore. **[🎲 Tipo]** cambia subito tra gioco di ruolo e gioco da tavolo, **[↩️ Indietro]** rimette i pulsanti normali. Per l'immagine usa `/event_edit_image`.
+
+In alternativa, se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere i dati in tempo reale **rispondendo al messaggio dell'evento** (l'anteprima nel gruppo admin o il post già pubblicato) con uno di questi comandi:
 - `/event_edit_title <Nuovo Titolo>`
 - `/event_edit_date <DD-MM-YYYY HH:MM>` *(es. 05-09-2026 21:00 - calcolerà automaticamente il giorno della settimana)*
 - `/event_edit_system <Sistema di Gioco>`

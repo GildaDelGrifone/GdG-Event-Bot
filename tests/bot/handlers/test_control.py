@@ -35,7 +35,7 @@ class TestAdminCommandAuditLogging(TempDBMixin, unittest.IsolatedAsyncioTestCase
         update.message.reply_to_message = reply_msg
         update.message.text = "/event_edit_title New Glorious Title"
 
-        with as_admin_chat(), patch("bot.handlers.edit.logger") as mock_logger:
+        with as_admin_chat(), patch("bot.service.edits.logger") as mock_logger:
             await event_edit_command(update, context)
             self.assertTrue(any("998877" in msg and "title" in msg and f"#{ev_id}" in msg for msg in _info_messages(mock_logger)))
             self.assertEqual(db.get_event(ev_id)["title"], "New Glorious Title")
