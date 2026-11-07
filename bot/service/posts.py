@@ -8,6 +8,7 @@ from telegram.error import RetryAfter
 from core import config
 from core.db import get_event, update_discussion_message_info
 from utils.templates.event import format_discussion_booking_message, format_public_event_message
+from bot.common.media import send_photo_resilient
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
 from bot.service.eventbrite import sync_eventbrite
@@ -68,14 +69,13 @@ async def _sync_public_post(bot, event_id, event, public_text, keyboard, update_
 
     if update_image and image_path and os.path.exists(image_path):
         try:
-            with open(image_path, 'rb') as f:
-                img_bytes = f.read()
-            await _execute_with_retry(lambda: bot.edit_message_media(
+            await _execute_with_retry(lambda: send_photo_resilient(lambda photo, **kw: bot.edit_message_media(
                 chat_id=config.PUBLIC_CHANNEL_ID,
                 message_id=message_id,
-                media=InputMediaPhoto(media=img_bytes, caption=public_text, parse_mode="HTML"),
+                media=InputMediaPhoto(media=photo, caption=public_text, parse_mode="HTML"),
                 reply_markup=keyboard,
-            ))
+                **kw,
+            ), image_path, html=False))
         except Exception as e:
             if not is_not_modified_error(e):
                 logger.error(f"Error editing message media in public channel for event {event_id}: {e}")

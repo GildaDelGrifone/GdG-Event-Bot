@@ -23,5 +23,10 @@ GENERATE_SAVE_ERROR = "Errore durante il salvataggio dell'evento nel database."
 GENERATE_SUCCESS = "Evento generato con successo e inviato in revisione."
 
 
+def format_generate_preview_failed(event_id):
+    return (f"Evento #{event_id} generato e salvato, ma l'invio della card di approvazione è fallito "
+            "(errore di rete con Telegram). Rilancia /event_generate.")
+
+
 def format_generate_result(success, result_text):
     return f"{'✅' if success else '❌'} {result_text}"

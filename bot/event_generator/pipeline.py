@@ -12,6 +12,7 @@ from utils.templates.event import format_public_event_message
 from bot.common.messages import CAPTION_LIMIT
 from utils.templates.generator import (
     GENERATE_PARSE_FAILED, GENERATE_QUOTA_DEPLETED, GENERATE_SAVE_ERROR, GENERATE_SUCCESS,
+    format_generate_preview_failed,
 )
 from bot.common.previews import date_anomaly_warning, notify_quota_depleted, send_admin_preview
 from bot.event_generator.ai import generate_event_data_with_ai
@@ -89,7 +90,12 @@ async def process_event_generation(prompt_text: str, context: ContextTypes.DEFAU
         return False, GENERATE_SAVE_ERROR
 
     warning_block = date_anomaly_warning(event_data, raw_text=prompt_text)
-    admin_msg = await _send_generated_preview(context.bot, warning_block, final_text, image_path, get_approval_keyboard(event_id))
+    try:
+        admin_msg = await _send_generated_preview(context.bot, warning_block, final_text, image_path,
+                                                  get_approval_keyboard(event_id))
+    except Exception as e:
+        logger.error(f"Failed to send approval card for generated event #{event_id}: {e}")
+        return False, format_generate_preview_failed(event_id)
     if admin_msg:
         update_event_field(event_id, "admin_message_id", admin_msg.message_id)
 

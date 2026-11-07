@@ -15,6 +15,7 @@
   - [2.10. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#210-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
   - [2.11. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#211-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
   - [2.12. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)](#212-eventbrite-integration-coreeventbrite--botserviceeventbritepy)
+  - [2.13. Nightly Database Backup (`core/scheduler/backup.py`)](#213-nightly-database-backup-coreschedulerbackuppy)
 - [3. Directory Structure](#3-directory-structure)
   - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
   - [3.2. `core/` Package Architecture](#32-core-package-architecture)
@@ -109,6 +110,7 @@ The system automates the ingestion, standardization, social sharing, and booking
 - For messages intercepted and deleted from `PUBLIC_CHANNEL_ID`, the raw `original_text` of the event is sent to `ADMIN_CHAT_ID` as a separate message so admins can verify if the AI made any mistakes (omitted for manual `/event_process` or `/ep` triggers where the original message is already in `ADMIN_CHAT_ID`).
 - Then, the parsed event is sent to `ADMIN_CHAT_ID` with inline keyboard buttons: `[Publish]`, `[Discard]`, `[Cancel]`, and `[👥 Gestisci Iscritti]`.
 - For privacy, the `Master/Host` field is omitted from generated Instagram Story images, but is displayed in the admin review message and the public channel post.
+- **Stale cards:** Publish / Discard (and the Eventbrite publish buttons) act only on a `pending` event (`_refuse_stale_card`). On a duplicate card of an event already approved or cancelled, they show a popup (`format_stale_card_popup`) and switch the card to the event's real state, so they never delete or re-post a published event.
 - **[Discard]:** Deletes the local event image, permanently deletes the event and all associated reservations from SQLite database, updates message to `❌ SCARTATO` and removes inline action buttons.
 - **[Cancel]:** (after the confirmation step of §2.6) Updates DB status to `cancelled`, updates message to `⚠️ ANNULLATO`, switches keyboard to `[♻️ Riattiva Evento]` and `[👥 Gestisci Iscritti]`, and posts a notice to `DISCUSSION_GROUP_ID` tagging all subscribers.
 - **[Publish]:**
@@ -181,6 +183,7 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Collects images for all matching events.
    - Resizes images to a uniform average height preserving individual aspect ratios (no distortion, no cropped borders).
    - Arranges images into rows based on `MAX_EVENTS_PER_ROW` (centering shorter rows for a balanced layout) and saves to `[DATA_DIR]/YYYY/MM/DD/recap_collage_DD-MM-YYYY.jpg`.
+   - The saved collage is capped at `RECAP_COLLAGE_MAX_DIM` (2048 px) and `RECAP_COLLAGE_MAX_BYTES` (350 KB) so the Telegram upload stays light (a 1.7 MB 5000 px collage timed out); `compress_image_to_bytes` writes progressive 4:2:0 JPEGs and binary-searches the highest quality (>= 40) that fits the byte target. The size-rejection retry in `_send_collage` recompresses to 1600 px / 200 KB; the collage is sent through `send_photo_resilient` (temporary R2 URL, see §3.1).
 4. **Text Formatting (`utils/templates/recap.py`: `recap_generate_text` & `recap_links_text`):**
    - Italian day names (Lunedì, Mercoledì, etc.).
    - Lists events in caption with bold titles and live available seats: `- <b>Titolo</b> (Sistema) : X/Y` (or `- ❌ <b>Titolo</b> (Sistema) : X/Y [ANNULLATO]`).
@@ -309,6 +312,13 @@ Future-dated events are left alone until their day (so `[🎟️ Ricrea su Event
 
 **Eventbrite API notes.** Eventbrite has no sandbox (test with `EVENTBRITE_LISTED=false`) and is eventually consistent, so POST response bodies are trusted instead of reading back. The description uses structured content (the legacy `description` field is deprecated); its HTML is limited to `p, b, em, ul, li, a`, so multi-line text becomes one `<p>` per line.
 
+
+### 2.13. Nightly Database Backup (`core/scheduler/backup.py`)
+- Runs daily at `DB_BACKUP_TIME` (default **04:00**) via APScheduler (`run_database_backup`, the work in `asyncio.to_thread`).
+- `backup_database()` copies the live database with SQLite's online backup API (consistent while the bot writes, WAL contents included; a plain file copy is not), runs `PRAGMA integrity_check` on the copy, and gzips it to `[DATA_DIR]/backups/bot_database_YYYY-MM-DD.db.gz` (temp file + `os.replace`; a second run on the same day overwrites that day's file). On any failure the existing backups are left untouched and the admins get `format_db_backup_failed` (`utils/templates/control.py`).
+- Rotation (`prune_backups` / `backups_to_keep`): keeps the newest `DB_BACKUP_DAYS` (default 7) copies plus the oldest copy of each of the newest `DB_BACKUP_WEEKS` (default 4) ISO weeks, so at most 11 files (~60 KB each). Only `bot_database_*.db.gz` files are ever deleted. `DB_BACKUP_DAYS=0` disables backups.
+- `scripts/backup_db.py --now` / `--list` takes a backup by hand (do it before a manual DB fix) or lists the copies; the restore steps (bot stopped, `gunzip`, remove `-wal`/`-shm`) are in its docstring and in the README.
+- Same disk as the database: protects against bad deletions/edits and a corrupted file, not against losing the disk.
 ---
 
 ## 3. Directory Structure
@@ -322,7 +332,7 @@ GdG-Event-Bot/
 │   ├── common/           # Helpers shared by every bot package
 │   │   ├── auth.py       # admin_only decorator, is_admin_chat, describe_user
 │   │   ├── messages.py   # resolve_message, command parsing, HTML fallback, reply fallback, chunked replies
-│   │   ├── media.py      # Photo/document download helpers
+│   │   ├── media.py      # Photo/document download helpers, send_photo_resilient (temporary R2 URL, then direct upload)
 │   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
@@ -381,7 +391,8 @@ GdG-Event-Bot/
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
 │   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
-│   │   └── reposts.py    # 09:00 digest of scheduled reposts due today
+│   │   ├── reposts.py    # 09:00 digest of scheduled reposts due today
+│   │   └── backup.py     # 04:00 SQLite backup to DATA_DIR/backups (gzip, 7 daily + 4 weekly copies)
 │   ├── eventbrite/       # Eventbrite REST API (public API: `from core.eventbrite import ...`)
 │   │   ├── client.py     # eventbrite_enabled, eb_get / eb_post, EventbriteError, paginate
 │   │   ├── payload.py    # Pure builders: start/end, event payload, description modules, ticket_quantity, names, dashboard URLs
@@ -415,6 +426,7 @@ GdG-Event-Bot/
 │   ├── sync_images_to_r2.py # Upload a night's images (loose or in archive.zip) to R2 so a published article's links work (--dry-run / --force / --all)
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
+│   ├── backup_db.py      # Manual DB backup (--now) / list of the stored copies (--list); restore steps in its docstring
 │   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create/update venues, create collections
 │   ├── eventbrite_inspect.py # Read-only Eventbrite check: quantity_sold vs orders/attendees (--watch)
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
@@ -446,8 +458,8 @@ GdG-Event-Bot/
 - **Configuration is read at call time** through `from core import config` / `config.ADMIN_CHAT_ID` (also `PUBLIC_CHANNEL_ID`, `DISCUSSION_GROUP_ID`, `ALLOW_GROUP_EVENT_NEXT`, `DATA_DIR`, `TELEGRAM_BOT_USERNAME`). Tests patch these once at `core.config.*` (see §3.2). Patch functions where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `bot.callbacks.events.update_event_messages`.
 - **`bot/common/`:**
   - `auth.py`: `@admin_only()` / `@admin_only(notify=True)` restricts a handler to `ADMIN_CHAT_ID` (`notify=True` replies `Non sei autorizzato.` to outsiders). Also `is_admin_chat`, and `describe_user(user, role="Admin")` for the `Admin <id> (@username)` identifier in audit logs. Do not hand-write chat-ID checks in new admin commands.
-  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
-  - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`.
+  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text; network errors and timeouts are re-raised, not retried), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
+  - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`, and `send_photo_resilient(call, image_path, html=True)`, used by **every** photo sent from a local file (admin cards, channel publish, `/event_edit_image`, channel media edits, recap collage, story previews, schedule previews). By default it uploads the file directly (`write_timeout=60`). With `TELEGRAM_PHOTOS_VIA_R2=true` and R2 configured (`core.astro.r2_configured`; flag on without R2 logs a warning and uploads directly) it puts the image on R2 under `telegram-tmp/<uuid>/` and passes Telegram the public URL, so Telegram downloads it and nothing is uploaded from the bot: direct uploads kept timing out *while still being delivered*, which produced duplicate approval cards. The R2 object is deleted right after the call (`core.astro.delete_media`), successful or not. In that mode it falls back to the direct upload when the R2 upload fails or Telegram refuses the URL (`BadRequest`); a timeout on the URL send is raised, not retried. `call(photo, **kw)` wraps the bound send (`lambda photo, **kw: bot.send_photo(..., photo=photo, **kw)`). `send_admin_preview` falls back to a text card (`PREVIEW_IMAGE_NOT_DELIVERED`) when the photo cannot be sent. `tests/__init__.py` clears the R2 credentials for the whole suite, so tests never reach the real bucket; tests that need R2 set it with `patched_config`.
   - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`; `resolve_event_id(message)` combines it with a numeric command argument (`/cmd <id>`).
   - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap article generation and `/event_generate`.
 - **`bot/state.py`:** `runtime_state` (`BotRuntimeState`) holds the pause flag (`is_paused`) and the last published recap (`last_recap_message_id`, `last_recap_events`). `bot/callbacks/recap.py` records a published recap via `remember_published_recap(message_id, events)`; `bot/handlers/recap.py` reads it when the recap is auto-forwarded into the discussion group.
@@ -475,7 +487,7 @@ GdG-Event-Bot/
   - `@db_safe(default)` logs `DB error in <function>: …` and returns `default` (`default=list` gives a fresh `[]`), so callers keep the old "never raises" contract.
   - `get_connection()` returns a raw connection for scripts.
   - SQL string literals use single quotes (`status IN ('approved', 'cancelled')`); double quotes are reserved for identifiers.
-- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start. For a change that is not a new column (rename, data rewrite), add `{N: (sql, ...)}` to `VERSIONED_MIGRATIONS` and set `SCHEMA_VERSION = N`: `init_db()` runs it once on databases whose `PRAGMA user_version` is lower. `init_db()` also switches the database to WAL journal mode (`bot_database.db-wal` / `-shm` files appear next to it; copy all three, or stop the bot, before backing it up).
+- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start. For a change that is not a new column (rename, data rewrite), add `{N: (sql, ...)}` to `VERSIONED_MIGRATIONS` and set `SCHEMA_VERSION = N`: `init_db()` runs it once on databases whose `PRAGMA user_version` is lower. `init_db()` also switches the database to WAL journal mode (`bot_database.db-wal` / `-shm` files appear next to it; copy all three, or stop the bot, before copying it by hand; the nightly backup of §2.13 uses SQLite's backup API and needs neither).
 - **Eventbrite columns** are written only through `set_eventbrite_info` / `clear_eventbrite_info` (a whitelist); they are deliberately not in `EDITABLE_EVENT_FIELDS`, so `/event_edit_*` cannot set them. `init_db()` also applies an `INDEXES` tuple (a unique index on `reservations(event_id, eventbrite_order_id)`).
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
@@ -585,6 +597,7 @@ GdG-Event-Bot/
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token credentials (Object Read & Write) | `xxxx` |
 | `R2_BUCKET` | (Optional) R2 bucket | `gdg-media` |
 | `R2_PUBLIC_URL` | Public base URL of the bucket, no trailing slash | `https://pub-xxxx.r2.dev` |
+| `TELEGRAM_PHOTOS_VIA_R2` | (Optional) `true` = send every photo to Telegram as a temporary R2 link (uploaded, sent, deleted) instead of uploading the file; a workaround for Telegram photo uploads that time out while still being delivered. Needs the R2 settings; default `false` (direct upload) | `false` |
 | `WP_URL` | WordPress base URL (only with `ARTICLE_BACKEND=wordpress`) | `https://www.gildadelgrifonetorino.it` |
 | `WP_USERNAME` | WordPress username | `direttivogilda` |
 | `WP_APP_PASSWORD` | WordPress Application Password | `xxxx xxxx xxxx xxxx` |
@@ -594,6 +607,7 @@ GdG-Event-Bot/
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
 | `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
 | `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
+| `DB_BACKUP_TIME` / `DB_BACKUP_DAYS` / `DB_BACKUP_WEEKS` | (Optional) Nightly database backup (§2.13): time (`HH:MM`), daily copies kept (`0` = no backups), extra weekly copies kept. Needs a restart | `04:00`, `7`, `4` |
 | `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
 | `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
 | `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the article prompt | `@Destard,@ManueleAbi` |

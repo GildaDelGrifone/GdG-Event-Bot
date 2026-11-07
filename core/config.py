@@ -98,6 +98,8 @@ R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET = os.getenv("R2_BUCKET", "gdg-media")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+# Send photos to Telegram as a temporary R2 URL instead of uploading them (workaround for upload timeouts)
+TELEGRAM_PHOTOS_VIA_R2 = _env_bool("TELEGRAM_PHOTOS_VIA_R2", False)
 
 WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")
@@ -144,6 +146,9 @@ RECAP_TIME = _env_time("RECAP_TIME", "16:00")
 ARCHIVE_IMAGES_TIME = _env_time("ARCHIVE_IMAGES_TIME", "23:59")
 ARCHIVE_LOGS_TIME = _env_time("ARCHIVE_LOGS_TIME", "00:05")
 EVENTBRITE_CLEANUP_TIME = _env_time("EVENTBRITE_CLEANUP_TIME", "23:59")
+DB_BACKUP_TIME = _env_time("DB_BACKUP_TIME", "04:00")
+DB_BACKUP_DAYS = _env_int("DB_BACKUP_DAYS", 7)  # daily copies kept; 0 disables the backups
+DB_BACKUP_WEEKS = _env_int("DB_BACKUP_WEEKS", 4)  # extra weekly copies kept (oldest backup of each week)
 RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 
 MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)

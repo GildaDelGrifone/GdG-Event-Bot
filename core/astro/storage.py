@@ -58,6 +58,19 @@ def upload_media(filepath, key_prefix):
         return None
 
 
+def delete_media(key):
+    """Deletes an object of the bucket; logs and returns False on failure, never raises."""
+    try:
+        client = r2_client()
+        if not client:
+            return False
+        client.delete_object(Bucket=config.R2_BUCKET, Key=key)
+        return True
+    except Exception as e:
+        logger.warning(f"R2: Failed to delete '{key}' (remove it by hand): {e}")
+        return False
+
+
 def media_url(key):
     """The public address of an object of the bucket."""
     return f"{config.R2_PUBLIC_URL}/{key}"

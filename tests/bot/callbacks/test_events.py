@@ -397,3 +397,30 @@ class TestEventbriteLogoRetryCallback(TempDBMixin, unittest.IsolatedAsyncioTestC
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStaleApprovalCard(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    """A second approval card (delivered by a timed-out upload) must not act on a published event."""
+
+    async def test_discard_on_published_event_is_refused(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"discard_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.assertIn("già pubblicato", query.answer.call_args.args[0])
+        self.assertIn("✅ APPROVATO", query.edit_message_caption.call_args.kwargs["caption"])
+
+    async def test_publish_on_published_event_does_not_post_again(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"publish_event_{event_id}", text=None, caption="Card", photo=True)
+        with patch("bot.callbacks.events._publish_to_channel", new_callable=AsyncMock) as post:
+            await handle_callback_query(update, make_context())
+        post.assert_not_awaited()
+        self.assertTrue(query.answer.call_args.kwargs.get("show_alert"))
+
+    async def test_discard_on_cancelled_event_is_refused(self):
+        event_id = create_event(status="cancelled")
+        update, query = callback_update(f"discard_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertIsNotNone(db.get_event(event_id))
+        self.assertIn("annullato", query.answer.call_args.args[0])

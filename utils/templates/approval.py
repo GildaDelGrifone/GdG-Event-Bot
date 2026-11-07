@@ -30,7 +30,17 @@ def format_caption_limit_warning(length, limit):
     )
 
 
+PREVIEW_IMAGE_NOT_DELIVERED = "⚠️ Immagine non inviata (errore di rete con Telegram); verrà inviata alla pubblicazione.\n\n"
+
+
 APPROVED_SUFFIX = "\n\n✅ APPROVATO"
+
+
+def format_stale_card_popup(status):
+    """Popup for Publish / Discard on a duplicate card of an event that is no longer pending."""
+    if status == "cancelled":
+        return "Questo evento è già stato annullato: usa ♻️ Riattiva Evento sulla card."
+    return "Questo evento è già pubblicato: per toglierlo usa ❌ Annulla Evento, non Scarta."
 
 
 CANCELLED_SUFFIX = "\n\n⚠️ ANNULLATO"

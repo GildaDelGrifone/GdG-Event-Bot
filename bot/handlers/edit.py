@@ -18,6 +18,7 @@ from utils.templates.edit import (
 )
 from utils.templates.event import format_public_event_message
 from bot.common.auth import admin_only, describe_user
+from bot.common.media import send_photo_resilient
 from bot.common.messages import CAPTION_LIMIT, is_not_modified_error, truncate_caption, with_html_fallback
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, extract_event_id_from_reply, parse_seats_input
 from bot.common.previews import build_admin_warning_block
@@ -231,16 +232,15 @@ async def _refresh_admin_message(target_msg, event, image_changed):
     try:
         if image_changed and image_path and os.path.exists(image_path):
             if has_photo:
-                with open(image_path, 'rb') as f:
-                    await with_html_fallback(lambda **kw: target_msg.edit_media(
-                        media=InputMediaPhoto(media=f, caption=new_text, **kw), reply_markup=keyboard
-                    ))
+                await send_photo_resilient(lambda photo, parse_mode=None, **kw: target_msg.edit_media(
+                    media=InputMediaPhoto(media=photo, caption=new_text, parse_mode=parse_mode),
+                    reply_markup=keyboard, **kw
+                ), image_path)
             else:
                 new_msg = None
-                with open(image_path, 'rb') as f:
-                    new_msg = await with_html_fallback(lambda **kw: target_msg.reply_photo(
-                        photo=f, caption=new_text, reply_markup=keyboard, **kw
-                    ))
+                new_msg = await send_photo_resilient(lambda photo, **kw: target_msg.reply_photo(
+                    photo=photo, caption=new_text, reply_markup=keyboard, **kw
+                ), image_path)
                 if new_msg and getattr(new_msg, "message_id", None):
                     update_event_field(event['id'], "admin_message_id", new_msg.message_id)
                 try:

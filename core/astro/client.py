@@ -29,10 +29,15 @@ def gh_request(method, path, **kwargs):
     )
 
 
+def r2_configured():
+    """True when every R2 setting needed to upload and serve files is set."""
+    return bool(config.R2_ACCOUNT_ID and config.R2_ACCESS_KEY_ID and config.R2_SECRET_ACCESS_KEY
+                and config.R2_BUCKET and config.R2_PUBLIC_URL)
+
+
 def r2_client():
     """boto3 S3 client for the R2 bucket, or None when R2 is not fully configured."""
-    if not (config.R2_ACCOUNT_ID and config.R2_ACCESS_KEY_ID and config.R2_SECRET_ACCESS_KEY
-            and config.R2_BUCKET and config.R2_PUBLIC_URL):
+    if not r2_configured():
         return None
     import boto3  # imported lazily: only needed by the astro backend
 

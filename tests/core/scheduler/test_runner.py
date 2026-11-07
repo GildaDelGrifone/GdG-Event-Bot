@@ -35,10 +35,11 @@ class TestStartScheduler(unittest.TestCase):
              patch.object(runner.config, "REPOSTS_TIME", (8, 15)), \
              patch.object(runner.config, "RECAP_TIME", (17, 30)), \
              patch.object(runner.config, "ARCHIVE_IMAGES_TIME", (22, 0)), \
-             patch.object(runner.config, "ARCHIVE_LOGS_TIME", (1, 5)):
+             patch.object(runner.config, "ARCHIVE_LOGS_TIME", (1, 5)), \
+             patch.object(runner.config, "DB_BACKUP_TIME", (4, 30)):
             runner.start_scheduler("bot")
         times = [(c.kwargs["hour"], c.kwargs["minute"]) for c in scheduler.add_job.call_args_list]
-        self.assertEqual(times, [(8, 15), (17, 30), (22, 0), (1, 5)])
+        self.assertEqual(times, [(8, 15), (17, 30), (22, 0), (1, 5), (4, 30)])
         scheduler.start.assert_called_once()
 
 

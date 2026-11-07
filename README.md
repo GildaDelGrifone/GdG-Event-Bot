@@ -116,6 +116,9 @@ R2_ACCESS_KEY_ID=your_r2_access_key_id
 R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
 R2_BUCKET=gdg-media
 R2_PUBLIC_URL=https://pub-xxxxxxxx.r2.dev
+# Send photos to Telegram as a temporary R2 link instead of uploading them (default false).
+# Workaround for Telegram photo uploads that time out; needs the R2 settings above.
+# TELEGRAM_PHOTOS_VIA_R2=false
 
 # WordPress REST API Configuration (ARTICLE_BACKEND=wordpress)
 WP_URL=https://www.gildadelgrifonetorino.it
@@ -161,7 +164,10 @@ IG_ACCOUNT_ID=178414...
 # ARCHIVE_IMAGES_TIME=23:59        # image archiving + booking shutdown
 # ARCHIVE_LOGS_TIME=00:05          # monthly log zip check
 # EVENTBRITE_CLEANUP_TIME=23:59    # delete cancelled events from Eventbrite
+# DB_BACKUP_TIME=04:00             # nightly database backup to DATA_DIR/backups
 # RECAP_WEEKDAYS=0,2,4,5,6         # game nights that get an automatic recap (0 = Monday ... 6 = Sunday)
+# DB_BACKUP_DAYS=7                 # daily DB backups kept (0 = no backups)
+# DB_BACKUP_WEEKS=4                # extra weekly DB backups kept (oldest copy of each week)
 
 # Game night texts (Optional)
 # EVENT_START_TIME=20:45                   # "Ci vediamo alle ..." in the recap and story; default Eventbrite start time
@@ -302,6 +308,19 @@ data/
 ## Maintenance & Diagnostic Scripts
 
 All maintenance utilities are located in the `scripts/` directory:
+
+- **Database Backup & Restore:** the bot backs the database up every night at `DB_BACKUP_TIME` (default 04:00) into `data/backups/bot_database_YYYY-MM-DD.db.gz`, keeping the last `DB_BACKUP_DAYS` days plus one copy per week for `DB_BACKUP_WEEKS` weeks (well under 1 MB in total). If a backup fails, the admin chat gets a warning.
+  ```bash
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --now    # back up now (e.g. before a manual DB fix)
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --list   # list the stored copies
+
+  # Restore: stop the bot first
+  kubectl scale deployment/event-bot --replicas=0
+  gunzip -c data/backups/bot_database_YYYY-MM-DD.db.gz > data/bot_database.db
+  rm -f data/bot_database.db-wal data/bot_database.db-shm
+  kubectl scale deployment/event-bot --replicas=1
+  ```
+  The copies live on the same disk as the database: they cover bad deletions and a corrupted file, not a lost disk.
 
 - **Unzip Archived Images:**
   ```bash

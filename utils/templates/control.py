@@ -54,3 +54,7 @@ POPUP_VENUE_UPDATED = "Sede aggiornata"
 
 def format_venue_selected(venue):
     return f"📍 Sede Eventbrite per i nuovi eventi: {venue}"
+
+
+def format_db_backup_failed(error):
+    return f"⚠️ Backup notturno del database non riuscito: {error}\nLe copie precedenti sono intatte."

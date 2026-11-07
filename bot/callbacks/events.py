@@ -12,12 +12,13 @@ from utils.templates.approval import (
     APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_CANCELLATION_ABORTED,
     POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED, REACTIVATED_SUFFIX,
     STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS, format_approved_without_telegram,
-    format_channel_publish_error,
+    format_channel_publish_error, format_stale_card_popup,
 )
 from utils.templates.common import POPUP_EVENT_NOT_FOUND
 from utils.templates.event import format_public_event_message
 from bot.callbacks.notices import send_cancellation_notice, send_reactivation_notice
 from bot.common.auth import describe_user
+from bot.common.media import send_photo_resilient
 from bot.common.messages import edit_card, send_image_or_error, with_html_fallback
 from bot.keyboards import (
     get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
@@ -64,10 +65,10 @@ async def _publish_to_channel(context, query, event_id, event):
         public_text = format_public_event_message(event)
         keyboard = get_event_booking_keyboard(event_id, event=event, bot_username=getattr(context.bot, "username", None))
         if event.get('image_path'):
-            with open(event['image_path'], 'rb') as f:
-                pub_msg = await context.bot.send_photo(
-                    chat_id=config.PUBLIC_CHANNEL_ID, photo=f, caption=public_text, reply_markup=keyboard, parse_mode="HTML"
-                )
+            pub_msg = await send_photo_resilient(lambda photo, **kw: context.bot.send_photo(
+                chat_id=config.PUBLIC_CHANNEL_ID, photo=photo, caption=public_text, reply_markup=keyboard,
+                parse_mode="HTML", **kw
+            ), event['image_path'], html=False)
         else:
             pub_msg = await context.bot.send_message(
                 chat_id=config.PUBLIC_CHANNEL_ID, text=public_text, reply_markup=keyboard, parse_mode="HTML"
@@ -118,24 +119,50 @@ async def _publish(query, context, event_id, telegram=True):
             await _send_story_preview(context, query.message.chat_id, event)
 
 
+async def _refuse_stale_card(query, event_id):
+    """True (after a popup and a card refresh) when the event is no longer pending.
+
+    A timed-out upload can deliver a second approval card; its Publish / Discard buttons must not act
+    on an event that was already published or cancelled through the other card.
+    """
+    event = get_event(event_id)
+    if not event or event.get('status') == 'pending':
+        return False
+    logger.info(f"{describe_user(query.from_user)} pressed a stale approval button on event #{event_id} "
+                f"(status {event['status']}); ignored.")
+    await query.answer(format_stale_card_popup(event['status']), show_alert=True)
+    if event['status'] == 'cancelled':
+        await _mark_admin_card(query, CANCELLED_SUFFIX, "stale card", keyboard=get_cancelled_event_keyboard(event_id))
+    else:
+        await _mark_admin_card(query, APPROVED_SUFFIX, "stale card",
+                               keyboard=get_approved_event_keyboard(event_id, event), use_html=True)
+    return True
+
+
 async def handle_publish_event(query, context, payload):
-    await query.answer()
     event_id = int(payload)
+    if await _refuse_stale_card(query, event_id):
+        return
+    await query.answer()
     logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id}.")
     await _publish(query, context, event_id)
 
 
 async def handle_publish_event_with_eventbrite(query, context, payload):
-    await query.answer()
     event_id = int(payload)
+    if await _refuse_stale_card(query, event_id):
+        return
+    await query.answer()
     logger.info(f"{describe_user(query.from_user)} approved/published event #{event_id} (+ Eventbrite).")
     await _publish(query, context, event_id)
     await start_eventbrite_publish(context, event_id, query.message.chat_id)
 
 
 async def handle_publish_eventbrite_only(query, context, payload):
-    await query.answer()
     event_id = int(payload)
+    if await _refuse_stale_card(query, event_id):
+        return
+    await query.answer()
     logger.info(f"{describe_user(query.from_user)} approved event #{event_id} on Eventbrite only.")
     await _publish(query, context, event_id, telegram=False)
     await start_eventbrite_publish(context, event_id, query.message.chat_id)
@@ -213,8 +240,10 @@ async def handle_eventbrite_cancel_retry(query, context, payload):
 
 
 async def handle_discard_event(query, context, payload):
-    await query.answer()
     event_id = int(payload)
+    if await _refuse_stale_card(query, event_id):
+        return
+    await query.answer()
     logger.info(f"{describe_user(query.from_user)} discarded event #{event_id}.")
     event = get_event(event_id)
     if event and event.get('image_path'):

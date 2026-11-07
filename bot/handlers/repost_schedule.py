@@ -26,6 +26,7 @@ from utils.templates.reposts import (
     format_scheduled_event_not_found, format_scheduled_event_updated,
 )
 from bot.common.auth import admin_only, describe_user
+from bot.common.media import send_photo_resilient
 from bot.common.messages import command_argument, command_tokens, reply_in_chunks, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
 from bot.handlers.repost import extract_repost_content
@@ -152,9 +153,10 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
 
     if saved_img_path and os.path.exists(saved_img_path):
         try:
-            with open(saved_img_path, "rb") as f:
-                await message.reply_photo(photo=f, caption=msg_text, reply_markup=kb, parse_mode="HTML")
-                return
+            await send_photo_resilient(lambda photo, **kw: message.reply_photo(
+                photo=photo, caption=msg_text, reply_markup=kb, parse_mode="HTML", **kw
+            ), saved_img_path, html=False)
+            return
         except Exception as e:
             logger.warning(f"Failed to send scheduled event preview photo: {e}")
 

@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from telegram.error import BadRequest, TimedOut
+
 from bot.common.messages import (
     command_argument,
     edit_card,
@@ -34,6 +36,17 @@ class TestAsyncHelpers(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "ok")
         self.assertEqual(send.call_args_list[0].kwargs, {"text": "x", "parse_mode": "HTML"})
         self.assertEqual(send.call_args_list[1].kwargs, {"text": "x"})
+
+    async def test_with_html_fallback_bad_request_retries_plain(self):
+        send = AsyncMock(side_effect=[BadRequest("Can't parse entities"), "ok"])
+        self.assertEqual(await with_html_fallback(lambda **kw: send(text="x", **kw)), "ok")
+        self.assertEqual(send.call_args_list[1].kwargs, {"text": "x"})
+
+    async def test_with_html_fallback_network_error_is_not_retried(self):
+        send = AsyncMock(side_effect=TimedOut())
+        with self.assertRaises(TimedOut):
+            await with_html_fallback(lambda **kw: send(text="x", **kw))
+        send.assert_awaited_once()
 
     async def test_reply_in_chunks_splits_on_limit(self):
         message = make_message()
