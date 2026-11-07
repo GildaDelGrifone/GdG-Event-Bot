@@ -278,11 +278,11 @@ In `ADMIN_CHAT_ID` only:
 - `/event_schedule_invoke <ID> [DATA] [POSTI]`: Prepares and sends the approval card for a scheduled event. Without a date it is dated today; with advance days `N > 0` it is dated the template's nearest occurrence on or after today (so on the event day itself it is today).
 - `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
-- `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
+- `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel). The pause survives a restart until `/bot_resume`.
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
-- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. In memory: a restart returns to the default.
-- `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. In memory: a restart returns to the env value.
+- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. Saved in the database, so it survives a restart.
+- `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. Saved in the database, so it survives a restart (the env value only applies until the command is used once).
 
 ---
 

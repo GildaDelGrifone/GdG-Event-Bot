@@ -8,7 +8,7 @@ from core.eventbrite import eventbrite_venue_ids
 from bot.common.auth import describe_user
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
-from bot.state import runtime_state
+from bot.state import set_persisted
 from utils.templates.common import POPUP_CLOSED
 from utils.templates.control import POPUP_VENUE_GONE, POPUP_VENUE_UPDATED, format_venue_selected
 
@@ -33,7 +33,7 @@ async def handle_venue_pick(query, context, payload):
     if payload not in venue_ids:
         await query.answer(POPUP_VENUE_GONE, show_alert=True)
         return
-    runtime_state.eventbrite_venue = payload
+    set_persisted("eventbrite_venue", payload)
     logger.info(f"{describe_user(query.from_user)} set the Eventbrite venue for new events to {payload}.")
     venues = [(venue_id, await asyncio.to_thread(venue_name, venue_id)) for venue_id in venue_ids]
     await query.answer(POPUP_VENUE_UPDATED)

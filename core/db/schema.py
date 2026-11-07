@@ -61,6 +61,12 @@ TABLES = (
         advance_days INTEGER DEFAULT 0
     )
     ''',
+    '''
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    ''',
 )
 
 # Columns added after the first release; ALTERed into older databases at startup

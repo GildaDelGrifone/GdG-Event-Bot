@@ -74,9 +74,10 @@ The system automates the ingestion, standardization, social sharing, and booking
      - Programmatically guarantees the entire formatted event caption stays within Telegram's 1024-character caption limit via `enforce_caption_limit()`.
      - Inserts the generated event as `pending` into SQLite and sends the preview card to `ADMIN_CHAT_ID` with standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
 4. **Monitoring Pause / Resume (`/bot_pause`, `/bot_resume`, `/bot_status`):**
+   - **Persistence:** `is_paused`, `eventbrite_only` and `eventbrite_venue` are written through `bot.state.set_persisted` to the `bot_settings` table (`core.db.get_setting` / `set_setting`, JSON values) and restored by `load_persisted_state()` in `main.post_init`, so a restart keeps them; a switch never set keeps its default (`EVENTBRITE_ONLY_MODE` for the mode). Never assign these three on `runtime_state` directly.
    - Admins can send `/bot_pause` in `ADMIN_CHAT_ID` to make the bot temporarily "blind" to `PUBLIC_CHANNEL_ID` (it will not intercept, parse, or delete messages from the channel).
    - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state (including the Eventbrite-only mode below).
-   - `/bot_eventbrite_only_toggle` flips `runtime_state.eventbrite_only` (initial value `EVENTBRITE_ONLY_MODE`, in memory, needs Eventbrite configured). **ON:** the pending card (`get_approval_keyboard`) shows `[Discard]` and `[🚀 Telegram + EB] [🎟️ Solo Eventbrite]` (no plain Publish) and `_publish` no longer generates the automatic Instagram story preview. **OFF:** classic card, `[Publish] [Discard]` + `[🚀 Publish + Eventbrite]`. `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`) approves with **no channel post**; `[🚀 Telegram + EB]` still posts. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, admin-action notices); their Eventbrite booking announcements go to the admin chat instead. Only cards created after a toggle follow it. An Eventbrite-only event cannot be booked on Telegram.
+   - `/bot_eventbrite_only_toggle` flips `runtime_state.eventbrite_only` (initial value `EVENTBRITE_ONLY_MODE`, saved in `bot_settings`, needs Eventbrite configured). **ON:** the pending card (`get_approval_keyboard`) shows `[Discard]` and `[🚀 Telegram + EB] [🎟️ Solo Eventbrite]` (no plain Publish) and `_publish` no longer generates the automatic Instagram story preview. **OFF:** classic card, `[Publish] [Discard]` + `[🚀 Publish + Eventbrite]`. `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`) approves with **no channel post**; `[🚀 Telegram + EB]` still posts. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, admin-action notices); their Eventbrite booking announcements go to the admin chat instead. Only cards created after a toggle follow it. An Eventbrite-only event cannot be booked on Telegram.
 
 ### 2.2. AI Parsing (`core/ai_parser.py`)
 - Model configured via `GEMINI_MODEL` (default: `gemini-3.1-flash-lite`).
@@ -274,7 +275,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
 
-**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the last row is `[❌ Chiudi]` (`ebvenue_close`, deletes the message); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (in memory, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
+**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the last row is `[❌ Chiudi]` (`ebvenue_close`, deletes the message); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (saved in `bot_settings`, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
 
 **Description:** `description_modules` builds one structured-content text module: `Sistema`, `Master`/`Host`, `Posti totali: <max_seats>` (omitted for unlimited and `0/0` events; `seats` is therefore in `EVENTBRITE_CONTENT_FIELDS`), `Dettagli`, the description, the association address and the `Evento su Telegram` link.
 
@@ -327,7 +328,7 @@ Future-dated events are left alone until their day (so `[🎟️ Ricrea su Event
 GdG-Event-Bot/
 ├── bot/
 │   ├── __init__.py
-│   ├── state.py          # Runtime state: pause flag + last published recap (runtime_state)
+│   ├── state.py          # Runtime state (runtime_state); pause / Eventbrite-only / venue persisted via set_persisted + load_persisted_state
 │   ├── keyboards.py      # Telegram inline keyboard layouts (+ SCHEDULE_DAYS)
 │   ├── common/           # Helpers shared by every bot package
 │   │   ├── auth.py       # admin_only decorator, is_admin_chat, describe_user
@@ -386,7 +387,8 @@ GdG-Event-Bot/
 │   │   ├── events.py     # events table: insert/update/delete, lookups, recap & upcoming queries
 │   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts, a user's upcoming reservations (/event_mine)
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
-│   │   └── scheduled.py  # scheduled_events (repost templates)
+│   │   ├── scheduled.py  # scheduled_events (repost templates)
+│   │   └── settings.py   # bot_settings key/value store (runtime switches kept across restarts)
 │   ├── scheduler/        # APScheduler jobs
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
@@ -576,6 +578,12 @@ GdG-Event-Bot/
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | `advance_days` | INTEGER | DEFAULT 0 | Days before the event the digest reminder is sent (0-30; 0 = same day) |
 
+### Table: `bot_settings`
+| Column | Type | Constraints / Default | Description |
+|---|---|---|---|
+| `key` | TEXT | PRIMARY KEY | Setting name (`is_paused`, `eventbrite_only`, `eventbrite_venue`) |
+| `value` | TEXT | | JSON-encoded value |
+
 ---
 
 ## 5. Environment Variables (`.env`)
@@ -629,8 +637,8 @@ GdG-Event-Bot/
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_CLEANUP_NOTIFICATIONS` | (Optional) Send the nightly `🧹 Eliminati da Eventbrite N eventi annullati` message to the admin chat (`true`/`false`). Events the cleanup could not delete are reported either way | `false` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
-| `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (in memory) | `2345678,3456789` |
-| `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (in memory) | `false` |
+| `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (saved, survives restarts) | `2345678,3456789` |
+| `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (saved in `bot_settings`; once set, the env value no longer applies) | `false` |
 | `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` | (Optional) Eventbrite Collection ids: published events join the roleplay one when `is_roleplay`, the board games one otherwise; both empty = off. Create one with `scripts/eventbrite_setup.py --create-collection "NAME"` (the API creates it as a draft; publish it from the dashboard) | none |
 | `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group, or in the admin chat for Eventbrite-only events (`true`/`false`); seats sync either way | `true` |
 

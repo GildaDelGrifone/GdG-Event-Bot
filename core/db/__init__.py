@@ -47,6 +47,7 @@ from core.db.seats import (
     admin_remove_subscriber,
     apply_eventbrite_order,
 )
+from core.db.settings import get_setting, set_setting
 from core.db.scheduled import (
     insert_scheduled_event,
     get_scheduled_event,
@@ -62,6 +63,8 @@ from core.db.scheduled import (
 )
 
 __all__ = [
+    "get_setting",
+    "set_setting",
     "insert_event",
     "update_event_status",
     "update_event_field",

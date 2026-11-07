@@ -43,7 +43,7 @@ def format_bot_status(paused, eventbrite_only, venue=None):
     text = f"Stato del bot: {status}\nModalità pubblicazione: {mode}"
     if venue:
         text += f"\nSede Eventbrite: {venue}"
-    return text
+    return text + "\n\nQueste impostazioni restano salvate anche dopo un riavvio del bot."
 
 
 POPUP_VENUE_GONE = "Sede non più configurata."

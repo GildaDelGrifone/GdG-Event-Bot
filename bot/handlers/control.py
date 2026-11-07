@@ -9,7 +9,7 @@ from core import config
 from core.eventbrite import eventbrite_enabled, eventbrite_venue_ids
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
-from bot.state import runtime_state
+from bot.state import runtime_state, set_persisted
 from utils.templates.control import (
     BOT_PAUSED_TEXT, BOT_RESUMED_TEXT, CHOOSE_VENUE_TEXT, EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT,
     EVENTBRITE_ONLY_OFF_TEXT, EVENTBRITE_ONLY_ON_TEXT, EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SINGLE_VENUE_TEXT,
@@ -21,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 @admin_only()
 async def bot_pause_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    runtime_state.is_paused = True
+    set_persisted("is_paused", True)
     logger.info(f"{describe_user(update.effective_user)} paused bot execution.")
     await update.message.reply_text(BOT_PAUSED_TEXT, parse_mode="Markdown")
 
 
 @admin_only()
 async def bot_resume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    runtime_state.is_paused = False
+    set_persisted("is_paused", False)
     logger.info(f"{describe_user(update.effective_user)} resumed bot execution.")
     await update.message.reply_text(BOT_RESUMED_TEXT, parse_mode="Markdown")
 
@@ -38,7 +38,7 @@ async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTyp
     if not eventbrite_enabled():
         await update.message.reply_text(EVENTBRITE_ONLY_UNAVAILABLE_TEXT)
         return
-    runtime_state.eventbrite_only = not runtime_state.eventbrite_only
+    set_persisted("eventbrite_only", not runtime_state.eventbrite_only)
     state = "ON" if runtime_state.eventbrite_only else "OFF"
     logger.info(f"{describe_user(update.effective_user)} turned Eventbrite-only mode {state}.")
     if runtime_state.eventbrite_only:
