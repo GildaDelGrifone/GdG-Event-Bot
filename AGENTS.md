@@ -142,6 +142,11 @@ The system automates the ingestion, standardization, social sharing, and booking
     - Informs them they are already registered for other event(s) on that day.
     - Lists all conflicting events with their bold titles (hyperlinked to the respective posts if available) and systems.
     - Advises the user to release their seat from whichever event they decide not to attend.
+- **Waitlist (`core/db/waitlist.py`, `bot/service/waitlist.py`):**
+  - Table `waitlist` (one row per user and event, `UNIQUE(event_id, user_id)`, order = `id`). `get_event` returns `waitlist_count`; `format_event_seats` adds `— ⏳ In attesa: N` to a full event.
+  - A full approved event shows `[⏳ Lista d'attesa]` (`full_<id>`, `handle_full` → `handle_waitlist_join`): `join_waitlist` returns `(position, newly_added)` and the user gets the position in a popup. Only approved events with limited seats accept a queue; a seat holder can queue for one more seat. `[➕ Prenota]` (`handle_book`) also queues when people are waiting, so a stale keyboard cannot jump the queue.
+  - **Promotion has one hook:** `bot.service.posts.update_event_messages`, which every seat change already calls (user unbook, admin −/remove, Eventbrite releases from the poller, `/event_edit_seats`). For an approved event with people waiting it calls `promote_waitlist` (one transaction: books the oldest entries into the free seats with `seats._add_telegram_seat` and deletes them), re-renders, runs the Eventbrite sync (so the pushed capacity already counts them) and then `announce_promotions` tags each one in the discussion group (only for events with a channel post) and tries a DM (`Forbidden` ignored).
+  - `[➖ Annulla]` from a user with no seats but a queue entry calls `leave_waitlist` (`POPUP_WAITLIST_LEFT`). The `[👥 Gestisci Iscritti]` panel and `/event_subs` list the queue (`format_waitlist_lines`). `disable_bookings_for_date` (23:59) clears the day's queues; `delete_event` deletes them.
 - **Seat Release (`[➖ Annulla]` / `unbook_<event_id>`):**
   - Decrements seat reservation count or deletes reservation record if 0 seats remain.
   - Updates remaining seats on public channel post and discussion message.
@@ -364,6 +369,7 @@ GdG-Event-Bot/
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
 │   │   ├── mentions.py   # User/subscriber mention formatting
+│   │   ├── waitlist.py   # announce_promotions: group tag + DM for users moved from the waitlist into a seat
 │   │   ├── eventbrite/   # Eventbrite flows; import public names from bot.service.eventbrite
 │   │   │   ├── common.py  # admin notices/card refresh, venue names, collections, unlinking deleted events
 │   │   │   ├── publish.py # publish (background task), recreate
@@ -389,6 +395,7 @@ GdG-Event-Bot/
 │   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts, a user's upcoming reservations (/event_mine)
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
 │   │   ├── scheduled.py  # scheduled_events (repost templates)
+│   │   ├── waitlist.py   # Waitlist: join/leave/position, promote_waitlist (books the first in line)
 │   │   └── settings.py   # bot_settings key/value store (runtime switches kept across restarts)
 │   ├── scheduler/        # APScheduler jobs
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
@@ -578,6 +585,15 @@ GdG-Event-Bot/
 | `specific_date` | TEXT | | Optional specific date and time (`DD-MM-YYYY [HH:MM]`) |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | `advance_days` | INTEGER | DEFAULT 0 | Days before the event the digest reminder is sent (0-30; 0 = same day) |
+
+### Table: `waitlist`
+| Column | Type | Constraints / Default | Description |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Queue order (lowest first) |
+| `event_id` | INTEGER | NOT NULL | Event queued for |
+| `user_id` | INTEGER | NOT NULL, `UNIQUE(event_id, user_id)` | Telegram user |
+| `username` / `full_name` | TEXT | | Identity used when the seat is booked and in the mention |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Join time |
 
 ### Table: `bot_settings`
 | Column | Type | Constraints / Default | Description |

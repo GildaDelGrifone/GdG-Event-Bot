@@ -73,6 +73,11 @@ class TestRoleplayTypeFormatting(unittest.TestCase):
 
 
 class TestFormatEventSeats(unittest.TestCase):
+    def test_format_event_seats_shows_the_waitlist_only_when_full(self):
+        full = {"booked_seats": 5, "max_seats": 5, "status": "approved", "waitlist_count": 2}
+        self.assertEqual(format_event_seats(full), "0/5 Completo — ⏳ In attesa: 2")
+        self.assertEqual(format_event_seats({**full, "waitlist_count": 0}), "0/5 Completo")
+
     def test_format_event_seats_limited(self):
         self.assertEqual(format_event_seats({"booked_seats": 2, "max_seats": 5, "status": "approved"}), "3/5")
 

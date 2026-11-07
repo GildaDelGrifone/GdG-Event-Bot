@@ -6,12 +6,13 @@ from telegram import InputMediaPhoto
 from telegram.error import RetryAfter
 
 from core import config
-from core.db import get_event, update_discussion_message_info
+from core.db import get_event, promote_waitlist, update_discussion_message_info, waitlist_count
 from utils.templates.event import format_discussion_booking_message, format_public_event_message
 from bot.common.media import send_photo_resilient
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
 from bot.service.eventbrite import sync_eventbrite
+from bot.service.waitlist import announce_promotions
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,16 @@ async def update_event_messages(context, event_id, event=None, current_query=Non
     if not event:
         return
 
+    # Every seat change ends here, so this is where a freed seat goes to the first person on the waitlist
+    promoted = []
+    if event.get('status') == 'approved':
+        queued = event.get('waitlist_count')
+        if queued is None:
+            queued = waitlist_count(event_id)
+        if queued:
+            promoted = promote_waitlist(event_id)
+            event = get_event(event_id) or event
+
     public_text = format_public_event_message(event)
     keyboard = None
     if event.get('status') == 'approved':
@@ -141,3 +152,5 @@ async def update_event_messages(context, event_id, event=None, current_query=Non
     await _sync_public_post(context.bot, event_id, event, public_text, keyboard, update_image)
     await _sync_discussion_reply(context.bot, event_id, event, keyboard, current_query)
     await sync_eventbrite(context, event, content_changed=eventbrite_content, image_changed=update_image)
+    if promoted:
+        await announce_promotions(context.bot, event, promoted)

@@ -48,6 +48,9 @@ from core.db.seats import (
     apply_eventbrite_order,
 )
 from core.db.settings import get_setting, set_setting
+from core.db.waitlist import (
+    clear_waitlist, get_waitlist, join_waitlist, leave_waitlist, promote_waitlist, waitlist_count, waitlist_position,
+)
 from core.db.scheduled import (
     insert_scheduled_event,
     get_scheduled_event,
@@ -63,6 +66,13 @@ from core.db.scheduled import (
 )
 
 __all__ = [
+    "clear_waitlist",
+    "get_waitlist",
+    "join_waitlist",
+    "leave_waitlist",
+    "promote_waitlist",
+    "waitlist_count",
+    "waitlist_position",
     "get_setting",
     "set_setting",
     "insert_event",

@@ -107,7 +107,7 @@ class TestBookingKeyboard(TempDBMixin, unittest.TestCase):
 
         row = get_event_booking_keyboard(self.event_id, event=event, bot_username="GdG_Event_bot").inline_keyboard[0]
         self.assertEqual(len(row), 3)
-        self.assertEqual(row[0].text, "🚫 Esauriti")
+        self.assertEqual(row[0].text, "⏳ Lista d'attesa")
         self.assertEqual(row[0].callback_data, f"full_{self.event_id}")
         self.assertEqual(row[1].text, "👥 Lista")
         self.assertEqual(row[2].text, "➖ Annulla")

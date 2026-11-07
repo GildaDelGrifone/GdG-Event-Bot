@@ -5,7 +5,7 @@ import zipfile
 from datetime import datetime
 
 from core import config
-from core.db import get_approved_events_for_date, purge_discarded_events
+from core.db import clear_waitlist, get_approved_events_for_date, purge_discarded_events
 from core.log_utils import zip_completed_months
 from utils.image_utils import delete_local_image
 
@@ -56,6 +56,7 @@ async def disable_bookings_for_date(bot, date_str):
     logger.info("Scheduler: Disabling bookings for today's events...")
     try:
         for ev in get_approved_events_for_date(date_str):
+            clear_waitlist(ev['id'])  # the night is over: nobody can get a seat any more
             if config.PUBLIC_CHANNEL_ID and ev.get('telegram_message_id'):
                 await _remove_booking_keyboard(bot, config.PUBLIC_CHANNEL_ID, ev['telegram_message_id'], "public channel", ev['id'])
 

@@ -3,7 +3,7 @@ import logging
 from telegram import ForceReply
 from telegram.error import TelegramError
 
-from core.db import get_event, get_reservations_for_event, get_reservation, admin_add_seat, admin_remove_seat
+from core.db import get_event, get_reservations_for_event, get_reservation, get_waitlist, admin_add_seat, admin_remove_seat
 from utils.templates.common import POPUP_CLOSED, POPUP_EVENT_NOT_FOUND
 from utils.templates.subscribers import SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel
 from bot.common.auth import describe_user
@@ -18,7 +18,7 @@ PANEL_TITLE = SUBSCRIBERS_PANEL_TITLE
 
 
 def format_subscribers_management_view(event, reservations):
-    return format_subscribers_panel(event, reservations)
+    return format_subscribers_panel(event, reservations, get_waitlist(event['id']))
 
 
 def _render_panel(event_id, event):

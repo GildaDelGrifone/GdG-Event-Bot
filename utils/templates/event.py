@@ -29,8 +29,9 @@ def format_event_seats(event_data):
 
     max_s = int(max_s)
     avail = max_s - booked
+    waiting = int(event_data.get('waitlist_count') or 0)
     if avail <= 0:
-        return f"0/{max_s} Completo"
+        return f"0/{max_s} Completo" + (f" — ⏳ In attesa: {waiting}" if waiting else "")
     return f"{avail}/{max_s}"
 
 

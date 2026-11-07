@@ -91,7 +91,7 @@ BUTTON_PUBLISH_ASTRO = "Pubblica sul sito"
 BUTTON_DISCARD_ARTICLE = "🗑️ Scarta articolo"
 
 
-BUTTON_FULL = "🚫 Esauriti"
+BUTTON_FULL = "⏳ Lista d'attesa"
 
 
 BUTTON_BOOK = "➕ Prenota"

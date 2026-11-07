@@ -68,6 +68,7 @@ def update_event_field(event_id, field, value):
 def delete_event(event_id):
     with transaction() as cur:
         cur.execute('DELETE FROM reservations WHERE event_id = ?', (event_id,))
+        cur.execute('DELETE FROM waitlist WHERE event_id = ?', (event_id,))
         cur.execute('DELETE FROM events WHERE id = ?', (event_id,))
     return True
 
@@ -128,7 +129,11 @@ def clear_eventbrite_info(event_id):
 
 @db_safe()
 def get_event(event_id):
-    return fetch_one('SELECT * FROM events WHERE id = ?', (event_id,))
+    """The event row plus `waitlist_count` (people queued for a seat)."""
+    return fetch_one(
+        'SELECT events.*, (SELECT COUNT(*) FROM waitlist WHERE waitlist.event_id = events.id) AS waitlist_count '
+        'FROM events WHERE id = ?', (event_id,)
+    )
 
 
 def _get_event_by_message(column, message_id):

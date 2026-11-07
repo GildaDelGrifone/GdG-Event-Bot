@@ -1,9 +1,10 @@
 import logging
 
 from core import config
-from core.db import get_event, book_seat, unbook_seat, get_user_conflicting_events
+from core.db import get_event, book_seat, join_waitlist, leave_waitlist, unbook_seat, get_user_conflicting_events
 from utils.templates.booking import (
-    format_booking_notice, format_conflict_item, format_conflict_warning, format_unbooking_notice,
+    POPUP_TABLE_FULL, POPUP_WAITLIST_LEFT, format_booking_notice, format_conflict_item, format_conflict_warning,
+    format_unbooking_notice, format_waitlist_already_popup, format_waitlist_joined_popup,
 )
 from utils.templates.common import format_event_title_link
 from utils.templates.eventbrite import EVENTBRITE_TAKEN
@@ -96,8 +97,33 @@ async def handle_seat_booking(event_id, user, query, context):
     await _warn_on_same_day_conflicts(context, event_id, event, user, notify_chat, reply_id)
 
 
+async def handle_waitlist_join(event_id, user, query, context):
+    """The full-event button: queues the user (popup with the position) and refreshes the post's queue count."""
+    clean_username, clean_fullname = get_user_display_name_and_username(user)
+    position, added = join_waitlist(event_id, user.id, username=clean_username, full_name=clean_fullname)
+    if not position:
+        popup = POPUP_TABLE_FULL
+    elif added:
+        popup = format_waitlist_joined_popup(position)
+        logger.info(f"{describe_telegram_user(user)} joined the waitlist of event #{event_id} (position {position}).")
+    else:
+        popup = format_waitlist_already_popup(position)
+    try:
+        await query.answer(popup, show_alert=True)
+    except Exception as e:
+        logger.debug(f"Error answering callback query: {e}")
+    if added:
+        await update_event_messages(context, event_id, current_query=query)
+
+
 async def handle_seat_unbooking(event_id, user, query, context):
     success, msg = unbook_seat(event_id, user.id, username=getattr(user, 'username', None))
+    if not success and leave_waitlist(event_id, user.id):
+        # No seat to free, but queued: ➖ Annulla takes the user off the waitlist
+        logger.info(f"{describe_telegram_user(user)} left the waitlist of event #{event_id}.")
+        await _answer_and_log(query, user, "unbook", event_id, True, POPUP_WAITLIST_LEFT)
+        await update_event_messages(context, event_id, current_query=query)
+        return
     await _answer_and_log(query, user, "unbook", event_id, success, msg)
     if not success:
         return

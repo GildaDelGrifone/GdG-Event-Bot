@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core import config
-from core.db import get_event, get_reservations_for_event, get_upcoming_events, get_user_upcoming_reservations
+from core.db import get_event, get_reservations_for_event, get_upcoming_events, get_user_upcoming_reservations, get_waitlist
 from utils.templates.event import format_event_seats
 from utils.templates.public import (
     EVENT_MINE_NONE, EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE,
@@ -154,7 +154,7 @@ async def _reply_with_participants(message, event_id):
     if not event:
         await message.reply_text(EVENT_REMOVED)
         return
-    text = format_event_participants_message(event, get_reservations_for_event(event_id))
+    text = format_event_participants_message(event, get_reservations_for_event(event_id), get_waitlist(event_id))
     await message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
 

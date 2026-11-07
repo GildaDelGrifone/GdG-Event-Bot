@@ -5,6 +5,27 @@ import html
 POPUP_TABLE_FULL = "I posti per questo tavolo sono esauriti!"
 
 
+def format_waitlist_joined_popup(position):
+    return (f"Sei in lista d'attesa (posizione {position}). Se si libera un posto ti prenoto automaticamente "
+            "e ti avviso. Per uscire dalla lista premi ➖ Annulla.")
+
+
+def format_waitlist_already_popup(position):
+    return f"Sei già in lista d'attesa (posizione {position}). Per uscire dalla lista premi ➖ Annulla."
+
+
+POPUP_WAITLIST_LEFT = "Sei uscito dalla lista d'attesa."
+
+
+def format_waitlist_promoted_notice(user_tag, event_link):
+    return f"🎉 Si è liberato un posto: {user_tag} lo prende dalla lista d'attesa per: {event_link}"
+
+
+def format_waitlist_promoted_dm(event_link):
+    return (f"🎉 Si è liberato un posto e ti ho prenotato dalla lista d'attesa per: {event_link}\n\n"
+            "Se non puoi più venire, libera il posto con ➖ Annulla sotto il post dell'evento.")
+
+
 def format_status_notice(icon, status_word, event_link, subscribers_label=None, tags=None):
     text = f"{icon} <b>ATTENZIONE:</b> L'evento {event_link} è stato <b>{status_word}</b>!"
     if tags:

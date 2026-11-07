@@ -4,16 +4,14 @@ from telegram.error import TelegramError
 
 from core.db import get_event
 from bot.keyboards import is_event_full
-from bot.service.booking import handle_seat_booking, handle_seat_unbooking
-from bot.service.posts import update_event_messages
-from utils.templates.booking import POPUP_TABLE_FULL
+from bot.service.booking import handle_seat_booking, handle_seat_unbooking, handle_waitlist_join
 from utils.templates.common import POPUP_EVENT_NOT_FOUND
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_full(query, context, payload):
-    """The "🚫 Esauriti" button: book anyway if a seat freed up since the keyboard was rendered."""
+    """The "⏳ Lista d'attesa" button: book if a seat freed up since the keyboard was rendered, else join the queue."""
     event_id = int(payload)
     event = get_event(event_id)
     if not event:
@@ -23,20 +21,20 @@ async def handle_full(query, context, payload):
             logger.debug(f"Could not answer callback query: {e}")
         return
 
-    if not is_event_full(event):
+    if not is_event_full(event) and not event.get('waitlist_count'):
         await handle_seat_booking(event_id, query.from_user, query, context)
         return
-
-    logger.warning(f"User {query.from_user.id} (@{query.from_user.username}) attempted to book full event #{event_id}.")
-    try:
-        await query.answer(POPUP_TABLE_FULL, show_alert=True)
-    except TelegramError as e:
-        logger.debug(f"Could not answer callback query: {e}")
-    await update_event_messages(context, event_id, event=event, current_query=query)
+    await handle_waitlist_join(event_id, query.from_user, query, context)
 
 
 async def handle_book(query, context, payload):
-    await handle_seat_booking(int(payload), query.from_user, query, context)
+    event_id = int(payload)
+    event = get_event(event_id)
+    if event and event.get('waitlist_count'):
+        # A seat was freed but people are queued for it: an old ➕ Prenota button must not jump the queue
+        await handle_waitlist_join(event_id, query.from_user, query, context)
+        return
+    await handle_seat_booking(event_id, query.from_user, query, context)
 
 
 async def handle_unbook(query, context, payload):
