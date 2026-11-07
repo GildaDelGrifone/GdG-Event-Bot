@@ -88,6 +88,37 @@ class TestRotation(unittest.TestCase):
                              ["bk_db.zip", "bot_database_2026-01-02.db.gz", "notes.txt"])
 
 
+class TestOffsiteCopies(unittest.TestCase):
+    def test_off_without_a_bucket(self):
+        with patched_config(DB_BACKUP_R2_BUCKET=""), patch.object(backup, "upload_file") as upload:
+            self.assertIsNone(backup.upload_backup_offsite("/x/bot_database_2026-11-07.db.gz"))
+        upload.assert_not_called()
+
+    def test_the_public_media_bucket_is_refused(self):
+        with patched_config(DB_BACKUP_R2_BUCKET="gdg-media", R2_BUCKET="gdg-media"), \
+             patch.object(backup, "upload_file") as upload:
+            with self.assertRaises(RuntimeError):
+                backup.upload_backup_offsite("/x/bot_database_2026-11-07.db.gz")
+        upload.assert_not_called()
+
+    def test_uploads_then_rotates_the_remote_copies(self):
+        start = date(2026, 9, 1)
+        keys = [f"backups/bot_database_{start + timedelta(days=i):%Y-%m-%d}.db.gz" for i in range(61)]
+        keys.append("backups/notes.txt")
+        with patched_config(DB_BACKUP_R2_BUCKET="gdg-backups", DB_BACKUP_DAYS=7, DB_BACKUP_WEEKS=4), \
+             patch.object(backup, "upload_file") as upload, \
+             patch.object(backup, "list_keys", return_value=keys), \
+             patch.object(backup, "delete_key") as delete:
+            kept = backup.upload_backup_offsite("/x/bot_database_2026-10-31.db.gz")
+        upload.assert_called_once_with("/x/bot_database_2026-10-31.db.gz",
+                                       "backups/bot_database_2026-10-31.db.gz", "gdg-backups")
+        deleted = {call.args[0] for call in delete.call_args_list}
+        self.assertEqual(len(keys) - 1 - len(deleted), kept)
+        self.assertNotIn("backups/notes.txt", deleted)
+        self.assertNotIn(keys[60], deleted)
+        self.assertTrue(all(call.args[1] == "gdg-backups" for call in delete.call_args_list))
+
+
 class TestRunDatabaseBackup(unittest.IsolatedAsyncioTestCase):
     async def test_failure_notifies_the_admins(self):
         bot = MagicMock(send_message=AsyncMock())
@@ -99,9 +130,29 @@ class TestRunDatabaseBackup(unittest.IsolatedAsyncioTestCase):
 
     async def test_success_sends_nothing(self):
         bot = MagicMock(send_message=AsyncMock())
-        with patch.object(backup, "backup_database", return_value="/x.db.gz"):
+        with patch.object(backup, "backup_database", return_value="/x.db.gz"), \
+             patch.object(backup, "upload_backup_offsite", return_value=11) as upload:
             await backup.run_database_backup(bot)
+        upload.assert_called_once_with("/x.db.gz")
         bot.send_message.assert_not_awaited()
+
+    async def test_offsite_failure_is_reported_separately(self):
+        bot = MagicMock(send_message=AsyncMock())
+        with patched_config(ADMIN_CHAT_ID="999"), \
+             patch.object(backup, "backup_database", return_value="/x.db.gz"), \
+             patch.object(backup, "upload_backup_offsite", side_effect=RuntimeError("AccessDenied")):
+            await backup.run_database_backup(bot)
+        text = bot.send_message.call_args.kwargs["text"]
+        self.assertIn("AccessDenied", text)
+        self.assertIn("backup locale è stato salvato", text)
+
+    async def test_no_offsite_copy_when_the_local_backup_failed(self):
+        bot = MagicMock(send_message=AsyncMock())
+        with patched_config(ADMIN_CHAT_ID="999"), \
+             patch.object(backup, "backup_database", side_effect=OSError("disk full")), \
+             patch.object(backup, "upload_backup_offsite") as upload:
+            await backup.run_database_backup(bot)
+        upload.assert_not_called()
 
 
 if __name__ == "__main__":

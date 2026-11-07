@@ -9,17 +9,30 @@ import sqlite3
 from datetime import date, datetime
 
 from core import config
-from utils.templates.control import format_db_backup_failed
+from core.astro import delete_key, list_keys, upload_file
+from utils.templates.control import format_db_backup_failed, format_db_backup_offsite_failed
 
 logger = logging.getLogger(__name__)
 
 BACKUP_PREFIX = "bot_database_"
 BACKUP_SUFFIX = ".db.gz"
 _BACKUP_NAME = re.compile(r"^bot_database_(\d{4}-\d{2}-\d{2})\.db\.gz$")
+REMOTE_PREFIX = "backups/"
 
 
 def backups_dir():
     return os.path.join(config.DATA_DIR, "backups")
+
+
+def _backup_date(name):
+    """The date in a backup file name, or None for any other file."""
+    match = _BACKUP_NAME.match(name)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def list_backups(directory=None):
@@ -27,17 +40,8 @@ def list_backups(directory=None):
     directory = directory or backups_dir()
     if not os.path.isdir(directory):
         return []
-    found = []
-    for name in os.listdir(directory):
-        match = _BACKUP_NAME.match(name)
-        if not match:
-            continue
-        try:
-            day = datetime.strptime(match.group(1), "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        found.append((day, os.path.join(directory, name)))
-    return sorted(found)
+    found = [(_backup_date(name), os.path.join(directory, name)) for name in os.listdir(directory)]
+    return sorted(item for item in found if item[0])
 
 
 def backups_to_keep(days, keep_days, keep_weeks):
@@ -115,14 +119,62 @@ def backup_database(today=None):
     return final_path
 
 
-async def run_database_backup(bot):
-    """Scheduler job: backs up the database in a worker thread and alerts the admins if it fails."""
+def offsite_bucket():
+    """The private bucket for the backup copies, or None (feature off, or misconfigured as the public media bucket)."""
+    bucket = config.DB_BACKUP_R2_BUCKET
+    if not bucket:
+        return None
+    if bucket == config.R2_BUCKET:
+        raise RuntimeError("DB_BACKUP_R2_BUCKET is the public media bucket (R2_BUCKET): use a private one")
+    return bucket
+
+
+def list_remote_backups(bucket):
+    """[(date, key)] of the backup copies in the bucket, oldest first."""
+    found = [(_backup_date(key[len(REMOTE_PREFIX):]), key) for key in list_keys(REMOTE_PREFIX, bucket)]
+    return sorted(item for item in found if item[0])
+
+
+def upload_backup_offsite(path):
+    """Copies a backup to DB_BACKUP_R2_BUCKET and rotates the remote copies like the local ones.
+
+    Returns the number of remote copies kept, or None when the feature is off. Raises on failure.
+    """
+    bucket = offsite_bucket()
+    if not bucket:
+        return None
+    upload_file(path, REMOTE_PREFIX + os.path.basename(path), bucket)
+    remote = list_remote_backups(bucket)
+    keep = backups_to_keep([day for day, _ in remote], config.DB_BACKUP_DAYS, config.DB_BACKUP_WEEKS)
+    for day, key in remote:
+        if day not in keep:
+            delete_key(key, bucket)
+            logger.info(f"DB backup: removed old remote copy {key}")
+    logger.info(f"DB backup: copied {os.path.basename(path)} to R2 bucket {bucket}, {len(keep)} remote copies kept.")
+    return len(keep)
+
+
+async def _notify_admins(bot, text):
+    if not config.ADMIN_CHAT_ID:
+        return
     try:
-        await asyncio.to_thread(backup_database)
+        await bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=text)
+    except Exception as notify_error:
+        logger.error(f"DB backup: could not notify the admins: {notify_error}")
+
+
+async def run_database_backup(bot):
+    """Scheduler job: backs up the database in a worker thread, copies it off-site, alerts the admins on failure."""
+    try:
+        path = await asyncio.to_thread(backup_database)
     except Exception as e:
         logger.error(f"DB backup failed: {e}")
-        if config.ADMIN_CHAT_ID:
-            try:
-                await bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=format_db_backup_failed(e))
-            except Exception as notify_error:
-                logger.error(f"DB backup: could not notify the admins: {notify_error}")
+        await _notify_admins(bot, format_db_backup_failed(e))
+        return
+    if not path:
+        return
+    try:
+        await asyncio.to_thread(upload_backup_offsite, path)
+    except Exception as e:
+        logger.error(f"DB backup: off-site copy failed: {e}")
+        await _notify_admins(bot, format_db_backup_offsite_failed(e))

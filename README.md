@@ -168,6 +168,7 @@ IG_ACCOUNT_ID=178414...
 # RECAP_WEEKDAYS=0,2,4,5,6         # game nights that get an automatic recap (0 = Monday ... 6 = Sunday)
 # DB_BACKUP_DAYS=7                 # daily DB backups kept (0 = no backups)
 # DB_BACKUP_WEEKS=4                # extra weekly DB backups kept (oldest copy of each week)
+# DB_BACKUP_R2_BUCKET=gdg-backups  # private R2 bucket for off-site backup copies (empty = off)
 # DISCARDED_RETENTION_DAYS=7       # days a discarded event can still be restored before it is deleted
 
 # Game night texts (Optional)
@@ -313,7 +314,8 @@ All maintenance utilities are located in the `scripts/` directory:
 - **Database Backup & Restore:** the bot backs the database up every night at `DB_BACKUP_TIME` (default 04:00) into `data/backups/bot_database_YYYY-MM-DD.db.gz`, keeping the last `DB_BACKUP_DAYS` days plus one copy per week for `DB_BACKUP_WEEKS` weeks (well under 1 MB in total). If a backup fails, the admin chat gets a warning.
   ```bash
   PYTHONPATH=. .venv/bin/python scripts/backup_db.py --now    # back up now (e.g. before a manual DB fix)
-  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --list   # list the stored copies
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --list   # list the stored copies (local + R2)
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --fetch YYYY-MM-DD   # download a copy from R2 first
 
   # Restore: stop the bot first
   kubectl scale deployment/event-bot --replicas=0
@@ -321,7 +323,7 @@ All maintenance utilities are located in the `scripts/` directory:
   rm -f data/bot_database.db-wal data/bot_database.db-shm
   kubectl scale deployment/event-bot --replicas=1
   ```
-  The copies live on the same disk as the database: they cover bad deletions and a corrupted file, not a lost disk.
+  To also survive a lost disk, set `DB_BACKUP_R2_BUCKET` to a **private** R2 bucket (create it in Cloudflare without public access and give the R2 token access to it): each backup is copied there under `backups/` with the same rotation. Never use the public media bucket: the database contains usernames.
 
 - **Unzip Archived Images:**
   ```bash

@@ -56,5 +56,9 @@ def format_venue_selected(venue):
     return f"📍 Sede Eventbrite per i nuovi eventi: {venue}"
 
 
+def format_db_backup_offsite_failed(error):
+    return f"⚠️ Copia del backup del database su R2 non riuscita: {error}\nIl backup locale è stato salvato."
+
+
 def format_db_backup_failed(error):
     return f"⚠️ Backup notturno del database non riuscito: {error}\nLe copie precedenti sono intatte."
