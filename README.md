@@ -169,6 +169,8 @@ IG_ACCOUNT_ID=178414...
 # DB_BACKUP_DAYS=7                 # daily DB backups kept (0 = no backups)
 # DB_BACKUP_WEEKS=4                # extra weekly DB backups kept (oldest copy of each week)
 # DB_BACKUP_R2_BUCKET=gdg-backups  # private R2 bucket for off-site backup copies (empty = off)
+# REMINDER_TIME=12:00              # day-of reminder DM to booked users (REMINDER_ENABLED=false to turn off)
+# EVENT_DURATION_HOURS=4           # game night length in calendar links (default: EVENTBRITE_EVENT_DURATION_HOURS)
 # DISCARDED_RETENTION_DAYS=7       # days a discarded event can still be restored before it is deleted
 
 # Game night texts (Optional)
@@ -272,7 +274,8 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 ### 7. Event Overview & Bot Control Commands
 - `/event_next [date]`: Public command displaying today's and upcoming events in chronological order (or only the events of one day when given `gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato` or `domenica`; a weekday means its next occurrence, today included), with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
-- `/event_mine`: Public command listing only the events **you** are booked to, today and in the future, with the seats you hold and the same quick links as `/event_next`. It answers in the same places as `/event_next` (private chat, `ADMIN_CHAT_ID`, and the discussion group unless `ALLOW_GROUP_EVENT_NEXT=false`) and has the deep link `t.me/{bot_username}?start=event_mine`. Matching is by Telegram user id, or by username for seats an admin added for you; bookings made on Eventbrite carry no Telegram identity and are not shown.
+- `/event_mine`: Public command listing only the events **you** are booked to, today and in the future, with the seats you hold and the same quick links as `/event_next`. It answers in the same places as `/event_next` (private chat, `ADMIN_CHAT_ID`, and the discussion group unless `ALLOW_GROUP_EVENT_NEXT=false`) and has the deep link `t.me/{bot_username}?start=event_mine`. Matching is by Telegram user id, or by username for seats an admin added for you; bookings made on Eventbrite carry no Telegram identity and are not shown. In a private chat the list comes with one row of buttons per event: `[➖ <title>]` frees one seat (the list is redrawn, the discussion group gets the usual notice) and `[📅]` adds the event to Google Calendar.
+- **Day-of reminders:** at `REMINDER_TIME` (default 12:00) every Telegram user booked to one of today's approved events gets a DM with `[➖ Libera un posto]` and `[📅 Calendario]`. Telegram only lets a bot write to users who have opened a private chat with it (e.g. through `/event_mine` or the `👥 Lista` link); the others are skipped silently. `REMINDER_ENABLED=false` turns this off.
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).

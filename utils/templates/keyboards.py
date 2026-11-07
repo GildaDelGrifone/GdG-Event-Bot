@@ -103,6 +103,18 @@ BUTTON_LIST = "👥 Lista"
 BUTTON_UNBOOK = "➖ Annulla"
 
 
+BUTTON_RELEASE_SEAT = "➖ Libera un posto"
+
+
+BUTTON_CALENDAR = "📅 Calendario"
+
+
+def format_release_seat_button(title):
+    """Per-event release button of /event_mine: the title, shortened to fit a button."""
+    short = title if len(title) <= 28 else title[:27] + "…"
+    return f"➖ {short}"
+
+
 BUTTON_DELETE = "🗑️ Elimina"
 
 

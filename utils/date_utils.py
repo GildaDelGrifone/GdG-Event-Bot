@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlencode
 from datetime import datetime, date, timedelta
 
 from core import config
@@ -268,3 +269,22 @@ def extract_event_datetime(event, default_time=None) -> datetime | None:
     if not time_of_day:
         time_of_day = _parse_hhmm(default_time or config.EVENT_START_TIME) or (20, 45)
     return datetime(*day, *time_of_day)
+
+
+def google_calendar_url(event, location=None):
+    """An 'add to Google Calendar' link for the event (local time, EVENTBRITE_TIMEZONE), or None when it has no date."""
+    start = extract_event_datetime(event)
+    if not start:
+        return None
+    end = start + timedelta(hours=config.EVENT_DURATION_HOURS)
+    params = {
+        "action": "TEMPLATE",
+        "text": event.get('title') or "Evento",
+        "dates": f"{start:%Y%m%dT%H%M%S}/{end:%Y%m%dT%H%M%S}",
+        "ctz": config.EVENTBRITE_TIMEZONE,
+    }
+    if location:
+        params["location"] = location
+    if event.get('message_link'):
+        params["details"] = event['message_link']
+    return "https://calendar.google.com/calendar/render?" + urlencode(params)

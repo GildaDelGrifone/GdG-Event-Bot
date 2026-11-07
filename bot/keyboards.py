@@ -11,10 +11,12 @@ from utils.templates.keyboards import (
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
     BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE,
-    BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button, format_eventbrite_order_row_button,
+    BUTTON_UNBOOK, BUTTON_CALENDAR, BUTTON_RELEASE_SEAT, SUBSCRIBER_FALLBACK_NAME, format_release_seat_button, format_decrement_seat_button, format_eventbrite_order_row_button,
     format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
 )
+from utils.templates.common import ASSOCIATION_ADDRESS
 from utils.templates.subscribers import format_reservation_subscriber_display
+from utils.date_utils import google_calendar_url
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
 SCHEDULE_DAYS = (
@@ -208,3 +210,30 @@ def get_schedule_repost_keyboard(scheduled_id, active_days=None, advance_days=0)
             InlineKeyboardButton(BUTTON_CLOSE, callback_data=f"sched_close_{scheduled_id}"),
         ],
     ])
+
+
+def _calendar_button(event, label=BUTTON_CALENDAR):
+    url = google_calendar_url(event, location=ASSOCIATION_ADDRESS)
+    return InlineKeyboardButton(label, url=url) if url else None
+
+
+def get_reminder_keyboard(event):
+    """Day-of reminder DM: release a seat (dmunbook_<id>) and add the event to Google Calendar."""
+    row = [InlineKeyboardButton(BUTTON_RELEASE_SEAT, callback_data=f"dmunbook_{event['id']}")]
+    calendar = _calendar_button(event)
+    if calendar:
+        row.append(calendar)
+    return InlineKeyboardMarkup([row])
+
+
+def get_event_mine_keyboard(events):
+    """/event_mine in a private chat: one row per booked event, [➖ title] (mineunbook_<id>) and [📅]."""
+    rows = []
+    for event in events:
+        row = [InlineKeyboardButton(format_release_seat_button(event.get('title') or "Evento"),
+                                    callback_data=f"mineunbook_{event['id']}")]
+        calendar = _calendar_button(event, label="📅")
+        if calendar:
+            row.append(calendar)
+        rows.append(row)
+    return InlineKeyboardMarkup(rows) if rows else None

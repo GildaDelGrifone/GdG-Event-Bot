@@ -1,4 +1,3 @@
-import html
 import logging
 import re
 from datetime import date
@@ -8,47 +7,22 @@ from telegram.ext import ContextTypes
 
 from core import config
 from core.db import get_event, get_reservations_for_event, get_upcoming_events, get_user_upcoming_reservations, get_waitlist
-from utils.templates.event import format_event_seats
 from utils.templates.public import (
     EVENT_MINE_NONE, EVENT_NEXT_CANCELLED_SUFFIX, EVENT_NEXT_DATE_PAST, EVENT_NEXT_INVALID_DATE, EVENT_NEXT_NONE,
     EVENT_NEXT_PENDING_SUFFIX, EVENT_REMOVED, EVENT_SUBS_INVALID_ID, EVENT_SUBS_USAGE, START_INVALID_ID,
-    START_WELCOME, format_event_mine_entry, format_event_mine_prefix, format_event_next_entry, format_event_next_none_for_day, format_event_next_prefix,
-    format_event_next_subscribers_link,
+    START_WELCOME, format_event_mine_prefix, format_event_next_entry, format_event_next_none_for_day, format_event_next_prefix,
 )
 from utils.templates.subscribers import format_event_participants_message
 from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
 from bot.common.auth import describe_user, is_admin_chat
-from bot.common.messages import private_chat_link, reply_in_chunks, resolve_message
+from bot.common.messages import reply_in_chunks, resolve_message
+from bot.service.listings import event_links, event_title_and_date, format_event_mine_entry_for, render_my_bookings
 
 logger = logging.getLogger(__name__)
 
 
-def _event_links(ev, bot_username):
-    links = []
-    if ev.get('admin_message_id'):
-        links.append(private_chat_link(config.ADMIN_CHAT_ID, ev['admin_message_id'], "Admin", "Admin msg"))
-
-    disc_msg_id = ev.get('discussion_message_id')
-    disc_chat = ev.get('discussion_chat_id') or config.DISCUSSION_GROUP_ID or ''
-    if disc_msg_id and str(disc_chat):
-        links.append(private_chat_link(disc_chat, disc_msg_id, "Chat Discussione", "Chat msg"))
-
-    if ev.get('message_link'):
-        links.append(f'<a href="{ev["message_link"]}">Canale Eventi</a>')
-
-    links.append(format_event_next_subscribers_link(format_event_seats(ev), bot_username, ev['id']))
-    return links
-
-
-def _event_title_and_date(ev):
-    return (
-        html.escape(ev.get('title') or 'Senza Titolo'),
-        html.escape(ev.get('date') or ev.get('normalized_date') or 'N/A'),
-    )
-
-
 def _format_event_next_entry(ev, bot_username):
-    escaped_title, escaped_date = _event_title_and_date(ev)
+    escaped_title, escaped_date = event_title_and_date(ev)
 
     status_suffix = ""
     if ev.get('status') == 'pending':
@@ -56,12 +30,7 @@ def _format_event_next_entry(ev, bot_username):
     elif ev.get('status') == 'cancelled':
         status_suffix = EVENT_NEXT_CANCELLED_SUFFIX
 
-    return format_event_next_entry(ev['id'], escaped_title, status_suffix, escaped_date, _event_links(ev, bot_username))
-
-
-def _format_event_mine_entry(ev, bot_username):
-    escaped_title, escaped_date = _event_title_and_date(ev)
-    return format_event_mine_entry(ev['id'], escaped_title, escaped_date, ev['my_seats'], _event_links(ev, bot_username))
+    return format_event_next_entry(ev['id'], escaped_title, status_suffix, escaped_date, event_links(ev, bot_username))
 
 
 def _day_argument(message):
@@ -139,9 +108,16 @@ async def event_mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     bot_username = getattr(getattr(context, 'bot', None), 'username', None) or config.TELEGRAM_BOT_USERNAME
+    if getattr(update.effective_chat, "type", "") == "private":
+        # In a private chat the list carries buttons: release a seat, add to Google Calendar
+        view = render_my_bookings(events, bot_username)
+        if view:
+            text, keyboard = view
+            await message.reply_text(text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
+            return
     await reply_in_chunks(
         message,
-        [_format_event_mine_entry(ev, bot_username) for ev in events],
+        [format_event_mine_entry_for(ev, bot_username) for ev in events],
         limit=3800,
         prefix=format_event_mine_prefix(),
         parse_mode="HTML",

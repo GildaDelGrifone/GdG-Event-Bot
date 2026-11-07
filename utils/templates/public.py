@@ -42,7 +42,7 @@ EVENT_MINE_NONE = (
 EVENT_MINE_TITLE = "Le tue prenotazioni"
 
 
-EVENT_MINE_HINT = "<i>Per liberare un posto usa il pulsante ➖ Annulla sul post dell'evento. Le prenotazioni su Eventbrite non sono incluse.</i>"
+EVENT_MINE_HINT = "<i>Per liberare un posto usa il pulsante ➖ Annulla sul post dell'evento (o, in chat privata, i pulsanti qui sotto). Le prenotazioni su Eventbrite non sono incluse.</i>"
 
 
 EVENT_SUBS_USAGE = "❌ Specifica l'ID dell'evento (es. /event_subs 123 o /subs 123)."

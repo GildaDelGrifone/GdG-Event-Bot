@@ -116,23 +116,34 @@ async def handle_waitlist_join(event_id, user, query, context):
         await update_event_messages(context, event_id, current_query=query)
 
 
-async def handle_seat_unbooking(event_id, user, query, context):
+async def handle_seat_unbooking(event_id, user, query, context, in_private=False):
+    """➖ Annulla (or a release button in a private chat, in_private=True). Returns True when a seat was freed.
+
+    From a private chat the clicked message is not the discussion reply, so it is never passed to
+    update_event_messages as current_query, and the notice goes to the discussion group.
+    """
+    current_query = None if in_private else query
     success, msg = unbook_seat(event_id, user.id, username=getattr(user, 'username', None))
     if not success and leave_waitlist(event_id, user.id):
         # No seat to free, but queued: ➖ Annulla takes the user off the waitlist
         logger.info(f"{describe_telegram_user(user)} left the waitlist of event #{event_id}.")
         await _answer_and_log(query, user, "unbook", event_id, True, POPUP_WAITLIST_LEFT)
-        await update_event_messages(context, event_id, current_query=query)
-        return
+        await update_event_messages(context, event_id, current_query=current_query)
+        return False
     await _answer_and_log(query, user, "unbook", event_id, success, msg)
     if not success:
-        return
+        return False
 
     event = get_event(event_id)
     if not event:
-        return
-    await update_event_messages(context, event_id, event=event, current_query=query)
+        return True
+    await update_event_messages(context, event_id, event=event, current_query=current_query)
 
-    notify_chat, reply_id = _notification_target(query, event)
+    if in_private and config.DISCUSSION_GROUP_ID:
+        reply_id = event.get('discussion_message_id')
+        notify_chat, reply_id = int(config.DISCUSSION_GROUP_ID), int(reply_id) if reply_id else None
+    else:
+        notify_chat, reply_id = _notification_target(query, event)
     text = format_unbooking_notice(format_user_mention(user), format_event_title_link(event))
     await send_with_reply_fallback(context.bot, notify_chat, text, reply_id, log=logger, label="unbooking notification")
+    return True

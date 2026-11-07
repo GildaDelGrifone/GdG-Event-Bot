@@ -31,6 +31,8 @@ CALLBACK_ROUTES = (
     ("full_", booking.handle_full),
     ("book_", booking.handle_book),
     ("unbook_", booking.handle_unbook),
+    ("dmunbook_", booking.handle_dm_unbook),
+    ("mineunbook_", booking.handle_mine_unbook),
     ("manage_subs_", subscribers.handle_manage_subs),
     ("sub_inc_", subscribers.handle_seat_increment),
     ("sub_dec_", subscribers.handle_seat_decrement),

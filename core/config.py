@@ -119,6 +119,8 @@ EVENTBRITE_CURRENCY = os.getenv("EVENTBRITE_CURRENCY", "EUR")
 EVENTBRITE_LISTED = _env_bool("EVENTBRITE_LISTED", True)
 EVENTBRITE_DEFAULT_START_TIME = os.getenv("EVENTBRITE_DEFAULT_START_TIME", EVENT_START_TIME)
 EVENTBRITE_EVENT_DURATION_HOURS = _env_float("EVENTBRITE_EVENT_DURATION_HOURS", 4.0)
+# Length of a game night in calendar links (defaults to the Eventbrite duration)
+EVENT_DURATION_HOURS = _env_float("EVENT_DURATION_HOURS", EVENTBRITE_EVENT_DURATION_HOURS)
 EVENTBRITE_UNLIMITED_CAPACITY = _env_int("EVENTBRITE_UNLIMITED_CAPACITY", 50)
 EVENTBRITE_POLL_MINUTES = _env_int("EVENTBRITE_POLL_MINUTES", 2)
 EVENTBRITE_FULL_SYNC_MINUTES = _env_int("EVENTBRITE_FULL_SYNC_MINUTES", 30)
@@ -151,6 +153,9 @@ DB_BACKUP_DAYS = _env_int("DB_BACKUP_DAYS", 7)  # daily copies kept; 0 disables 
 DB_BACKUP_WEEKS = _env_int("DB_BACKUP_WEEKS", 4)  # extra weekly copies kept (oldest backup of each week)
 # Private R2 bucket that also gets each backup (same rotation); empty = local copies only. Never the public media bucket
 DB_BACKUP_R2_BUCKET = os.getenv("DB_BACKUP_R2_BUCKET", "").strip()
+# Day-of DM reminders to the Telegram users booked to the day's events
+REMINDER_ENABLED = os.getenv("REMINDER_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+REMINDER_TIME = _env_time("REMINDER_TIME", "12:00")
 DISCARDED_RETENTION_DAYS = _env_int("DISCARDED_RETENTION_DAYS", 7)  # discarded events are deleted after this many days
 RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 

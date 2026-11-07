@@ -147,6 +147,10 @@ The system automates the ingestion, standardization, social sharing, and booking
   - A full approved event shows `[⏳ Lista d'attesa]` (`full_<id>`, `handle_full` → `handle_waitlist_join`): `join_waitlist` returns `(position, newly_added)` and the user gets the position in a popup. Only approved events with limited seats accept a queue; a seat holder can queue for one more seat. `[➕ Prenota]` (`handle_book`) also queues when people are waiting, so a stale keyboard cannot jump the queue.
   - **Promotion has one hook:** `bot.service.posts.update_event_messages`, which every seat change already calls (user unbook, admin −/remove, Eventbrite releases from the poller, `/event_edit_seats`). For an approved event with people waiting it calls `promote_waitlist` (one transaction: books the oldest entries into the free seats with `seats._add_telegram_seat` and deletes them), re-renders, runs the Eventbrite sync (so the pushed capacity already counts them) and then `announce_promotions` tags each one in the discussion group (only for events with a channel post) and tries a DM (`Forbidden` ignored).
   - `[➖ Annulla]` from a user with no seats but a queue entry calls `leave_waitlist` (`POPUP_WAITLIST_LEFT`). The `[👥 Gestisci Iscritti]` panel and `/event_subs` list the queue (`format_waitlist_lines`). `disable_bookings_for_date` (23:59) clears the day's queues; `delete_event` deletes them.
+- **Private-chat release buttons and reminders:**
+  - `/event_mine` in a private chat answers with one message (`bot.service.listings.render_my_bookings`, if under 3800 characters) carrying a row per event: `[➖ title]` (`mineunbook_<id>`) and `[📅]` (Google Calendar URL, `utils.date_utils.google_calendar_url`: local times + `ctz=EVENTBRITE_TIMEZONE`, length `EVENT_DURATION_HOURS`). In groups it stays text-only. `event_links` / `event_title_and_date` (shared with `/event_next`) live in `bot/service/listings.py`.
+  - `bot.service.reminders.send_event_reminders`, registered by `main.post_init` with `add_cron_job` at `REMINDER_TIME` (unless `REMINDER_ENABLED=false`), DMs every Telegram reservation (with a `user_id`) of today's approved events, with `[➖ Libera un posto]` (`dmunbook_<id>`) and `[📅 Calendario]` (`get_reminder_keyboard`). `Forbidden` (user never opened the bot) is skipped; 0.1 s between sends.
+  - Both buttons call `handle_seat_unbooking(..., in_private=True)`: the private message is **not** passed to `update_event_messages` as `current_query` (that path would store it as the discussion reply), and the unbooking notice goes to `DISCUSSION_GROUP_ID` as a reply to `discussion_message_id`. `dmunbook_` then appends `✅ Posto liberato` to the DM; `mineunbook_` redraws the list in place. The freed seat goes through the waitlist hook like any other.
 - **Seat Release (`[➖ Annulla]` / `unbook_<event_id>`):**
   - Decrements seat reservation count or deletes reservation record if 0 seats remain.
   - Updates remaining seats on public channel post and discussion message.
@@ -370,6 +374,8 @@ GdG-Event-Bot/
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
 │   │   ├── mentions.py   # User/subscriber mention formatting
 │   │   ├── waitlist.py   # announce_promotions: group tag + DM for users moved from the waitlist into a seat
+│   │   ├── reminders.py  # Day-of reminder DMs (REMINDER_TIME job registered by main.post_init)
+│   │   ├── listings.py   # /event_next & /event_mine entries; /event_mine view with release/calendar buttons
 │   │   ├── eventbrite/   # Eventbrite flows; import public names from bot.service.eventbrite
 │   │   │   ├── common.py  # admin notices/card refresh, venue names, collections, unlinking deleted events
 │   │   │   ├── publish.py # publish (background task), recreate
@@ -637,6 +643,8 @@ GdG-Event-Bot/
 | `DB_BACKUP_TIME` / `DB_BACKUP_DAYS` / `DB_BACKUP_WEEKS` | (Optional) Nightly database backup (§2.13): time (`HH:MM`), daily copies kept (`0` = no backups), extra weekly copies kept. Needs a restart | `04:00`, `7`, `4` |
 | `DISCARDED_RETENTION_DAYS` | (Optional) Days a discarded event is kept (restorable with `[↩️ Ripristina]`) before the 23:59 job deletes it | `7` |
 | `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
+| `REMINDER_ENABLED` / `REMINDER_TIME` | (Optional) Day-of reminder DMs (§2.4) on/off and time (`HH:MM`). Needs a restart | `true`, `12:00` |
+| `EVENT_DURATION_HOURS` | (Optional) Game night length used by the Google Calendar links (default: `EVENTBRITE_EVENT_DURATION_HOURS`) | `4` |
 | `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
 | `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the article prompt | `@Destard,@ManueleAbi` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages. Numeric settings (this and the `EVENTBRITE_*` numbers) fall back to their default on a typo (`_env_int` / `_env_float`) | `4` |

@@ -85,3 +85,16 @@ NOTICE_CANCELLED = ("⚠️", "ANNULLATO", "Iscritti avvisati")
 
 
 NOTICE_REACTIVATED = ("✅", "RIATTIVATO", "Iscritti prenotati")
+
+
+def format_event_reminder(event_link, date_str, seats):
+    seats_str = "1 posto" if seats == 1 else f"{seats} posti"
+    return (f"⏰ Promemoria: oggi c'è {event_link}\n🗓️ {html.escape(date_str or '')}\n🪑 Hai prenotato {seats_str}.\n\n"
+            "Se non puoi più venire, libera il posto qui sotto: lo lasci a chi è in lista d'attesa.")
+
+
+def format_seat_released_from_dm(event_link):
+    return f"✅ Posto liberato per: {event_link}"
+
+
+POPUP_NO_SEAT_TO_RELEASE = "Non hai posti prenotati da liberare per questo evento."
