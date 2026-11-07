@@ -4,9 +4,9 @@ from telegram.error import TelegramError
 
 from core import config
 from core.db import get_event, get_user_upcoming_reservations
-from bot.keyboards import is_event_full
+from bot.keyboards import accepts_waitlist, is_event_full
 from bot.service.booking import handle_seat_booking, handle_seat_unbooking, handle_waitlist_join
-from utils.templates.booking import format_seat_released_from_dm
+from utils.templates.booking import POPUP_TABLE_FULL, format_seat_released_from_dm
 from utils.templates.common import POPUP_EVENT_NOT_FOUND, format_event_title_link
 from utils.templates.public import EVENT_MINE_NONE
 from bot.service.listings import render_my_bookings
@@ -27,6 +27,12 @@ async def handle_full(query, context, payload):
 
     if not is_event_full(event) and not event.get('waitlist_count'):
         await handle_seat_booking(event_id, query.from_user, query, context)
+        return
+    if not accepts_waitlist(event):
+        try:
+            await query.answer(POPUP_TABLE_FULL, show_alert=True)
+        except TelegramError as e:
+            logger.debug(f"Could not answer callback query: {e}")
         return
     await handle_waitlist_join(event_id, query.from_user, query, context)
 

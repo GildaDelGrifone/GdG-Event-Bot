@@ -26,6 +26,11 @@ class TestWaitlist(TempDBMixin, unittest.TestCase):
         self.assertEqual(db.join_waitlist(unlimited, 2), (None, False))
         self.assertEqual(db.join_waitlist(cancelled, 2), (None, False))
 
+    def test_a_private_table_has_no_waitlist(self):
+        private = create_event(status="approved", seats="0/0 Completo", max_seats=0)
+        self.assertEqual(db.join_waitlist(private, 2), (None, False))
+        self.assertEqual(db.get_waitlist(private), [])
+
     def test_promotion_fills_the_free_seats_in_order(self):
         db.join_waitlist(self.event_id, 2, username="bruno")
         db.join_waitlist(self.event_id, 3, username="carla")

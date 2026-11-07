@@ -94,6 +94,11 @@ class TestBookingKeyboard(TempDBMixin, unittest.TestCase):
         self.assertEqual(row[1].text, "👥 Lista")
         self.assertEqual(row[1].url, f"https://t.me/GdG_Event_bot?start=subs_{self.event_id}")
         self.assertEqual(row[2].text, "➖ Annulla")
+
+    def test_a_private_table_shows_sold_out_not_the_waitlist(self):
+        event = {**db.get_event(self.event_id), "booked_seats": 0, "max_seats": 0, "seats": "0/0 Completo"}
+        row = get_event_booking_keyboard(self.event_id, event=event, bot_username="GdG_Event_bot").inline_keyboard[0]
+        self.assertEqual((row[0].text, row[0].callback_data), ("🚫 Esauriti", f"full_{self.event_id}"))
         self.assertEqual(row[2].callback_data, f"unbook_{self.event_id}")
 
     def test_booking_keyboard_with_at_prefix_bot_username(self):

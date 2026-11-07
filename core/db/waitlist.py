@@ -20,7 +20,8 @@ def join_waitlist(event_id, user_id, username=None, full_name=None):
     """
     with transaction() as cur:
         ev, error = _load_seat_state(cur, event_id)
-        if error or ev['status'] != 'approved' or _capacity(ev) is None:
+        # No queue without a positive seat limit: unlimited events never fill, 0/0 is a private table
+        if error or ev['status'] != 'approved' or not _capacity(ev):
             return None, False
         existing = _position(cur, event_id, user_id)
         if existing:

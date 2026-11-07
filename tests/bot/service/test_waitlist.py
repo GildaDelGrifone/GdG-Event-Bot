@@ -78,6 +78,13 @@ class TestWaitlistFlow(TempDBMixin, unittest.IsolatedAsyncioTestCase):
             await self.press(f"sub_dec_{self.event_id}_{reservation['id']}", make_user())
         self.assertEqual(db.get_reservation_by_user(self.event_id, user_id=2)["seats_booked"], 1)
 
+    async def test_a_private_table_says_sold_out_and_queues_nobody(self):
+        private = create_event(status="approved", seats="0/0 Completo", max_seats=0, telegram_message_id=51)
+        update, query = callback_update(f"full_{private}", chat_id=int(GROUP), message_id=61, user=self.bruno)
+        await handle_callback_query(update, self.context)
+        self.assertEqual(query.answer.call_args.args[0], "I posti per questo tavolo sono esauriti!")
+        self.assertEqual(db.get_waitlist(private), [])
+
     async def test_a_failed_dm_is_ignored(self):
         from telegram.error import Forbidden
 

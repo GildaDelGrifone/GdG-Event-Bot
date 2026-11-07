@@ -102,6 +102,10 @@ BUTTON_DISCARD_ARTICLE = "🗑️ Scarta articolo"
 BUTTON_FULL = "⏳ Lista d'attesa"
 
 
+# Full event that takes no waitlist (0/0 Completo: a private table)
+BUTTON_SOLD_OUT = "🚫 Esauriti"
+
+
 BUTTON_BOOK = "➕ Prenota"
 
 
