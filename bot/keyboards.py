@@ -10,7 +10,7 @@ from utils.templates.keyboards import (
     BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
-    BUTTON_REACTIVATE, BUTTON_REFRESH,
+    BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE,
     BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button, format_eventbrite_order_row_button,
     format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
 )
@@ -104,6 +104,11 @@ def get_cancelled_event_keyboard(event_id):
         InlineKeyboardButton(BUTTON_REACTIVATE, callback_data=f"reactivate_event_{event_id}"),
         _manage_subs_button(event_id),
     ]])
+
+
+def get_discarded_event_keyboard(event_id):
+    """A discarded event is kept for DISCARDED_RETENTION_DAYS; until then it can be put back to pending."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_RESTORE, callback_data=f"restore_event_{event_id}")]])
 
 
 def get_subscribers_management_keyboard(event_id, reservations, event=None):

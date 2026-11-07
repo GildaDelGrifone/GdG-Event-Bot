@@ -17,6 +17,7 @@ CALLBACK_ROUTES = (
     ("ebvenue_close", venues.handle_venue_close),
     ("ebvenue_", venues.handle_venue_pick),
     ("discard_event_", events.handle_discard_event),
+    ("restore_event_", events.handle_restore_event),
     ("cancel_event_", events.handle_cancel_event),
     ("cancel_confirm_", events.handle_cancel_confirm),
     ("cancel_abort_", events.handle_cancel_abort),

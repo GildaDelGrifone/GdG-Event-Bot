@@ -76,3 +76,18 @@ def newest_collage(folders):
     """The file name of the most recent collage (the one of the last recap run), or None. Ties go to the later name."""
     found = _collages(folders)
     return max(found)[1] if found else None
+
+
+def restore_image_file(path):
+    """Makes sure `path` exists as a loose file, extracting it from its folder's archive.zip if the nightly
+    job zipped it. True when the file is there afterwards."""
+    if not path:
+        return False
+    if os.path.isfile(path):
+        return True
+    folder = os.path.dirname(path)
+    found = find_local_file(os.path.basename(path), [folder])
+    if not found or found[1] is None:
+        return False
+    extract_member(found[0], found[1], folder)
+    return os.path.isfile(path)

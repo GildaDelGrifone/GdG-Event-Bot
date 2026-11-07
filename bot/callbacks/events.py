@@ -1,16 +1,19 @@
 import asyncio
 import logging
 
+from telegram import InlineKeyboardMarkup
 from telegram.error import TelegramError
 
 from core import config
 from core.db import (
-    delete_event, get_event, update_event_status, update_telegram_message_info,
+    discard_event, get_event, restore_discarded_event, update_event_status, update_telegram_message_info,
 )
-from utils.image_utils import create_story_image, delete_local_image
+from utils.image_utils import create_story_image
+from utils.night_images import restore_image_file
 from utils.templates.approval import (
     APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_CANCELLATION_ABORTED,
-    POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED, REACTIVATED_SUFFIX,
+    POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED, POPUP_RESTORE_GONE, POPUP_RESTORED,
+    POPUP_RESTORED_WITHOUT_IMAGE, REACTIVATED_SUFFIX,
     STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS, format_approved_without_telegram,
     format_channel_publish_error, format_stale_card_popup,
 )
@@ -21,7 +24,7 @@ from bot.common.auth import describe_user
 from bot.common.media import send_photo_resilient
 from bot.common.messages import edit_card, send_image_or_error, with_html_fallback
 from bot.keyboards import (
-    get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
+    get_approval_keyboard, get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_discarded_event_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
     get_eventbrite_cancel_confirmation_keyboard,
 )
 from bot.service.eventbrite import (
@@ -131,12 +134,22 @@ async def _refuse_stale_card(query, event_id):
     logger.info(f"{describe_user(query.from_user)} pressed a stale approval button on event #{event_id} "
                 f"(status {event['status']}); ignored.")
     await query.answer(format_stale_card_popup(event['status']), show_alert=True)
-    if event['status'] == 'cancelled':
+    await _show_real_state(query, event)
+    return True
+
+
+async def _show_real_state(query, event):
+    """Puts the status line and buttons that match the event's current status on the clicked card."""
+    event_id, status = event['id'], event.get('status')
+    if status == 'cancelled':
         await _mark_admin_card(query, CANCELLED_SUFFIX, "stale card", keyboard=get_cancelled_event_keyboard(event_id))
+    elif status == 'discarded':
+        await _mark_admin_card(query, DISCARDED_SUFFIX, "stale card", keyboard=get_discarded_event_keyboard(event_id))
+    elif status == 'pending':
+        await _mark_admin_card(query, "", "stale card", keyboard=get_approval_keyboard(event_id))
     else:
         await _mark_admin_card(query, APPROVED_SUFFIX, "stale card",
                                keyboard=get_approved_event_keyboard(event_id, event), use_html=True)
-    return True
 
 
 async def handle_publish_event(query, context, payload):
@@ -244,12 +257,28 @@ async def handle_discard_event(query, context, payload):
     if await _refuse_stale_card(query, event_id):
         return
     await query.answer()
-    logger.info(f"{describe_user(query.from_user)} discarded event #{event_id}.")
+    logger.info(f"{describe_user(query.from_user)} discarded event #{event_id} "
+                f"(kept {config.DISCARDED_RETENTION_DAYS} days, restorable).")
+    discard_event(event_id)
+    await _mark_admin_card(query, DISCARDED_SUFFIX, "discard", keyboard=get_discarded_event_keyboard(event_id))
+
+
+async def handle_restore_event(query, context, payload):
+    """`[↩️ Ripristina]` on a discarded card: the event goes back to pending with the approval buttons."""
+    event_id = int(payload)
     event = get_event(event_id)
-    if event and event.get('image_path'):
-        delete_local_image(event['image_path'])
-    delete_event(event_id)
-    await _mark_admin_card(query, DISCARDED_SUFFIX, "discard")
+    if not event:
+        await query.answer(POPUP_RESTORE_GONE, show_alert=True)
+        await _mark_admin_card(query, DISCARDED_SUFFIX, "restore", keyboard=InlineKeyboardMarkup([]))
+        return
+    if not restore_discarded_event(event_id):
+        await query.answer(format_stale_card_popup(event['status']), show_alert=True)
+        await _show_real_state(query, event)
+        return
+    logger.info(f"{describe_user(query.from_user)} restored discarded event #{event_id}.")
+    image_ok = not event.get('image_path') or restore_image_file(event['image_path'])
+    await query.answer(POPUP_RESTORED if image_ok else POPUP_RESTORED_WITHOUT_IMAGE, show_alert=not image_ok)
+    await _mark_admin_card(query, "", "restore", keyboard=get_approval_keyboard(event_id))
 
 
 async def _change_published_state(query, context, event_id, status, suffix, keyboard, action, send_notice):

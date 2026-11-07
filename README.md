@@ -168,6 +168,7 @@ IG_ACCOUNT_ID=178414...
 # RECAP_WEEKDAYS=0,2,4,5,6         # game nights that get an automatic recap (0 = Monday ... 6 = Sunday)
 # DB_BACKUP_DAYS=7                 # daily DB backups kept (0 = no backups)
 # DB_BACKUP_WEEKS=4                # extra weekly DB backups kept (oldest copy of each week)
+# DISCARDED_RETENTION_DAYS=7       # days a discarded event can still be restored before it is deleted
 
 # Game night texts (Optional)
 # EVENT_START_TIME=20:45                   # "Ci vediamo alle ..." in the recap and story; default Eventbrite start time
@@ -201,7 +202,7 @@ python3 main.py
 ### 1. New Event Flow
 - **Channel Ingestion:** Admins post an announcement text with a picture to the public channel (`PUBLIC_CHANNEL_ID`).
 - **Deferred Auto-Interception:** The bot parses the content via Gemini AI first. If confirmed as an event, it deletes the raw post from the public channel and routes it to admin review; if it is not an event, it is preserved in the channel.
-- **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`.
+- **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`. A discarded event is only hidden: its card gets `[↩️ Ripristina]`, which puts it back to pending, and it is deleted for good after `DISCARDED_RETENTION_DAYS` (default 7).
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
 - **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Publish + Eventbrite]` (publishes on Telegram, then on Eventbrite); in Eventbrite-only mode (`/bot_eventbrite_only_toggle`, `EVENTBRITE_ONLY_MODE`) the card shows only `[Discard]`, `[🚀 Telegram + EB]` and `[🎟️ Solo Eventbrite]` (approves the event without any channel post and publishes it on Eventbrite only) and no Instagram story is generated. An approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates are refused; events with no free seats (e.g. `0/0 Completo`) are published sold out (visible, nothing bookable until a seat frees up); unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).

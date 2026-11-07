@@ -45,7 +45,7 @@ Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere 
 ### 3. Pubblicare o Annullare
 Sotto l'anteprima dell'evento troverai i pulsanti:
 - **[Publish Event]**: Approva l'evento e lo pubblica immediatamente sul canale pubblico.
-- **[Discard Event]**: Scarta l'evento eliminandolo dal database.
+- **[Discard Event]**: Scarta l'evento. Per 7 giorni resta recuperabile: sulla scheda compare **[↩️ Ripristina]**, che lo rimette in attesa di approvazione; dopo viene eliminato definitivamente.
 
 Se un evento già pubblicato viene cancellato dal Master:
 - Usa il pulsante **[❌ Annulla Evento]**: il bot ti chiede conferma (**[✅ Sì, annulla]** oppure **[↩️ Indietro]**) e non cambia nulla finché non confermi. Dopo la conferma l'evento verrà segnato come `[ANNULLATO]` nel canale pubblico, i posti scenderanno a zero e verrà ignorato nei recap.

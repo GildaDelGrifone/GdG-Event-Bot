@@ -63,6 +63,20 @@ class TestArchiveTodayImages(TempDBMixin, unittest.IsolatedAsyncioTestCase):
             await archive_today_images(bot=None)
 
 
+class TestPurgeDiscardedEvents(TempDBMixin, unittest.TestCase):
+    def test_old_discarded_events_are_deleted_with_their_image(self):
+        import os
+        from core.scheduler.archive import purge_old_discarded_events
+        image = os.path.join(self.temp_dir.name, "event.jpg")
+        open(image, "wb").close()
+        event_id = create_event(image_path=image)
+        db.discard_event(event_id)
+        with patched_config(DISCARDED_RETENTION_DAYS=0):
+            purge_old_discarded_events()
+        self.assertIsNone(db.get_event(event_id))
+        self.assertFalse(os.path.exists(image))
+
+
 class TestSchedulerLogArchiving(unittest.IsolatedAsyncioTestCase):
     async def test_scheduler_archive_completed_month_logs(self):
         with patch("core.scheduler.archive.zip_completed_months") as mock_zip:

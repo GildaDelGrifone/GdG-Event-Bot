@@ -110,8 +110,8 @@ The system automates the ingestion, standardization, social sharing, and booking
 - For messages intercepted and deleted from `PUBLIC_CHANNEL_ID`, the raw `original_text` of the event is sent to `ADMIN_CHAT_ID` as a separate message so admins can verify if the AI made any mistakes (omitted for manual `/event_process` or `/ep` triggers where the original message is already in `ADMIN_CHAT_ID`).
 - Then, the parsed event is sent to `ADMIN_CHAT_ID` with inline keyboard buttons: `[Publish]`, `[Discard]`, `[Cancel]`, and `[👥 Gestisci Iscritti]`.
 - For privacy, the `Master/Host` field is omitted from generated Instagram Story images, but is displayed in the admin review message and the public channel post.
-- **Stale cards:** Publish / Discard (and the Eventbrite publish buttons) act only on a `pending` event (`_refuse_stale_card`). On a duplicate card of an event already approved or cancelled, they show a popup (`format_stale_card_popup`) and switch the card to the event's real state, so they never delete or re-post a published event.
-- **[Discard]:** Deletes the local event image, permanently deletes the event and all associated reservations from SQLite database, updates message to `❌ SCARTATO` and removes inline action buttons.
+- **Stale cards:** Publish / Discard (and the Eventbrite publish buttons) act only on a `pending` event (`_refuse_stale_card`). On a duplicate card of an event already approved, cancelled or discarded, they show a popup (`format_stale_card_popup`) and switch the card to the event's real state (`_show_real_state`), so they never discard or re-post a published event.
+- **[Discard]:** soft delete. `core.db.discard_event` sets `status='discarded'` and `discarded_at` (only on a `pending` event); reservations and the image stay. The card gets `❌ SCARTATO` and a single `[↩️ Ripristina]` button (`restore_event_<id>`, `handle_restore_event`): `restore_discarded_event` puts it back to `pending` with the approval buttons, extracting the image from the day's `archive.zip` if the nightly job zipped it (`utils.night_images.restore_image_file`). The 23:59 job (`core.scheduler.archive.purge_old_discarded_events`) deletes for good, with reservations and loose image, the events discarded more than `DISCARDED_RETENTION_DAYS` (default 7) days ago; after that the button answers *eliminato definitivamente*.
 - **[Cancel]:** (after the confirmation step of §2.6) Updates DB status to `cancelled`, updates message to `⚠️ ANNULLATO`, switches keyboard to `[♻️ Riattiva Evento]` and `[👥 Gestisci Iscritti]`, and posts a notice to `DISCUSSION_GROUP_ID` tagging all subscribers.
 - **[Publish]:**
   1. Generates 1080x1920 Instagram Story image using `utils/image_utils.create_story_image()` and saves it in `[DATA_DIR]/YYYY/MM/DD/`.
@@ -390,7 +390,7 @@ GdG-Event-Bot/
 │   ├── scheduler/        # APScheduler jobs
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
-│   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
+│   │   ├── archive.py    # 23:59 image archiving + booking shutdown + purge of old discarded events, 00:05 monthly log zips
 │   │   ├── reposts.py    # 09:00 digest of scheduled reposts due today
 │   │   └── backup.py     # 04:00 SQLite backup to DATA_DIR/backups (gzip, 7 daily + 4 weekly copies)
 │   ├── eventbrite/       # Eventbrite REST API (public API: `from core.eventbrite import ...`)
@@ -550,6 +550,7 @@ GdG-Event-Bot/
 | `eventbrite_quantity_total` | INTEGER | | Last ticket quantity pushed (skips no-op calls) |
 | `eventbrite_content_version` | INTEGER | DEFAULT 0 | Structured-content page version (each write sends last + 1) |
 | `eventbrite_synced_at` | TEXT | | Timestamp of the last successful poll |
+| `discarded_at` | TEXT | | UTC time of the Discard (`status='discarded'`); purged after `DISCARDED_RETENTION_DAYS` |
 
 ### Table: `reservations`
 | Column | Type | Constraints / Default | Description |
@@ -608,6 +609,7 @@ GdG-Event-Bot/
 | `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
 | `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
 | `DB_BACKUP_TIME` / `DB_BACKUP_DAYS` / `DB_BACKUP_WEEKS` | (Optional) Nightly database backup (§2.13): time (`HH:MM`), daily copies kept (`0` = no backups), extra weekly copies kept. Needs a restart | `04:00`, `7`, `4` |
+| `DISCARDED_RETENTION_DAYS` | (Optional) Days a discarded event is kept (restorable with `[↩️ Ripristina]`) before the 23:59 job deletes it | `7` |
 | `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
 | `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
 | `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the article prompt | `@Destard,@ManueleAbi` |

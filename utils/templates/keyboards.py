@@ -31,6 +31,9 @@ BUTTON_PUBLISH = "Publish"
 BUTTON_DISCARD = "Discard"
 
 
+BUTTON_RESTORE = "↩️ Ripristina"
+
+
 BUTTON_PUBLISH_TELEGRAM_AND_EB = "🚀 Telegram + EB"
 
 

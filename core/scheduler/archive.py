@@ -5,8 +5,9 @@ import zipfile
 from datetime import datetime
 
 from core import config
-from core.db import get_approved_events_for_date
+from core.db import get_approved_events_for_date, purge_discarded_events
 from core.log_utils import zip_completed_months
+from utils.image_utils import delete_local_image
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,17 @@ async def archive_today_images(bot=None):
     archive_images_in(os.path.join(config.DATA_DIR, now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")))
     if bot:
         await disable_bookings_for_date(bot, now.strftime("%d-%m-%Y"))
+    purge_old_discarded_events()
+
+
+def purge_old_discarded_events():
+    """Deletes for good the events discarded more than DISCARDED_RETENTION_DAYS ago, with their images."""
+    purged = purge_discarded_events(config.DISCARDED_RETENTION_DAYS)
+    for ev in purged:
+        delete_local_image(ev.get('image_path'))
+    if purged:
+        ids = ", ".join(f"#{ev['id']}" for ev in purged)
+        logger.info(f"Archive: purged {len(purged)} discarded events: {ids}")
 
 
 async def archive_completed_month_logs():

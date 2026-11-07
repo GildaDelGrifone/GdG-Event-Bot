@@ -18,6 +18,30 @@ class TestDeleteEvent(TempDBMixin, unittest.TestCase):
         self.assertEqual(len(db.get_reservations_for_event(event_id)), 0)
 
 
+class TestDiscardedEvents(TempDBMixin, unittest.TestCase):
+    def test_only_pending_events_can_be_discarded_and_only_discarded_ones_restored(self):
+        pending, approved = create_event(), create_event(status="approved")
+        self.assertTrue(db.discard_event(pending))
+        self.assertFalse(db.discard_event(approved))
+        self.assertFalse(db.restore_discarded_event(approved))
+        self.assertTrue(db.restore_discarded_event(pending))
+        self.assertEqual(db.get_event(pending)["status"], "pending")
+
+    def test_purge_respects_the_retention(self):
+        old, recent, kept = create_event(), create_event(), create_event()
+        db.admin_add_subscriber(old, "mario")
+        db.discard_event(old)
+        db.discard_event(recent)
+        with db.get_connection() as conn:
+            conn.execute("UPDATE events SET discarded_at = datetime('now', '-8 days') WHERE id = ?", (old,))
+        purged = db.purge_discarded_events(7)
+        self.assertEqual([ev["id"] for ev in purged], [old])
+        self.assertIsNone(db.get_event(old))
+        self.assertEqual(db.get_reservations_for_event(old), [])
+        self.assertEqual(db.get_event(recent)["status"], "discarded")
+        self.assertEqual(db.get_event(kept)["status"], "pending")
+
+
 class TestRoleplayTypeDatabase(TempDBMixin, unittest.TestCase):
     def test_insert_and_get_is_roleplay(self):
         ev_id = db.insert_event({"title": "Cyberpunk Red", "host": "Mike", "is_roleplay": True}, None, "Cyberpunk Red raw")

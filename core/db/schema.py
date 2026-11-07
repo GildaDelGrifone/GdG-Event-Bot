@@ -33,7 +33,8 @@ TABLES = (
         eventbrite_quantity_total INTEGER,
         eventbrite_content_version INTEGER DEFAULT 0,
         eventbrite_synced_at TEXT,
-        eventbrite_venue_id TEXT
+        eventbrite_venue_id TEXT,
+        discarded_at TEXT
     )
     ''',
     '''
@@ -80,6 +81,7 @@ COLUMN_MIGRATIONS = {
         "eventbrite_venue_id": "TEXT",
         "article_backend": "TEXT",
         "article_ref": "TEXT",
+        "discarded_at": "TEXT",
     },
     "scheduled_events": {
         "advance_days": "INTEGER DEFAULT 0",

@@ -149,6 +149,7 @@ EVENTBRITE_CLEANUP_TIME = _env_time("EVENTBRITE_CLEANUP_TIME", "23:59")
 DB_BACKUP_TIME = _env_time("DB_BACKUP_TIME", "04:00")
 DB_BACKUP_DAYS = _env_int("DB_BACKUP_DAYS", 7)  # daily copies kept; 0 disables the backups
 DB_BACKUP_WEEKS = _env_int("DB_BACKUP_WEEKS", 4)  # extra weekly copies kept (oldest backup of each week)
+DISCARDED_RETENTION_DAYS = _env_int("DISCARDED_RETENTION_DAYS", 7)  # discarded events are deleted after this many days
 RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 
 MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)
