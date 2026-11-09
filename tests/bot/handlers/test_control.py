@@ -35,14 +35,15 @@ class TestAdminCommandAuditLogging(TempDBMixin, unittest.IsolatedAsyncioTestCase
         update.message.reply_to_message = reply_msg
         update.message.text = "/event_edit_title New Glorious Title"
 
-        with as_admin_chat(), patch("bot.handlers.edit.logger") as mock_logger:
+        with as_admin_chat(), patch("bot.service.edits.logger") as mock_logger:
             await event_edit_command(update, context)
             self.assertTrue(any("998877" in msg and "title" in msg and f"#{ev_id}" in msg for msg in _info_messages(mock_logger)))
             self.assertEqual(db.get_event(ev_id)["title"], "New Glorious Title")
 
 
-class TestEventbriteOnlyToggle(unittest.IsolatedAsyncioTestCase):
+class TestEventbriteOnlyToggle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        super().setUp()
         patcher = patch.object(runtime_state, "eventbrite_only", False)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -52,6 +53,7 @@ class TestEventbriteOnlyToggle(unittest.IsolatedAsyncioTestCase):
         with as_admin_chat(), eventbrite_credentials(), patch("bot.handlers.control.logger") as mock_logger:
             await bot_eventbrite_only_toggle_command(update, make_context())
             self.assertTrue(runtime_state.eventbrite_only)
+            self.assertTrue(db.get_setting("eventbrite_only"))
             self.assertIn("ATTIVA", update.message.reply_text.call_args.args[0])
             self.assertTrue(any("998877" in msg and "ON" in msg for msg in _info_messages(mock_logger)))
 
@@ -82,10 +84,11 @@ class TestEventbriteOnlyToggle(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(runtime_state.eventbrite_only)
 
 
-class TestEventbriteVenueCommand(unittest.IsolatedAsyncioTestCase):
+class TestEventbriteVenueCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     NAMES = {"v1": "Gilda", "v2": "To Play"}
 
     def setUp(self):
+        super().setUp()
         for patcher in (patch.object(runtime_state, "eventbrite_venue", None),
                         patch.object(runtime_state, "venue_names", dict(self.NAMES))):
             patcher.start()
@@ -121,6 +124,7 @@ class TestEventbriteVenueCommand(unittest.IsolatedAsyncioTestCase):
         with as_admin_chat(), self.two_venues():
             await handle_venue_pick(query, make_context(), "v2")
         self.assertEqual(runtime_state.eventbrite_venue, "v2")
+        self.assertEqual(db.get_setting("eventbrite_venue"), "v2")
         text = query.edit_message_text.call_args.args[0]
         self.assertIn("To Play", text)
         self.assertIn(("✅ To Play", "ebvenue_v2"), self.labels(query.edit_message_text.call_args.kwargs["reply_markup"]))

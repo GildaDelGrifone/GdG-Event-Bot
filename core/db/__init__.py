@@ -6,6 +6,9 @@ from core.db.events import (
     update_event_status,
     update_event_field,
     delete_event,
+    discard_event,
+    restore_discarded_event,
+    purge_discarded_events,
     get_event,
     get_event_by_telegram_message_id,
     get_event_by_discussion_message_id,
@@ -44,6 +47,10 @@ from core.db.seats import (
     admin_remove_subscriber,
     apply_eventbrite_order,
 )
+from core.db.settings import get_setting, set_setting
+from core.db.waitlist import (
+    clear_waitlist, get_waitlist, join_waitlist, leave_waitlist, promote_waitlist, waitlist_count, waitlist_position,
+)
 from core.db.scheduled import (
     insert_scheduled_event,
     get_scheduled_event,
@@ -59,10 +66,22 @@ from core.db.scheduled import (
 )
 
 __all__ = [
+    "clear_waitlist",
+    "get_waitlist",
+    "join_waitlist",
+    "leave_waitlist",
+    "promote_waitlist",
+    "waitlist_count",
+    "waitlist_position",
+    "get_setting",
+    "set_setting",
     "insert_event",
     "update_event_status",
     "update_event_field",
     "delete_event",
+    "discard_event",
+    "restore_discarded_event",
+    "purge_discarded_events",
     "get_event",
     "get_event_by_telegram_message_id",
     "get_event_by_discussion_message_id",

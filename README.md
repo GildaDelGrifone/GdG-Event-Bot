@@ -116,6 +116,9 @@ R2_ACCESS_KEY_ID=your_r2_access_key_id
 R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
 R2_BUCKET=gdg-media
 R2_PUBLIC_URL=https://pub-xxxxxxxx.r2.dev
+# Send photos to Telegram as a temporary R2 link instead of uploading them (default false).
+# Workaround for Telegram photo uploads that time out; needs the R2 settings above.
+# TELEGRAM_PHOTOS_VIA_R2=false
 
 # WordPress REST API Configuration (ARTICLE_BACKEND=wordpress)
 WP_URL=https://www.gildadelgrifonetorino.it
@@ -161,7 +164,14 @@ IG_ACCOUNT_ID=178414...
 # ARCHIVE_IMAGES_TIME=23:59        # image archiving + booking shutdown
 # ARCHIVE_LOGS_TIME=00:05          # monthly log zip check
 # EVENTBRITE_CLEANUP_TIME=23:59    # delete cancelled events from Eventbrite
+# DB_BACKUP_TIME=04:00             # nightly database backup to DATA_DIR/backups
 # RECAP_WEEKDAYS=0,2,4,5,6         # game nights that get an automatic recap (0 = Monday ... 6 = Sunday)
+# DB_BACKUP_DAYS=7                 # daily DB backups kept (0 = no backups)
+# DB_BACKUP_WEEKS=4                # extra weekly DB backups kept (oldest copy of each week)
+# DB_BACKUP_R2_BUCKET=gdg-backups  # private R2 bucket for off-site backup copies (empty = off)
+# REMINDER_TIME=12:00              # day-of reminder DM to booked users (REMINDER_ENABLED=false to turn off)
+# EVENT_DURATION_HOURS=4           # game night length in calendar links (default: EVENTBRITE_EVENT_DURATION_HOURS)
+# DISCARDED_RETENTION_DAYS=7       # days a discarded event can still be restored before it is deleted
 
 # Game night texts (Optional)
 # EVENT_START_TIME=20:45                   # "Ci vediamo alle ..." in the recap and story; default Eventbrite start time
@@ -195,19 +205,20 @@ python3 main.py
 ### 1. New Event Flow
 - **Channel Ingestion:** Admins post an announcement text with a picture to the public channel (`PUBLIC_CHANNEL_ID`).
 - **Deferred Auto-Interception:** The bot parses the content via Gemini AI first. If confirmed as an event, it deletes the raw post from the public channel and routes it to admin review; if it is not an event, it is preserved in the channel.
-- **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`.
+- **Admin Review:** The parsed event is forwarded to `ADMIN_CHAT_ID` with buttons: `[Publish]`, `[Discard]`, `[Cancel]`. A discarded event is only hidden: its card gets `[↩️ Ripristina]`, which puts it back to pending, and it is deleted for good after `DISCARDED_RETENTION_DAYS` (default 7).
 - **Publishing:** Clicking `[Publish]` posts the officially formatted message with `[➕ Prenota] [👥 Lista] [➖ Annulla]` to the public channel and generates the Instagram Story graphic locally.
 - **Publishing on Eventbrite (optional):** If Eventbrite is configured, the pending card also has `[🚀 Publish + Eventbrite]` (publishes on Telegram, then on Eventbrite); in Eventbrite-only mode (`/bot_eventbrite_only_toggle`, `EVENTBRITE_ONLY_MODE`) the card shows only `[Discard]`, `[🚀 Telegram + EB]` and `[🎟️ Solo Eventbrite]` (approves the event without any channel post and publishes it on Eventbrite only) and no Instagram story is generated. An approved card has `[🎟️ Pubblica su Eventbrite]` (the button becomes a `[🎟️ Eventbrite]` dashboard link afterwards). `/event_publish_eventbrite [ID]` does the same as the button: reply to the event card or pass the event ID. Past dates are refused; events with no free seats (e.g. `0/0 Completo`) are published sold out (visible, nothing bookable until a seat frees up); unlimited events use `EVENTBRITE_UNLIMITED_CAPACITY` seats on Eventbrite.
 - **Manual Trigger:** In `ADMIN_CHAT_ID`, reply to any forwarded text/photo message with `/event_process` (or shortcut `/ep`).
 - **AI Event Generation:** In `ADMIN_CHAT_ID`, send `/event_generate <istruzioni>` with informal instructions (e.g. `Catan e Wingspan, venerdì 10 ottobre 21:00, host Destard, 4 posti`). Gemini AI interprets the parameters, fetches the box images (from BoardGameGeek when `BGG_API_TOKEN` is set, otherwise still from BoardGameGeek when the BGG ID is found on Wikidata or guessed by Gemini and checked against BGG's names, then Wikipedia, then a web image search whose results Gemini confirms show that game), stitches a horizontal collage if multiple games are requested, generates a concise Italian description within Telegram's 1024-character caption limit, and sends the drafted event to admin review.
 
 ### 2. Live Seat Booking & Same-Day Conflict Warnings
-- Users click `[➕ Prenota]` on a channel post or discussion group reply to reserve a seat (or see `[🚫 Esauriti]` if full).
+- Users click `[➕ Prenota]` on a channel post or discussion group reply to reserve a seat (or `[⏳ Lista d'attesa]` if full).
 - Clicks increment personal seat reservation count in SQLite.
 - The post message dynamically updates (`Posti: X/Y` or `0/Y Completo`), and the bot sends a reply to the post announcing the reservation.
 - Users click `[👥 Lista]` to open a private DM with the bot and view the full list of participants without spamming the group, or manually call `/event_subs <id>` (or `/subs <id>`, or `/event_subs_<id>`).
 - **Same-Day Conflict Warning:** If a user reserves a seat on an event while already subscribed to another valid event (not cancelled or unsubscribed) scheduled for the same day, the bot processes the reservation normally and immediately posts a warning in the discussion chat. The warning tags the user, lists the conflicting event(s) with titles and direct message links, and reminds the user to release their seat from whichever event they decide not to attend.
 - Users click `[➖ Annulla]` to release reserved seats.
+- **Waitlist:** on a full event the button reads `[⏳ Lista d'attesa]`: pressing it queues the user (popup with the position) and the post shows `— ⏳ In attesa: N`. When a seat frees up (someone cancels, an admin removes a seat, an Eventbrite order is cancelled, or seats are added), the first in line is booked automatically, tagged in the discussion group, and gets a DM if they have ever opened the bot. `[➖ Annulla]` takes a queued user (without seats) off the list. Events published as `0/0 Completo` (private tables) have no waitlist: they keep `[🚫 Esauriti]`. Queues are cleared at 23:59 on the event day.
 - **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group, or in the admin chat (as a reply to the event card) for Eventbrite-only events (`EVENTBRITE_BOOKING_NOTIFICATIONS=false` silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored.
 
 ### 3. Daily Recap Flow
@@ -221,6 +232,8 @@ python3 main.py
 - **Article only:** `/recap_article [DD-MM-YYYY]` reruns only the article for a date (collage, image uploads, AI text, new draft with publish/discard buttons) without rebuilding the recap card or the Instagram story. Without a date it uses today.
 
 ### 4. Admin Event Editing (Reply Commands)
+The quickest way: press `[✏️ Modifica]` on the event card (pending or published), pick the field, and reply to the bot's prompt with the new value; `[🎲 Tipo]` switches roleplay/board game at once and `[↩️ Indietro]` puts the normal buttons back. The values are checked exactly like the commands below, and the channel post updates too. The image is changed with `/event_edit_image`.
+
 In `ADMIN_CHAT_ID`, reply to any event announcement message (pending or already published) to update fields live in SQLite and edit the message in the channel:
 - `/event_edit_title <Titolo>`
 - `/event_edit_date <DD-MM-YYYY [HH:MM] o DD/MM/YYYY [HH:MM]>` (calcola automaticamente il giorno della settimana in italiano e sincronizza sia `date` che `normalized_date`)
@@ -263,7 +276,8 @@ In `ADMIN_CHAT_ID`, each event card includes a `[👥 Gestisci Iscritti]` button
 ### 7. Event Overview & Bot Control Commands
 - `/event_next [date]`: Public command displaying today's and upcoming events in chronological order (or only the events of one day when given `gg-mm-aaaa`, `oggi`, `lunedì`, `mercoledì`, `venerdì`, `sabato` or `domenica`; a weekday means its next occurrence, today included), with quick links to message, discussion chat, direct participant list deep links, and free/total seats counter. Accessible by any user in 1-on-1 private chat with the bot, via deep link (`t.me/{bot_username}?start=event_next`), in `ADMIN_CHAT_ID`, and in `DISCUSSION_GROUP_ID` (can be disabled in the discussion group via `ALLOW_GROUP_EVENT_NEXT=false` to prevent spam).
 - `/event_subs <id>` (or `/subs <id>` / `/event_subs_<id>`): Public command to check the participant list for an event by ID.
-- `/event_mine`: Public command listing only the events **you** are booked to, today and in the future, with the seats you hold and the same quick links as `/event_next`. It answers in the same places as `/event_next` (private chat, `ADMIN_CHAT_ID`, and the discussion group unless `ALLOW_GROUP_EVENT_NEXT=false`) and has the deep link `t.me/{bot_username}?start=event_mine`. Matching is by Telegram user id, or by username for seats an admin added for you; bookings made on Eventbrite carry no Telegram identity and are not shown.
+- `/event_mine`: Public command listing only the events **you** are booked to, today and in the future, with the seats you hold and the same quick links as `/event_next`. It answers in the same places as `/event_next` (private chat, `ADMIN_CHAT_ID`, and the discussion group unless `ALLOW_GROUP_EVENT_NEXT=false`) and has the deep link `t.me/{bot_username}?start=event_mine`. Matching is by Telegram user id, or by username for seats an admin added for you; bookings made on Eventbrite carry no Telegram identity and are not shown. In a private chat the list comes with one row of buttons per event: `[➖ <title>]` frees one seat (the list is redrawn, the discussion group gets the usual notice) and `[📅]` adds the event to Google Calendar.
+- **Day-of reminders:** at `REMINDER_TIME` (default 12:00) every Telegram user booked to one of today's approved events gets a DM with `[➖ Libera un posto]` and `[📅 Calendario]`. Telegram only lets a bot write to users who have opened a private chat with it (e.g. through `/event_mine` or the `👥 Lista` link); the others are skipped silently. `REMINDER_ENABLED=false` turns this off.
 
 In `ADMIN_CHAT_ID` only:
 - `/event_repost <DATE> <SEATS>`: Repost an event with updated date and seats in a single step (supports calendar dates, `oggi`, and next weekday shortcuts `LUN`, `MER`, `VEN`). `SEATS` uses the same syntax as `/event_edit_seats` (`X/Y`, an integer, or `null`/`illimitati` for unlimited).
@@ -271,11 +285,11 @@ In `ADMIN_CHAT_ID` only:
 - `/event_schedule_invoke <ID> [DATA] [POSTI]`: Prepares and sends the approval card for a scheduled event. Without a date it is dated today; with advance days `N > 0` it is dated the template's nearest occurrence on or after today (so on the event day itself it is today).
 - `/event_schedule_update <ID>`: In response to a new event post, overwrites the stored template of the specified scheduled event.
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
-- `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel).
+- `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel). The pause survives a restart until `/bot_resume`.
 - `/bot_resume`: Resumes public channel monitoring.
 - `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
-- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. In memory: a restart returns to the default.
-- `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. In memory: a restart returns to the env value.
+- `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. Saved in the database, so it survives a restart.
+- `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. Saved in the database, so it survives a restart (the env value only applies until the command is used once).
 
 ---
 
@@ -302,6 +316,20 @@ data/
 ## Maintenance & Diagnostic Scripts
 
 All maintenance utilities are located in the `scripts/` directory:
+
+- **Database Backup & Restore:** the bot backs the database up every night at `DB_BACKUP_TIME` (default 04:00) into `data/backups/bot_database_YYYY-MM-DD.db.gz`, keeping the last `DB_BACKUP_DAYS` days plus one copy per week for `DB_BACKUP_WEEKS` weeks (well under 1 MB in total). If a backup fails, the admin chat gets a warning.
+  ```bash
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --now    # back up now (e.g. before a manual DB fix)
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --list   # list the stored copies (local + R2)
+  PYTHONPATH=. .venv/bin/python scripts/backup_db.py --fetch YYYY-MM-DD   # download a copy from R2 first
+
+  # Restore: stop the bot first
+  kubectl scale deployment/event-bot --replicas=0
+  gunzip -c data/backups/bot_database_YYYY-MM-DD.db.gz > data/bot_database.db
+  rm -f data/bot_database.db-wal data/bot_database.db-shm
+  kubectl scale deployment/event-bot --replicas=1
+  ```
+  To also survive a lost disk, set `DB_BACKUP_R2_BUCKET` to a **private** R2 bucket (create it in Cloudflare without public access and give the R2 token access to it): each backup is copied there under `backups/` with the same rotation. Never use the public media bucket: the database contains usernames.
 
 - **Unzip Archived Images:**
   ```bash

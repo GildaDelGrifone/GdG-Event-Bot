@@ -3,6 +3,8 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+from telegram.error import TimedOut
+
 from bot.event_generator.pipeline import enforce_caption_limit, process_event_generation
 from tests.support.db import TempDBMixin
 from tests.support.telegram import make_context
@@ -78,6 +80,16 @@ class TestProcessEventGeneration(TempDBMixin, unittest.IsolatedAsyncioTestCase):
             success, _msg = await process_event_generation("prompt", self.context)
             self.assertTrue(success)
             mock_collage.assert_not_called()
+
+    async def test_process_event_generation_reports_failed_preview(self):
+        # Upload, R2 URL fallback and the text card all fail
+        self.context.bot.send_photo.side_effect = TimedOut()
+        self.context.bot.send_message.side_effect = TimedOut()
+        with self.pipeline(generated_event("Catan", ["Catan"]), [b"IMG"], "test.jpg"), \
+             patch("bot.common.media.upload_media", return_value=None):
+            success, msg = await process_event_generation("Catan", self.context)
+        self.assertFalse(success)
+        self.assertIn("card di approvazione", msg)
 
 
 if __name__ == "__main__":

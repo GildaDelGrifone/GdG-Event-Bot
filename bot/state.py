@@ -1,6 +1,14 @@
 from dataclasses import dataclass, field
 
+import logging
+
 from core import config
+from core.db import get_setting, set_setting
+
+logger = logging.getLogger(__name__)
+
+# Runtime switches saved in the bot_settings table, so a restart keeps them
+PERSISTED_SETTINGS = ("is_paused", "eventbrite_only", "eventbrite_venue")
 
 
 @dataclass
@@ -15,11 +23,37 @@ class BotRuntimeState:
     # event ids in flight (a second press for the same event is refused)
     eventbrite_tasks: set = field(default_factory=set)
     eventbrite_publishing: set = field(default_factory=set)
+    # ✏️ Modifica prompts waiting for the admin's reply: prompt message id -> (event_id, command, admin card message)
+    edit_prompts: dict = field(default_factory=dict)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
 
 
 runtime_state = BotRuntimeState()
+
+
+EDIT_PROMPTS_KEPT = 50
+
+
+def remember_edit_prompt(prompt_message_id, event_id, command, card_message):
+    prompts = runtime_state.edit_prompts
+    prompts[prompt_message_id] = (event_id, command, card_message)
+    while len(prompts) > EDIT_PROMPTS_KEPT:
+        prompts.pop(next(iter(prompts)))
+
+
+def load_persisted_state():
+    """Called once at startup: restores the saved switches; a switch never set keeps its default (env value)."""
+    for name in PERSISTED_SETTINGS:
+        setattr(runtime_state, name, get_setting(name, getattr(runtime_state, name)))
+    logger.info("Runtime state restored: " + ", ".join(f"{n}={getattr(runtime_state, n)!r}" for n in PERSISTED_SETTINGS))
+
+
+def set_persisted(name, value):
+    """Changes a persisted switch in memory and in the database."""
+    setattr(runtime_state, name, value)
+    if not set_setting(name, value):
+        logger.warning(f"Could not save {name}={value!r}: it will be lost on restart.")
 
 
 def remember_published_recap(message_id, events):

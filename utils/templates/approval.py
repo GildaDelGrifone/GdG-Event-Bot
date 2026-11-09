@@ -30,7 +30,21 @@ def format_caption_limit_warning(length, limit):
     )
 
 
+PREVIEW_IMAGE_NOT_DELIVERED = "⚠️ Immagine non inviata (errore di rete con Telegram); verrà inviata alla pubblicazione.\n\n"
+
+
 APPROVED_SUFFIX = "\n\n✅ APPROVATO"
+
+
+def format_stale_card_popup(status):
+    """Popup for Publish / Discard on a duplicate card of an event that is no longer pending."""
+    if status == "cancelled":
+        return "Questo evento è già stato annullato: usa ♻️ Riattiva Evento sulla card."
+    if status == "discarded":
+        return "Questo evento è stato scartato: usa ↩️ Ripristina sulla card."
+    if status == "pending":
+        return "Questo evento è già in attesa di approvazione."
+    return "Questo evento è già pubblicato: per toglierlo usa ❌ Annulla Evento, non Scarta."
 
 
 CANCELLED_SUFFIX = "\n\n⚠️ ANNULLATO"
@@ -40,6 +54,15 @@ REACTIVATED_SUFFIX = "\n\n✅ RIATTIVATO"
 
 
 DISCARDED_SUFFIX = "\n\n❌ SCARTATO"
+
+
+POPUP_RESTORED = "Evento ripristinato: è di nuovo in attesa di approvazione."
+
+
+POPUP_RESTORE_GONE = "Evento eliminato definitivamente: non si può più ripristinare."
+
+
+POPUP_RESTORED_WITHOUT_IMAGE = "Evento ripristinato, ma la sua immagine non è più sul disco: caricala con /event_edit_image."
 
 
 POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE = "Niente da annullare su Eventbrite per questo evento."

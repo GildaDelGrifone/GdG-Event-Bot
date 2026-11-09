@@ -58,6 +58,19 @@ def upload_media(filepath, key_prefix):
         return None
 
 
+def delete_media(key):
+    """Deletes an object of the bucket; logs and returns False on failure, never raises."""
+    try:
+        client = r2_client()
+        if not client:
+            return False
+        client.delete_object(Bucket=config.R2_BUCKET, Key=key)
+        return True
+    except Exception as e:
+        logger.warning(f"R2: Failed to delete '{key}' (remove it by hand): {e}")
+        return False
+
+
 def media_url(key):
     """The public address of an object of the bucket."""
     return f"{config.R2_PUBLIC_URL}/{key}"
@@ -69,3 +82,33 @@ def is_reachable(url):
         return requests.head(url, timeout=HEAD_TIMEOUT, allow_redirects=True).status_code == 200
     except requests.RequestException:
         return False
+
+
+# Plain file transfers to any bucket of the account (no resizing, errors raised): used by the DB backup copies,
+# which go to a private bucket, never to the public media bucket.
+def _require_client():
+    client = r2_client()
+    if not client:
+        raise RuntimeError("R2 credentials are not configured")
+    return client
+
+
+def upload_file(filepath, key, bucket):
+    _require_client().upload_file(filepath, bucket, key)
+
+
+def download_file(key, filepath, bucket):
+    _require_client().download_file(bucket, key, filepath)
+
+
+def list_keys(prefix, bucket):
+    """The keys under `prefix` (all pages)."""
+    client = _require_client()
+    keys = []
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        keys += [item["Key"] for item in page.get("Contents", [])]
+    return keys
+
+
+def delete_key(key, bucket):
+    _require_client().delete_object(Bucket=bucket, Key=key)

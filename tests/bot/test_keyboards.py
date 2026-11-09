@@ -94,6 +94,11 @@ class TestBookingKeyboard(TempDBMixin, unittest.TestCase):
         self.assertEqual(row[1].text, "👥 Lista")
         self.assertEqual(row[1].url, f"https://t.me/GdG_Event_bot?start=subs_{self.event_id}")
         self.assertEqual(row[2].text, "➖ Annulla")
+
+    def test_a_private_table_shows_sold_out_not_the_waitlist(self):
+        event = {**db.get_event(self.event_id), "booked_seats": 0, "max_seats": 0, "seats": "0/0 Completo"}
+        row = get_event_booking_keyboard(self.event_id, event=event, bot_username="GdG_Event_bot").inline_keyboard[0]
+        self.assertEqual((row[0].text, row[0].callback_data), ("🚫 Esauriti", f"full_{self.event_id}"))
         self.assertEqual(row[2].callback_data, f"unbook_{self.event_id}")
 
     def test_booking_keyboard_with_at_prefix_bot_username(self):
@@ -107,7 +112,7 @@ class TestBookingKeyboard(TempDBMixin, unittest.TestCase):
 
         row = get_event_booking_keyboard(self.event_id, event=event, bot_username="GdG_Event_bot").inline_keyboard[0]
         self.assertEqual(len(row), 3)
-        self.assertEqual(row[0].text, "🚫 Esauriti")
+        self.assertEqual(row[0].text, "⏳ Lista d'attesa")
         self.assertEqual(row[0].callback_data, f"full_{self.event_id}")
         self.assertEqual(row[1].text, "👥 Lista")
         self.assertEqual(row[2].text, "➖ Annulla")
@@ -123,8 +128,10 @@ class TestEventbriteKeyboards(unittest.TestCase):
     def test_unconfigured_keyboards_are_exactly_as_before(self):
         with patched_config(EVENTBRITE_TOKEN=None, EVENTBRITE_ORGANIZATION_ID=None, EVENTBRITE_VENUE_ID=None):
             self.assertEqual(len(get_approval_keyboard(5).inline_keyboard), 2)
-            self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 1)
-            self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 1)
+            # [✏️ Modifica] is the only row added since
+            self.assertEqual(len(get_approved_event_keyboard(5).inline_keyboard), 2)
+            self.assertEqual(len(get_approved_event_keyboard(5, EB_EVENT).inline_keyboard), 2)
+            self.assertEqual(get_approved_event_keyboard(5).inline_keyboard[-1][0].callback_data, "editmenu_5")
 
     def test_pending_card_offers_publish_plus_eventbrite_by_default(self):
         with eventbrite_credentials(), patch.object(runtime_state, "eventbrite_only", False):

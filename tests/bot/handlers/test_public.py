@@ -173,6 +173,18 @@ class TestEventMineCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn(f"start=subs_{mine}", text)
         self.assertEqual(kwargs.get("parse_mode"), "HTML")
 
+    async def test_private_chat_gets_release_and_calendar_buttons(self):
+        mine = self._event("Mio Evento")
+        db.book_seat(mine, 1001, "mario")
+
+        private = await self._event_mine(12345)
+        rows = private.call_args.kwargs["reply_markup"].inline_keyboard
+        self.assertEqual(rows[0][0].callback_data, f"mineunbook_{mine}")
+        self.assertIn("calendar.google.com", rows[0][1].url)
+
+        group = await self._event_mine(DISCUSSION_GROUP, "supergroup")
+        self.assertNotIn("reply_markup", group.call_args.kwargs)
+
     async def test_no_bookings_gets_the_empty_message(self):
         self._event("Evento Libero")
 

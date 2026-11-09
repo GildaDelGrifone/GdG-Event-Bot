@@ -8,6 +8,7 @@ from utils.date_utils import DAYS_IT
 from utils.image_utils import create_collage, compress_existing_image_file
 from utils.templates.common import CAPTION_LIMIT
 from utils.templates.recap import RECAP_NO_EVENTS_TODAY, format_recap_no_events_for_date, recap_generate_text
+from bot.common.media import send_photo_resilient
 from bot.keyboards import get_recap_approval_keyboard
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,9 @@ def _is_photo_size_error(err):
 async def _send_collage(bot, collage_path, caption, keyboard):
     """Sends the collage card, retrying once with a recompressed image if Telegram rejects its size."""
     async def send(path):
-        with open(path, 'rb') as f:
-            await bot.send_photo(chat_id=config.ADMIN_CHAT_ID, photo=f, caption=caption, reply_markup=keyboard, parse_mode="HTML")
+        await send_photo_resilient(lambda photo, **kw: bot.send_photo(
+            chat_id=config.ADMIN_CHAT_ID, photo=photo, caption=caption, reply_markup=keyboard, parse_mode="HTML", **kw
+        ), path, html=False)
 
     try:
         await send(collage_path)
@@ -59,7 +61,7 @@ async def _send_collage(bot, collage_path, caption, keyboard):
     try:
         logger.info("Attempting emergency recompression of recap collage...")
         fallback_path = await asyncio.to_thread(
-            compress_existing_image_file, collage_path, max_dim_sum=5000, max_single_dim=3000, target_max_bytes=1_000_000
+            compress_existing_image_file, collage_path, max_dim_sum=5000, max_single_dim=1600, target_max_bytes=200_000
         )
         if fallback_path:
             await send(fallback_path)

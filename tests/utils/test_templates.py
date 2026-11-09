@@ -73,6 +73,11 @@ class TestRoleplayTypeFormatting(unittest.TestCase):
 
 
 class TestFormatEventSeats(unittest.TestCase):
+    def test_format_event_seats_shows_the_waitlist_only_when_full(self):
+        full = {"booked_seats": 5, "max_seats": 5, "status": "approved", "waitlist_count": 2}
+        self.assertEqual(format_event_seats(full), "0/5 Completo — ⏳ In attesa: 2")
+        self.assertEqual(format_event_seats({**full, "waitlist_count": 0}), "0/5 Completo")
+
     def test_format_event_seats_limited(self):
         self.assertEqual(format_event_seats({"booked_seats": 2, "max_seats": 5, "status": "approved"}), "3/5")
 
@@ -282,7 +287,7 @@ class TestEventMineTemplates(unittest.TestCase):
 class TestMessageCatalogue(unittest.TestCase):
     def test_public_text_constants_are_non_empty_strings(self):
         for name in dir(templates):
-            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
+            if name.isupper() and not name.startswith("_") and name not in ("CAPTION_LIMIT", "ADMIN_COMMAND_DESCRIPTIONS", "DEFAULT_COMMAND_DESCRIPTIONS", "EDIT_MENU_FIELDS", "NOTICE_CANCELLED", "NOTICE_REACTIVATED"):
                 with self.subTest(name=name):
                     value = getattr(templates, name)
                     self.assertIsInstance(value, str)

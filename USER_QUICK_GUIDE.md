@@ -9,6 +9,7 @@ Questa guida illustra le funzionalità principali del Bot e spiega come utilizza
 - **Creazione Eventi Intelligente:** Il bot legge i messaggi testuali (anche con locandine allegate) e struttura automaticamente i dati dell'evento grazie all'IA.
 - **Generazione Automatica Eventi:** Creazione rapida di eventi da istruzioni libere con `/event_generate`, con recupero automatico delle scatole dei giochi (da BoardGameGeek anche senza token: l'ID del gioco viene da Wikidata o dall'IA ed è verificato sul nome BGG; in mancanza da Wikipedia e infine da una ricerca web verificata dall'IA; meglio nessuna immagine che una sbagliata) e composizione di collage per più giochi.
 - **Prenotazioni Live (Inline):** Gli utenti possono prenotare o disdire il proprio posto direttamente dai pulsanti interattivi sotto i messaggi del canale Telegram.
+- **Lista d'attesa:** Quando un tavolo è pieno il pulsante diventa **[⏳ Lista d'attesa]**: premendolo ci si mette in coda (il bot dice in che posizione) e il post mostra quante persone aspettano. Appena si libera un posto, il primo in coda viene prenotato in automatico e avvisato nel gruppo (e in privato, se ha già scritto al bot). Per uscire dalla coda si preme **[➖ Annulla]**. I tavoli pubblicati come `0/0 Completo` (tavoli privati) non hanno lista d'attesa: mostrano **[🚫 Esauriti]**.
 - **Prevenzione Conflitti:** Il bot avvisa automaticamente gli utenti se si prenotano a più di un evento nello stesso giorno.
 - **Prenotazioni anche su Eventbrite (opzionale):** Un evento può essere pubblicato anche su Eventbrite, così chi non usa Telegram può prenotare da lì. I posti sono unici: una prenotazione su una delle due piattaforme aggiorna subito la disponibilità dell'altra.
 - **Recap Giornalieri:** Generazione automatica di collage di immagini e riepiloghi testuali per Telegram, con integrazione diretta verso le storie di Instagram e bozze per gli articoli del sito (Astro o WordPress).
@@ -29,7 +30,9 @@ Gli amministratori gestiscono il bot tramite il **Gruppo Admin**.
   `/event_process` (oppure `/ep`)
 
 ### 2. Modificare un Evento (Prima o Dopo la Pubblicazione)
-Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere i dati in tempo reale **rispondendo al messaggio dell'evento** (l'anteprima nel gruppo admin o il post già pubblicato) con uno di questi comandi:
+Il modo più rapido: premi **[✏️ Modifica]** sulla scheda dell'evento nel gruppo admin, scegli il campo (Titolo, Data, Posti, …) e rispondi al messaggio del bot con il nuovo valore. **[🎲 Tipo]** cambia subito tra gioco di ruolo e gioco da tavolo, **[↩️ Indietro]** rimette i pulsanti normali. Per l'immagine usa `/event_edit_image`.
+
+In alternativa, se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere i dati in tempo reale **rispondendo al messaggio dell'evento** (l'anteprima nel gruppo admin o il post già pubblicato) con uno di questi comandi:
 - `/event_edit_title <Nuovo Titolo>`
 - `/event_edit_date <DD-MM-YYYY HH:MM>` *(es. 05-09-2026 21:00 - calcolerà automaticamente il giorno della settimana)*
 - `/event_edit_system <Sistema di Gioco>`
@@ -45,7 +48,7 @@ Se l'IA ha commesso un errore o i dettagli del tavolo cambiano, puoi correggere 
 ### 3. Pubblicare o Annullare
 Sotto l'anteprima dell'evento troverai i pulsanti:
 - **[Publish Event]**: Approva l'evento e lo pubblica immediatamente sul canale pubblico.
-- **[Discard Event]**: Scarta l'evento eliminandolo dal database.
+- **[Discard Event]**: Scarta l'evento. Per 7 giorni resta recuperabile: sulla scheda compare **[↩️ Ripristina]**, che lo rimette in attesa di approvazione; dopo viene eliminato definitivamente.
 
 Se un evento già pubblicato viene cancellato dal Master:
 - Usa il pulsante **[❌ Annulla Evento]**: il bot ti chiede conferma (**[✅ Sì, annulla]** oppure **[↩️ Indietro]**) e non cambia nulla finché non confermi. Dopo la conferma l'evento verrà segnato come `[ANNULLATO]` nel canale pubblico, i posti scenderanno a zero e verrà ignorato nei recap.
@@ -53,7 +56,7 @@ Se un evento già pubblicato viene cancellato dal Master:
 ### 4. Pubblicare un Evento anche su Eventbrite
 *(Disponibile solo se l'integrazione Eventbrite è configurata sul bot; altrimenti i pulsanti qui sotto non compaiono.)*
 - **Subito, in fase di approvazione:** sull'anteprima usa **[🚀 Publish + Eventbrite]** al posto di *Publish*. L'evento viene pubblicato su Telegram e poi su Eventbrite; il bot risponde con il link Eventbrite.
-- **Solo su Eventbrite:** attiva `/bot_eventbrite_only_toggle` (modalità solo Eventbrite). Le anteprime create da quel momento mostrano solo **[Discard]**, **[🚀 Telegram + EB]** e **[🎟️ Solo Eventbrite]**: niente *Publish*, e la storia Instagram non viene generata. **[🎟️ Solo Eventbrite]** approva l'evento ma **non** lo pubblica nel canale Telegram (niente post, niente messaggi nel gruppo discussione, nemmeno in caso di annullamento; le prenotazioni Eventbrite vengono invece annunciate nella chat admin, in risposta alla scheda dell'evento); **[🚀 Telegram + EB]** lo pubblica anche su Telegram. Rimanda il comando per tornare alle schede normali (si torna anche riavviando il bot, salvo `EVENTBRITE_ONLY_MODE=true`). Le schede già inviate non cambiano. Un evento solo Eventbrite non si può prenotare da Telegram.
+- **Solo su Eventbrite:** attiva `/bot_eventbrite_only_toggle` (modalità solo Eventbrite). Le anteprime create da quel momento mostrano solo **[Discard]**, **[🚀 Telegram + EB]** e **[🎟️ Solo Eventbrite]**: niente *Publish*, e la storia Instagram non viene generata. **[🎟️ Solo Eventbrite]** approva l'evento ma **non** lo pubblica nel canale Telegram (niente post, niente messaggi nel gruppo discussione, nemmeno in caso di annullamento; le prenotazioni Eventbrite vengono invece annunciate nella chat admin, in risposta alla scheda dell'evento); **[🚀 Telegram + EB]** lo pubblica anche su Telegram. Rimanda il comando per tornare alle schede normali (l'impostazione resta salvata anche se il bot si riavvia). Le schede già inviate non cambiano. Un evento solo Eventbrite non si può prenotare da Telegram.
 - **Più tardi, su un evento già pubblicato:** usa il pulsante **[🎟️ Pubblica su Eventbrite]** sotto la scheda, oppure il comando `/event_publish_eventbrite` *(rispondendo alla scheda dell'evento, oppure `/event_publish_eventbrite <id>`)*. Fanno esattamente la stessa cosa. Una volta pubblicato, il pulsante diventa **[🎟️ Eventbrite]** e apre la dashboard dell'evento.
 - **Cosa serve:** l'evento deve essere approvato, avere una data futura. Un evento `0/0 Completo` o già pieno viene pubblicato come esaurito: su Eventbrite si vede ma non si può prenotare, e le vendite si riaprono da sole se si libera un posto. Gli eventi senza limite di posti usano la capienza impostata sul bot (`EVENTBRITE_UNLIMITED_CAPACITY`). Se qualcosa si interrompe a metà, rilancia lo stesso pulsante: riprende dal punto in cui si era fermato.
 - **Locandina:** il bot la carica come immagine dell'evento su Eventbrite, riprovando da solo in caso di blocchi temporanei. Se non ci riesce, l'evento viene comunque pubblicato e ricevi un avviso con il pulsante **[🖼️ Riprova caricamento logo]**: premilo per ritentare (oppure rimanda l'immagine con `/event_edit_image`).
@@ -91,7 +94,7 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 - Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo per il sito.
 
 ### 8. Controlli Generali del Bot
-- `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale).
+- `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale). La pausa resta attiva anche dopo un riavvio, fino a `/bot_resume`.
 - `/bot_resume`: Riattiva il bot.
 - `/bot_status`: Mostra lo stato attuale del bot (Attivo/In pausa) e la modalità solo Eventbrite.
 - `/bot_eventbrite_venue`: Se sono configurate più sedi Eventbrite, mostra i pulsanti per sceglierne una: vale per tutti gli eventi pubblicati su Eventbrite da quel momento (ogni evento mantiene la propria). Riavviando il bot si torna alla sede predefinita.
@@ -105,7 +108,8 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
 
 La prenotazione e la consultazione dei tavoli per i giocatori è semplicissima:
 - **Per Consultare gli Eventi (`/event_next`):** Invia `/event_next` in chat privata col bot, clicca sul deep link diretto (`https://t.me/GdG_Event_bot?start=event_next`), oppure invialo nel gruppo discussione per visualizzare l'elenco cronologico di tutti gli eventi di oggi e futuri con i rispettivi link ai canali e alle discussioni.
-- **Per Vedere le Tue Prenotazioni (`/event_mine`):** Invia `/event_mine` in chat privata col bot (o usa il link `https://t.me/GdG_Event_bot?start=event_mine`) per vedere solo gli eventi di oggi e dei prossimi giorni a cui sei prenotato, con i posti che hai riservato. Funziona anche nel gruppo discussione (se `/event_next` è attivo lì). Le prenotazioni fatte su Eventbrite non compaiono, perché non sono collegate al tuo account Telegram.
+- **Per Vedere le Tue Prenotazioni (`/event_mine`):** Invia `/event_mine` in chat privata col bot (o usa il link `https://t.me/GdG_Event_bot?start=event_mine`) per vedere solo gli eventi di oggi e dei prossimi giorni a cui sei prenotato, con i posti che hai riservato. Funziona anche nel gruppo discussione (se `/event_next` è attivo lì). Le prenotazioni fatte su Eventbrite non compaiono, perché non sono collegate al tuo account Telegram. In chat privata sotto l'elenco trovi, per ogni evento, **[➖ titolo]** per liberare un posto e **[📅]** per aggiungerlo a Google Calendar.
+- **Promemoria:** il giorno dell'evento, verso mezzogiorno, il bot ti manda in privato un promemoria con **[➖ Libera un posto]** (se non puoi più venire) e **[📅 Calendario]**. Lo ricevi solo se hai già scritto al bot in privato almeno una volta (basta aprire `/event_mine` o il pulsante **👥 Lista**).
 - **Per Prenotarsi:** Clicca sul pulsante inline **[➕ Prenota]** (oppure **[🚫 Esauriti]** se non ci sono più posti disponibili). Il contatore dei posti si aggiornerà in tempo reale e il bot confermerà la prenotazione taggandoti nei commenti.
 - **Per Vedere gli Iscritti:** 
   - Clicca sul pulsante **[👥 Lista]** sotto il messaggio dell'evento nel canale o nel gruppo discussione (il bot ti aprirà una chat privata mostrando l'elenco completo dei partecipanti senza intasare la chat di gruppo).

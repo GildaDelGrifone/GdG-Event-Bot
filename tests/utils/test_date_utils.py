@@ -1,4 +1,5 @@
 import unittest
+from tests.support.config import patched_config
 from datetime import date, datetime
 
 from utils.date_utils import (
@@ -147,3 +148,20 @@ class TestParseDayFilter(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGoogleCalendarUrl(unittest.TestCase):
+    def test_local_times_with_the_time_zone(self):
+        from urllib.parse import parse_qs, urlparse
+        from utils.date_utils import google_calendar_url
+        with patched_config(EVENT_DURATION_HOURS=4.0, EVENTBRITE_TIMEZONE="Europe/Rome"):
+            url = google_calendar_url({"title": "D&D", "date": "Sabato 7 Novembre 21:00", "normalized_date": "07-11-2026",
+                                       "message_link": "https://t.me/c/1/2"}, location="Gilda")
+        query = parse_qs(urlparse(url).query)
+        self.assertEqual(query["dates"], ["20261107T210000/20261108T010000"])
+        self.assertEqual(query["ctz"], ["Europe/Rome"])
+        self.assertEqual((query["text"], query["location"]), (["D&D"], ["Gilda"]))
+
+    def test_no_date_no_link(self):
+        from utils.date_utils import google_calendar_url
+        self.assertIsNone(google_calendar_url({"title": "Senza data", "date": "", "normalized_date": ""}))

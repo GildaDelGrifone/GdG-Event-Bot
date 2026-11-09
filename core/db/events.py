@@ -68,8 +68,43 @@ def update_event_field(event_id, field, value):
 def delete_event(event_id):
     with transaction() as cur:
         cur.execute('DELETE FROM reservations WHERE event_id = ?', (event_id,))
+        cur.execute('DELETE FROM waitlist WHERE event_id = ?', (event_id,))
         cur.execute('DELETE FROM events WHERE id = ?', (event_id,))
     return True
+
+
+@db_safe(default=False)
+def discard_event(event_id):
+    """Hides a pending event (status 'discarded', reservations and image kept) until purge_discarded_events."""
+    with transaction() as cur:
+        cur.execute(
+            "UPDATE events SET status = 'discarded', discarded_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
+            (event_id,),
+        )
+        return cur.rowcount > 0
+
+
+@db_safe(default=False)
+def restore_discarded_event(event_id):
+    """Puts a discarded event back to pending; False when the event is not discarded (or already purged)."""
+    with transaction() as cur:
+        cur.execute(
+            "UPDATE events SET status = 'pending', discarded_at = NULL WHERE id = ? AND status = 'discarded'", (event_id,)
+        )
+        return cur.rowcount > 0
+
+
+@db_safe(default=list)
+def purge_discarded_events(days):
+    """Deletes the events discarded more than `days` days ago (with their reservations); returns the deleted rows."""
+    rows = fetch_all(
+        "SELECT * FROM events WHERE status = 'discarded' "
+        "AND (discarded_at IS NULL OR discarded_at <= datetime('now', ?))",
+        (f"-{int(days)} days",),
+    )
+    for row in rows:
+        delete_event(row['id'])
+    return rows
 
 
 @db_safe(default=False)
@@ -94,7 +129,11 @@ def clear_eventbrite_info(event_id):
 
 @db_safe()
 def get_event(event_id):
-    return fetch_one('SELECT * FROM events WHERE id = ?', (event_id,))
+    """The event row plus `waitlist_count` (people queued for a seat)."""
+    return fetch_one(
+        'SELECT events.*, (SELECT COUNT(*) FROM waitlist WHERE waitlist.event_id = events.id) AS waitlist_count '
+        'FROM events WHERE id = ?', (event_id,)
+    )
 
 
 def _get_event_by_message(column, message_id):

@@ -31,6 +31,17 @@ BUTTON_PUBLISH = "Publish"
 BUTTON_DISCARD = "Discard"
 
 
+BUTTON_RESTORE = "↩️ Ripristina"
+
+
+BUTTON_EDIT_MENU = "✏️ Modifica"
+
+
+def format_edit_type_button(is_roleplay):
+    """Toggles the event type; shows the current one."""
+    return "🎲 Tipo: Gioco di ruolo → Tavolo" if is_roleplay else "🎲 Tipo: Gioco da tavolo → GdR"
+
+
 BUTTON_PUBLISH_TELEGRAM_AND_EB = "🚀 Telegram + EB"
 
 
@@ -88,7 +99,11 @@ BUTTON_PUBLISH_ASTRO = "Pubblica sul sito"
 BUTTON_DISCARD_ARTICLE = "🗑️ Scarta articolo"
 
 
-BUTTON_FULL = "🚫 Esauriti"
+BUTTON_FULL = "⏳ Lista d'attesa"
+
+
+# Full event that takes no waitlist (0/0 Completo: a private table)
+BUTTON_SOLD_OUT = "🚫 Esauriti"
 
 
 BUTTON_BOOK = "➕ Prenota"
@@ -98,6 +113,18 @@ BUTTON_LIST = "👥 Lista"
 
 
 BUTTON_UNBOOK = "➖ Annulla"
+
+
+BUTTON_RELEASE_SEAT = "➖ Libera un posto"
+
+
+BUTTON_CALENDAR = "📅 Calendario"
+
+
+def format_release_seat_button(title):
+    """Per-event release button of /event_mine: the title, shortened to fit a button."""
+    short = title if len(title) <= 28 else title[:27] + "…"
+    return f"➖ {short}"
 
 
 BUTTON_DELETE = "🗑️ Elimina"

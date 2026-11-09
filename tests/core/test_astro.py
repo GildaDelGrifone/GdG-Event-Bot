@@ -97,6 +97,27 @@ class TestUpload(unittest.TestCase):
         self.assertIn("boto3 is not installed", logs.output[0])
 
 
+class TestFileTransfers(unittest.TestCase):
+    def test_helpers_target_the_given_bucket(self):
+        client = MagicMock()
+        client.get_paginator.return_value.paginate.return_value = [
+            {"Contents": [{"Key": "backups/a"}]}, {"Contents": [{"Key": "backups/b"}]}, {},
+        ]
+        with patch("core.astro.storage.r2_client", return_value=client):
+            storage.upload_file("/tmp/x.gz", "backups/x.gz", "private")
+            storage.download_file("backups/x.gz", "/tmp/y.gz", "private")
+            self.assertEqual(storage.list_keys("backups/", "private"), ["backups/a", "backups/b"])
+            storage.delete_key("backups/a", "private")
+        client.upload_file.assert_called_once_with("/tmp/x.gz", "private", "backups/x.gz")
+        client.download_file.assert_called_once_with("private", "backups/x.gz", "/tmp/y.gz")
+        client.delete_object.assert_called_once_with(Bucket="private", Key="backups/a")
+
+    def test_helpers_raise_without_credentials(self):
+        with patch("core.astro.storage.r2_client", return_value=None):
+            with self.assertRaises(RuntimeError):
+                storage.upload_file("/tmp/x.gz", "backups/x.gz", "private")
+
+
 class TestPublicUrls(unittest.TestCase):
     def test_media_url_joins_the_public_base_and_the_key(self):
         with patched_config(**R2):

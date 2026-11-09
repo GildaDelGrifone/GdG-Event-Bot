@@ -33,7 +33,8 @@ TABLES = (
         eventbrite_quantity_total INTEGER,
         eventbrite_content_version INTEGER DEFAULT 0,
         eventbrite_synced_at TEXT,
-        eventbrite_venue_id TEXT
+        eventbrite_venue_id TEXT,
+        discarded_at TEXT
     )
     ''',
     '''
@@ -60,6 +61,23 @@ TABLES = (
         advance_days INTEGER DEFAULT 0
     )
     ''',
+    '''
+    CREATE TABLE IF NOT EXISTS waitlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        username TEXT,
+        full_name TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (event_id, user_id)
+    )
+    ''',
+    '''
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    ''',
 )
 
 # Columns added after the first release; ALTERed into older databases at startup
@@ -80,6 +98,7 @@ COLUMN_MIGRATIONS = {
         "eventbrite_venue_id": "TEXT",
         "article_backend": "TEXT",
         "article_ref": "TEXT",
+        "discarded_at": "TEXT",
     },
     "scheduled_events": {
         "advance_days": "INTEGER DEFAULT 0",

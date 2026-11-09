@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 MAX_PHOTO_DIMENSION_SUM = 8500
 MAX_PHOTO_SINGLE_DIMENSION = 5000
 MAX_PHOTO_FILE_SIZE = 1_800_000  # ~1.8 MB
+# The recap collage only needs to look good in Telegram (shown at <= 2560 px), as the article cover (resized to
+# 1600 px) and in the story (1080 px). Kept small so the upload stays light: a 1.7 MB 5000 px collage timed out.
+RECAP_COLLAGE_MAX_DIM = 2048
+RECAP_COLLAGE_MAX_BYTES = 350_000
+RECAP_COLLAGE_QUALITY = 80
+MIN_JPEG_QUALITY = 40
 
 def get_daily_dir(base_dir, date_str=None):
     if date_str:
@@ -155,6 +161,13 @@ def build_horizontal_collage(images, max_per_row=None):
 
     return collage
 
+def _encode_jpeg(image, quality):
+    """Progressive, optimized JPEG with 4:2:0 chroma subsampling: ~5-7% smaller than baseline at the same quality."""
+    buf = io.BytesIO()
+    image.save(buf, format='JPEG', quality=quality, optimize=True, progressive=True, subsampling=2)
+    return buf.getvalue()
+
+
 def compress_image_to_bytes(
     image,
     max_dim_sum=MAX_PHOTO_DIMENSION_SUM,
@@ -193,33 +206,30 @@ def compress_image_to_bytes(
             cur_img = cur_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             logger.info(f"Image resized from {w}x{h} to {new_w}x{new_h} (sum: {new_w + new_h}) to satisfy Telegram photo dimension constraints.")
 
-        # 2. Quality reduction loop to enforce file size
-        qualities = [initial_quality, 75, 65, 55, 45, 35]
-        qualities = [q for q in qualities if q <= initial_quality]
-        if not qualities or qualities[0] != initial_quality:
-            qualities.insert(0, initial_quality)
-
-        best_bytes = None
-        for q in qualities:
-            buf = io.BytesIO()
-            cur_img.save(buf, format='JPEG', quality=q, optimize=True)
-            data = buf.getvalue()
-            best_bytes = data
+        # 2. Highest quality that fits target_max_bytes (binary search), progressive 4:2:0 JPEG
+        best_bytes = _encode_jpeg(cur_img, initial_quality)
+        if len(best_bytes) <= target_max_bytes:
+            return best_bytes
+        low, high, fitting = MIN_JPEG_QUALITY, initial_quality - 1, None
+        while low <= high:
+            q = (low + high) // 2
+            data = _encode_jpeg(cur_img, q)
             if len(data) <= target_max_bytes:
-                if q < initial_quality:
-                    logger.info(f"Image compressed at quality {q} ({len(data)} bytes, target <= {target_max_bytes}).")
-                return data
+                fitting, low = (q, data), q + 1
+            else:
+                best_bytes, high = data, q - 1
+        if fitting:
+            logger.info(f"Image compressed at quality {fitting[0]} ({len(fitting[1])} bytes, target <= {target_max_bytes}).")
+            return fitting[1]
 
-        # 3. If still exceeding target_max_bytes after q=35, downscale iteratively
+        # 3. Still too big at the minimum quality: downscale iteratively
         while (cur_img.width > 600 and cur_img.height > 600) and len(best_bytes) > target_max_bytes:
             cur_img = cur_img.resize(
                 (max(1, int(cur_img.width * 0.8)), max(1, int(cur_img.height * 0.8))),
                 Image.Resampling.LANCZOS
             )
             for q in [65, 45, 30]:
-                buf = io.BytesIO()
-                cur_img.save(buf, format='JPEG', quality=q, optimize=True)
-                data = buf.getvalue()
+                data = _encode_jpeg(cur_img, q)
                 best_bytes = data
                 if len(data) <= target_max_bytes:
                     logger.info(f"Image downscaled to {cur_img.width}x{cur_img.height} and compressed at quality {q} ({len(data)} bytes).")
@@ -305,7 +315,10 @@ def create_collage(image_paths, output_dir, date_str=None):
         daily_dir = get_daily_dir(output_dir, date_str)
         filename = f"collage_{uuid.uuid4()}.jpg"
         filepath = os.path.join(daily_dir, filename)
-        return save_compressed_image(collage, filepath)
+        return save_compressed_image(
+            collage, filepath, max_single_dim=RECAP_COLLAGE_MAX_DIM,
+            target_max_bytes=RECAP_COLLAGE_MAX_BYTES, initial_quality=RECAP_COLLAGE_QUALITY,
+        )
     except Exception as e:
         logger.error(f"Error creating collage: {e}")
         return None

@@ -98,6 +98,8 @@ R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET = os.getenv("R2_BUCKET", "gdg-media")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+# Send photos to Telegram as a temporary R2 URL instead of uploading them (workaround for upload timeouts)
+TELEGRAM_PHOTOS_VIA_R2 = _env_bool("TELEGRAM_PHOTOS_VIA_R2", False)
 
 WP_URL = os.getenv("WP_URL")
 WP_USERNAME = os.getenv("WP_USERNAME")
@@ -117,6 +119,8 @@ EVENTBRITE_CURRENCY = os.getenv("EVENTBRITE_CURRENCY", "EUR")
 EVENTBRITE_LISTED = _env_bool("EVENTBRITE_LISTED", True)
 EVENTBRITE_DEFAULT_START_TIME = os.getenv("EVENTBRITE_DEFAULT_START_TIME", EVENT_START_TIME)
 EVENTBRITE_EVENT_DURATION_HOURS = _env_float("EVENTBRITE_EVENT_DURATION_HOURS", 4.0)
+# Length of a game night in calendar links (defaults to the Eventbrite duration)
+EVENT_DURATION_HOURS = _env_float("EVENT_DURATION_HOURS", EVENTBRITE_EVENT_DURATION_HOURS)
 EVENTBRITE_UNLIMITED_CAPACITY = _env_int("EVENTBRITE_UNLIMITED_CAPACITY", 50)
 EVENTBRITE_POLL_MINUTES = _env_int("EVENTBRITE_POLL_MINUTES", 2)
 EVENTBRITE_FULL_SYNC_MINUTES = _env_int("EVENTBRITE_FULL_SYNC_MINUTES", 30)
@@ -144,6 +148,15 @@ RECAP_TIME = _env_time("RECAP_TIME", "16:00")
 ARCHIVE_IMAGES_TIME = _env_time("ARCHIVE_IMAGES_TIME", "23:59")
 ARCHIVE_LOGS_TIME = _env_time("ARCHIVE_LOGS_TIME", "00:05")
 EVENTBRITE_CLEANUP_TIME = _env_time("EVENTBRITE_CLEANUP_TIME", "23:59")
+DB_BACKUP_TIME = _env_time("DB_BACKUP_TIME", "04:00")
+DB_BACKUP_DAYS = _env_int("DB_BACKUP_DAYS", 7)  # daily copies kept; 0 disables the backups
+DB_BACKUP_WEEKS = _env_int("DB_BACKUP_WEEKS", 4)  # extra weekly copies kept (oldest backup of each week)
+# Private R2 bucket that also gets each backup (same rotation); empty = local copies only. Never the public media bucket
+DB_BACKUP_R2_BUCKET = os.getenv("DB_BACKUP_R2_BUCKET", "").strip()
+# Day-of DM reminders to the Telegram users booked to the day's events
+REMINDER_ENABLED = os.getenv("REMINDER_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+REMINDER_TIME = _env_time("REMINDER_TIME", "12:00")
+DISCARDED_RETENTION_DAYS = _env_int("DISCARDED_RETENTION_DAYS", 7)  # discarded events are deleted after this many days
 RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 
 MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)

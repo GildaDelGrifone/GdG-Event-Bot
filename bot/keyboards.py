@@ -7,14 +7,17 @@ from bot.state import runtime_state
 from utils.templates.keyboards import (
     BUTTON_ADD_SUBSCRIBER, BUTTON_BACK, BUTTON_BOOK, BUTTON_CANCEL_EVENT, BUTTON_CLOSE, BUTTON_CONFIRM_CANCEL,
     BUTTON_DELETE, BUTTON_DISCARD, BUTTON_DISCARD_ARTICLE, BUTTON_DISCARD_RECAP, BUTTON_EB_CANCEL, BUTTON_EB_COMPLETE_CANCEL,
-    BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL,
+    BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL, BUTTON_SOLD_OUT,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
-    BUTTON_REACTIVATE, BUTTON_REFRESH,
-    BUTTON_UNBOOK, SUBSCRIBER_FALLBACK_NAME, format_decrement_seat_button, format_eventbrite_order_row_button,
+    BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE, BUTTON_EDIT_MENU, format_edit_type_button,
+    BUTTON_UNBOOK, BUTTON_CALENDAR, BUTTON_RELEASE_SEAT, SUBSCRIBER_FALLBACK_NAME, format_release_seat_button, format_decrement_seat_button, format_eventbrite_order_row_button,
     format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
 )
+from utils.templates.common import ASSOCIATION_ADDRESS
+from utils.templates.edit import EDIT_MENU_FIELDS
 from utils.templates.subscribers import format_reservation_subscriber_display
+from utils.date_utils import google_calendar_url
 
 # (callback key, Italian day name) for the repost schedule toggles, in display order
 SCHEDULE_DAYS = (
@@ -53,8 +56,35 @@ def get_approval_keyboard(event_id):
         ])
     elif eventbrite_enabled():
         rows.append([InlineKeyboardButton(BUTTON_PUBLISH_PLUS_EB, callback_data=f"publish_eb_event_{event_id}")])
-    rows.append([_manage_subs_button(event_id)])
+    rows.append([_manage_subs_button(event_id), _edit_menu_button(event_id)])
     return InlineKeyboardMarkup(rows)
+
+
+def _edit_menu_button(event_id):
+    return InlineKeyboardButton(BUTTON_EDIT_MENU, callback_data=f"editmenu_{event_id}")
+
+
+def get_edit_menu_keyboard(event):
+    """✏️ Modifica: one button per editable field (two per row), the type toggle and ↩️ Indietro."""
+    event_id = event['id']
+    buttons = [InlineKeyboardButton(label, callback_data=f"editfield_{event_id}_{key}")
+               for key, label, _cmd, _hint in EDIT_MENU_FIELDS]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton(format_edit_type_button(event.get('is_roleplay')), callback_data=f"edittype_{event_id}")])
+    rows.append([InlineKeyboardButton(BUTTON_BACK, callback_data=f"editback_{event_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def admin_card_keyboard(event):
+    """The buttons the admin card shows for the event's current status."""
+    status, event_id = event.get('status'), event['id']
+    if status == 'approved':
+        return get_approved_event_keyboard(event_id, event)
+    if status == 'cancelled':
+        return get_cancelled_event_keyboard(event_id)
+    if status == 'discarded':
+        return get_discarded_event_keyboard(event_id)
+    return get_approval_keyboard(event_id)
 
 
 def get_approved_event_keyboard(event_id, event=None):
@@ -67,6 +97,7 @@ def get_approved_event_keyboard(event_id, event=None):
             rows.append(_eventbrite_row(event_id, event))
         else:
             rows.append([InlineKeyboardButton(BUTTON_EB_PUBLISH, callback_data=f"eb_publish_{event_id}")])
+    rows.append([_edit_menu_button(event_id)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -104,6 +135,11 @@ def get_cancelled_event_keyboard(event_id):
         InlineKeyboardButton(BUTTON_REACTIVATE, callback_data=f"reactivate_event_{event_id}"),
         _manage_subs_button(event_id),
     ]])
+
+
+def get_discarded_event_keyboard(event_id):
+    """A discarded event is kept for DISCARDED_RETENTION_DAYS; until then it can be put back to pending."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_RESTORE, callback_data=f"restore_event_{event_id}")]])
 
 
 def get_subscribers_management_keyboard(event_id, reservations, event=None):
@@ -163,12 +199,19 @@ def is_event_full(event):
     return max_seats is not None and booked_seats >= int(max_seats)
 
 
+def accepts_waitlist(event):
+    """Only events with a positive seat limit take a queue: 0/0 Completo is a private table, nobody gets in."""
+    max_seats = event.get('max_seats') if event else None
+    return max_seats is not None and int(max_seats) > 0
+
+
 def get_event_booking_keyboard(event_id, event=None, bot_username=None):
     if event is None:
         event = get_event(event_id)
 
     if is_event_full(event):
-        row = [InlineKeyboardButton(BUTTON_FULL, callback_data=f"full_{event_id}")]
+        label = BUTTON_FULL if accepts_waitlist(event) else BUTTON_SOLD_OUT
+        row = [InlineKeyboardButton(label, callback_data=f"full_{event_id}")]
     else:
         row = [InlineKeyboardButton(BUTTON_BOOK, callback_data=f"book_{event_id}")]
 
@@ -203,3 +246,30 @@ def get_schedule_repost_keyboard(scheduled_id, active_days=None, advance_days=0)
             InlineKeyboardButton(BUTTON_CLOSE, callback_data=f"sched_close_{scheduled_id}"),
         ],
     ])
+
+
+def _calendar_button(event, label=BUTTON_CALENDAR):
+    url = google_calendar_url(event, location=ASSOCIATION_ADDRESS)
+    return InlineKeyboardButton(label, url=url) if url else None
+
+
+def get_reminder_keyboard(event):
+    """Day-of reminder DM: release a seat (dmunbook_<id>) and add the event to Google Calendar."""
+    row = [InlineKeyboardButton(BUTTON_RELEASE_SEAT, callback_data=f"dmunbook_{event['id']}")]
+    calendar = _calendar_button(event)
+    if calendar:
+        row.append(calendar)
+    return InlineKeyboardMarkup([row])
+
+
+def get_event_mine_keyboard(events):
+    """/event_mine in a private chat: one row per booked event, [➖ title] (mineunbook_<id>) and [📅]."""
+    rows = []
+    for event in events:
+        row = [InlineKeyboardButton(format_release_seat_button(event.get('title') or "Evento"),
+                                    callback_data=f"mineunbook_{event['id']}")]
+        calendar = _calendar_button(event, label="📅")
+        if calendar:
+            row.append(calendar)
+        rows.append(row)
+    return InlineKeyboardMarkup(rows) if rows else None

@@ -10,6 +10,8 @@ from utils.image_utils import (
     MAX_PHOTO_DIMENSION_SUM,
     MAX_PHOTO_FILE_SIZE,
     MAX_PHOTO_SINGLE_DIMENSION,
+    RECAP_COLLAGE_MAX_BYTES,
+    RECAP_COLLAGE_MAX_DIM,
     build_horizontal_collage,
     compress_existing_image_file,
     compress_image_to_bytes,
@@ -78,6 +80,26 @@ class TestImageCompression(TempDirMixin, unittest.TestCase):
             self.assertLessEqual(im.width + im.height, MAX_PHOTO_DIMENSION_SUM)
             self.assertLessEqual(max(im.width, im.height), MAX_PHOTO_SINGLE_DIMENSION)
         self.assertLessEqual(os.path.getsize(collage_path), MAX_PHOTO_FILE_SIZE)
+
+    def test_create_collage_is_capped_for_a_light_upload(self):
+        paths = [image_file(self.temp_dir, f"night_{i}.jpg", 1500, 2000, (i * 25, 80, 160)) for i in range(9)]
+        collage_path = create_collage(paths, self.temp_dir, "06-11-2026")
+
+        with Image.open(collage_path) as im:
+            self.assertLessEqual(max(im.width, im.height), RECAP_COLLAGE_MAX_DIM)
+            self.assertTrue(im.info.get("progressive") or im.info.get("progression"))
+        self.assertLessEqual(os.path.getsize(collage_path), RECAP_COLLAGE_MAX_BYTES)
+
+    def test_compress_picks_highest_quality_under_target(self):
+        noisy = Image.effect_noise((1200, 900), 60).convert("RGB")
+        target = 450_000  # this noise is ~340 KB at q40 and ~630 KB at q85
+        data = compress_image_to_bytes(noisy, target_max_bytes=target)
+
+        self.assertLessEqual(len(data), target)
+        self.assertGreater(len(data), target * 0.6)  # not overshooting far below the target
+        with Image.open(io.BytesIO(data)) as im:
+            self.assertEqual(im.size, (1200, 900))
+            self.assertTrue(im.info.get("progressive") or im.info.get("progression"))
 
     def test_create_collage_from_bytes_compresses(self):
         collage_bytes = create_collage_from_bytes([image_bytes(2500, 2000, (i * 50, 100, 150)) for i in range(4)])

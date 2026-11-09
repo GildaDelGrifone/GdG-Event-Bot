@@ -1,5 +1,7 @@
 import logging
 
+from telegram.error import BadRequest, NetworkError
+
 from utils.templates.common import CAPTION_LIMIT
 
 logger = logging.getLogger(__name__)
@@ -37,9 +39,18 @@ def is_not_modified_error(err):
 
 
 async def with_html_fallback(call):
-    """Runs call(parse_mode="HTML"), retrying without parse_mode if Telegram rejects the markup."""
+    """Runs call(parse_mode="HTML"), retrying without parse_mode if Telegram rejects the markup.
+
+    Network errors and timeouts are re-raised: they say nothing about the markup, and photo uploads
+    handle them in bot.common.media.send_photo_resilient.
+    """
     try:
         return await call(parse_mode="HTML")
+    except NetworkError as e:
+        if not isinstance(e, BadRequest):  # BadRequest subclasses NetworkError
+            raise
+        logger.warning(f"HTML send failed, retrying as plain text: {e}")
+        return await call()
     except Exception as e:
         logger.warning(f"HTML send failed, retrying as plain text: {e}")
         return await call()
@@ -67,10 +78,14 @@ async def send_with_reply_fallback(bot, chat_id, text, reply_to_message_id=None,
 
 
 async def send_image_or_error(bot, chat_id, image_path, caption, error_text):
+    from bot.common.media import send_photo_resilient  # media imports this module
+
     try:
         if image_path:
-            with open(image_path, 'rb') as f:
-                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption)
+            await send_photo_resilient(
+                lambda photo, **kw: bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, **kw),
+                image_path, html=False,
+            )
         else:
             await bot.send_message(chat_id=chat_id, text=error_text)
     except Exception as e:

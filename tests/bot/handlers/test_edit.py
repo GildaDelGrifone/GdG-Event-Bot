@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import core.db as db
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY
 from bot.handlers.albums import admin_media_groups, cache_admin_media_group
-from bot.handlers.edit import EditInputError, edit_seats, event_edit_command
+from bot.handlers.edit import event_edit_command
+from bot.service.edits import EditInputError, edit_seats
 from tests.support.config import as_admin_chat
 from tests.support.db import TempDBMixin, create_event
 from tests.support.telegram import admin_card, admin_update, make_context, make_message, make_update, telegram_photo
@@ -15,7 +16,7 @@ from tests.support.telegram import admin_card, admin_update, make_context, make_
 
 class TestEditSeats(unittest.IsolatedAsyncioTestCase):
     async def test_edit_seats_variants(self):
-        with patch("bot.handlers.edit.update_event_field", return_value=True) as upd:
+        with patch("bot.service.edits.update_event_field", return_value=True) as upd:
             await edit_seats(None, 1, {"booked_seats": 1}, "2/5")
             self.assertEqual(
                 [c.args for c in upd.call_args_list],
@@ -62,7 +63,7 @@ class TestEventEditImage(OldEventMixin, unittest.IsolatedAsyncioTestCase):
 
     def _edit_patches(self, saved_path):
         return (patch("bot.handlers.edit.save_image_locally", return_value=saved_path),
-                patch("bot.handlers.edit.update_event_messages", AsyncMock()))
+                patch("bot.service.edits.update_event_messages", AsyncMock()))
 
     async def _run(self, update, saved_path):
         save_patch, update_patch = self._edit_patches(saved_path)
@@ -322,7 +323,7 @@ class TestEventEditTypeCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
     async def _edit_type(self, text):
         update = admin_update(text, reply_to=self.target_msg)
-        with as_admin_chat(), patch("bot.handlers.edit.update_event_messages", AsyncMock()) as mock_update_msgs:
+        with as_admin_chat(), patch("bot.service.edits.update_event_messages", AsyncMock()) as mock_update_msgs:
             await event_edit_command(update, make_context())
         return update, mock_update_msgs
 
@@ -370,7 +371,7 @@ class TestEventEditDate(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
     async def _edit_date(self, text, **config_values):
         update = admin_update(text, reply_to=self.reply_msg)
-        with as_admin_chat(**config_values), patch("bot.handlers.edit.update_event_messages", AsyncMock()):
+        with as_admin_chat(**config_values), patch("bot.service.edits.update_event_messages", AsyncMock()):
             await event_edit_command(update, make_context())
         return update
 
@@ -451,7 +452,7 @@ class TestEventEditDate(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 class TestEventbriteEdits(OldEventMixin, unittest.IsolatedAsyncioTestCase):
     async def _edit(self, text):
         update = admin_update(text, reply_to=admin_card(self.event_id))
-        with as_admin_chat(), patch("bot.handlers.edit.update_event_messages", AsyncMock()) as update_messages:
+        with as_admin_chat(), patch("bot.service.edits.update_event_messages", AsyncMock()) as update_messages:
             await event_edit_command(update, self.context)
         return update, update_messages
 

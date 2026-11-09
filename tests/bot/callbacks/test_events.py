@@ -54,8 +54,9 @@ class TestAdminCallbackAuditLogging(TempDBMixin, unittest.IsolatedAsyncioTestCas
 
 
 class TestDiscardEventCallback(TempDBMixin, unittest.IsolatedAsyncioTestCase):
-    async def test_discard_event_callback_deletes_event_and_file(self):
+    async def test_discard_keeps_event_reservations_and_image(self):
         event_id = create_event(original_text="test text", title="Old Event", host="Old Host", description="Old Desc")
+        db.admin_add_subscriber(event_id, "mario")
         img_file = os.path.join(self.temp_dir.name, "dummy_event.png")
         with open(img_file, "wb") as f:
             f.write(b"dummy")
@@ -65,10 +66,63 @@ class TestDiscardEventCallback(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
         await handle_callback_query(update, make_context())
 
-        self.assertFalse(os.path.exists(img_file))
-        self.assertIsNone(db.get_event(event_id))
-        query.edit_message_caption.assert_called_once()
-        self.assertIn("❌ SCARTATO", query.edit_message_caption.call_args.kwargs.get("caption", ""))
+        self.assertTrue(os.path.exists(img_file))
+        event = db.get_event(event_id)
+        self.assertEqual(event["status"], "discarded")
+        self.assertIsNotNone(event["discarded_at"])
+        self.assertEqual(len(db.get_reservations_for_event(event_id)), 1)
+        kwargs = query.edit_message_caption.call_args.kwargs
+        self.assertIn("❌ SCARTATO", kwargs.get("caption", ""))
+        self.assertEqual(kwargs["reply_markup"].inline_keyboard[0][0].callback_data, f"restore_event_{event_id}")
+
+    async def test_restore_puts_the_event_back_to_pending(self):
+        event_id = create_event()
+        db.discard_event(event_id)
+        update, query = callback_update(f"restore_event_{event_id}", text=None,
+                                        caption="Card\n\n❌ SCARTATO", photo=True)
+        await handle_callback_query(update, make_context())
+        event = db.get_event(event_id)
+        self.assertEqual(event["status"], "pending")
+        self.assertIsNone(event["discarded_at"])
+        kwargs = query.edit_message_caption.call_args.kwargs
+        self.assertEqual(kwargs["caption"], "Card")
+        self.assertEqual(kwargs["reply_markup"].inline_keyboard[0][0].callback_data, f"publish_event_{event_id}")
+
+    async def test_restore_extracts_an_image_the_nightly_job_zipped(self):
+        import zipfile
+        event_id = create_event()
+        img_file = os.path.join(self.temp_dir.name, "event_x.jpg")
+        with zipfile.ZipFile(os.path.join(self.temp_dir.name, "archive.zip"), "w") as archive:
+            archive.writestr("event_x.jpg", b"jpeg")
+        db.update_event_field(event_id, "image_path", img_file)
+        db.discard_event(event_id)
+        update, query = callback_update(f"restore_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        with open(img_file, "rb") as f:
+            self.assertEqual(f.read(), b"jpeg")
+        self.assertEqual(query.answer.call_args.args[0], "Evento ripristinato: è di nuovo in attesa di approvazione.")
+
+    async def test_restore_of_a_purged_event_says_so(self):
+        update, query = callback_update("restore_event_999", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertIn("eliminato definitivamente", query.answer.call_args.args[0])
+
+    async def test_restore_on_an_event_that_is_not_discarded_is_refused(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"restore_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.assertIn("già pubblicato", query.answer.call_args.args[0])
+
+    async def test_publish_on_a_discarded_card_is_refused(self):
+        event_id = create_event()
+        db.discard_event(event_id)
+        update, query = callback_update(f"publish_event_{event_id}", text=None, caption="Card", photo=True)
+        with patch("bot.callbacks.events._publish_to_channel", new_callable=AsyncMock) as post:
+            await handle_callback_query(update, make_context())
+        post.assert_not_awaited()
+        self.assertIn("scartato", query.answer.call_args.args[0])
+        self.assertIn("❌ SCARTATO", query.edit_message_caption.call_args.kwargs["caption"])
 
 
 class TestCancelReactivateCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -397,3 +451,30 @@ class TestEventbriteLogoRetryCallback(TempDBMixin, unittest.IsolatedAsyncioTestC
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStaleApprovalCard(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    """A second approval card (delivered by a timed-out upload) must not act on a published event."""
+
+    async def test_discard_on_published_event_is_refused(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"discard_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+        self.assertIn("già pubblicato", query.answer.call_args.args[0])
+        self.assertIn("✅ APPROVATO", query.edit_message_caption.call_args.kwargs["caption"])
+
+    async def test_publish_on_published_event_does_not_post_again(self):
+        event_id = create_event(status="approved")
+        update, query = callback_update(f"publish_event_{event_id}", text=None, caption="Card", photo=True)
+        with patch("bot.callbacks.events._publish_to_channel", new_callable=AsyncMock) as post:
+            await handle_callback_query(update, make_context())
+        post.assert_not_awaited()
+        self.assertTrue(query.answer.call_args.kwargs.get("show_alert"))
+
+    async def test_discard_on_cancelled_event_is_refused(self):
+        event_id = create_event(status="cancelled")
+        update, query = callback_update(f"discard_event_{event_id}", text=None, caption="Card", photo=True)
+        await handle_callback_query(update, make_context())
+        self.assertIsNotNone(db.get_event(event_id))
+        self.assertIn("annullato", query.answer.call_args.args[0])

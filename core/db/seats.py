@@ -55,27 +55,32 @@ def book_seat(event_id, user_id, username=None, full_name=None):
         if capacity is not None and booked >= capacity:
             return False, "Nessun posto disponibile."
 
-        uname, fname = normalize_identity(username, full_name)
-        # Admin-added reservations have no user_id yet; claim them by username
-        cur.execute(
-            'SELECT id, username, full_name FROM reservations WHERE event_id = ? '
-            f'AND {NOT_EVENTBRITE_SQL} '
-            'AND (user_id = ? OR (user_id IS NULL AND username IS NOT NULL AND LOWER(username) = LOWER(?)))',
-            (event_id, user_id, uname),
-        )
-        res = cur.fetchone()
-        if res:
-            cur.execute(
-                'UPDATE reservations SET seats_booked = seats_booked + 1, username = ?, full_name = ?, user_id = ? WHERE id = ?',
-                (uname if uname is not None else res['username'], fname if fname is not None else res['full_name'], user_id, res['id']),
-            )
-        else:
-            cur.execute(
-                'INSERT INTO reservations (event_id, user_id, username, full_name, seats_booked) VALUES (?, ?, ?, ?, 1)',
-                (event_id, user_id, uname, fname),
-            )
-        _set_booked_seats(cur, event_id, ev, booked + 1)
+        _add_telegram_seat(cur, event_id, ev, user_id, username, full_name)
     return True, "Prenotazione aggiunta."
+
+
+def _add_telegram_seat(cur, event_id, ev, user_id, username, full_name):
+    """Adds one seat for a Telegram user inside the caller's transaction (no capacity check here)."""
+    uname, fname = normalize_identity(username, full_name)
+    # Admin-added reservations have no user_id yet; claim them by username
+    cur.execute(
+        'SELECT id, username, full_name FROM reservations WHERE event_id = ? '
+        f'AND {NOT_EVENTBRITE_SQL} '
+        'AND (user_id = ? OR (user_id IS NULL AND username IS NOT NULL AND LOWER(username) = LOWER(?)))',
+        (event_id, user_id, uname),
+    )
+    res = cur.fetchone()
+    if res:
+        cur.execute(
+            'UPDATE reservations SET seats_booked = seats_booked + 1, username = ?, full_name = ?, user_id = ? WHERE id = ?',
+            (uname if uname is not None else res['username'], fname if fname is not None else res['full_name'], user_id, res['id']),
+        )
+    else:
+        cur.execute(
+            'INSERT INTO reservations (event_id, user_id, username, full_name, seats_booked) VALUES (?, ?, ?, ?, 1)',
+            (event_id, user_id, uname, fname),
+        )
+    _set_booked_seats(cur, event_id, ev, _booked(ev) + 1)
 
 
 @db_safe(default=(False, "Errore durante la rimozione della prenotazione."))

@@ -43,7 +43,17 @@ def format_reservation_subscriber_display(reservation, as_html=True):
         return "Utente"
 
 
-def format_event_participants_message(event, reservations):
+def format_waitlist_lines(waitlist, as_html=True):
+    """'⏳ Lista d'attesa:' block (numbered, first in line first), or '' when nobody is waiting."""
+    if not waitlist:
+        return ""
+    lines = [f"\n<b>⏳ Lista d'attesa ({len(waitlist)}):</b>"]
+    for i, entry in enumerate(waitlist, 1):
+        lines.append(f"{i}. {format_reservation_subscriber_display(entry, as_html=as_html)}")
+    return "\n".join(lines) + "\n"
+
+
+def format_event_participants_message(event, reservations, waitlist=None):
     event_display = format_event_title_link(event)
     booked = int(event.get('booked_seats', 0) or 0)
     max_s = event.get('max_seats')
@@ -73,7 +83,7 @@ def format_event_participants_message(event, reservations):
             posti_str = f" ({seats} posti)" if seats > 1 else ""
             text += f"{i}. <b>{display_name}</b>{posti_str}\n"
 
-    return text
+    return text + format_waitlist_lines(waitlist)
 
 
 # The add prompt is matched by bot.handlers.subscribers.handle_admin_reply: keep the marker inside the prompt text
@@ -109,7 +119,7 @@ def format_subscriber_usage(command):
     )
 
 
-def format_subscribers_panel(event, reservations):
+def format_subscribers_panel(event, reservations, waitlist=None):
     booked = int(event.get('booked_seats', 0) or 0)
     max_s = event.get('max_seats')
     max_str = str(max_s) if max_s is not None else "Nessun limite"
@@ -131,6 +141,7 @@ def format_subscribers_panel(event, reservations):
 
     if any(res.get('source') == 'eventbrite' for res in reservations):
         text += SUBSCRIBERS_PANEL_EVENTBRITE_LEGEND
+    text += format_waitlist_lines(waitlist)
 
     text += (
         f"\n<i>Modifica con i tasti sotto oppure invia:</i>\n"

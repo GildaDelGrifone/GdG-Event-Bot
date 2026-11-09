@@ -15,6 +15,7 @@
   - [2.10. Daily Log Rotation & Monthly Log Archiving (`core/log_utils.py` & `core/scheduler/archive.py`)](#210-daily-log-rotation--monthly-log-archiving-corelog_utilspy--coreschedulerarchivepy)
   - [2.11. Event Reposting & Repost Scheduling (`bot/handlers/repost*.py` & `core/scheduler/reposts.py`)](#211-event-reposting--repost-scheduling-bothandlersrepostpy--coreschedulerrepostspy)
   - [2.12. Eventbrite Integration (`core/eventbrite/` & `bot/service/eventbrite*.py`)](#212-eventbrite-integration-coreeventbrite--botserviceeventbritepy)
+  - [2.13. Nightly Database Backup (`core/scheduler/backup.py`)](#213-nightly-database-backup-coreschedulerbackuppy)
 - [3. Directory Structure](#3-directory-structure)
   - [3.1. `bot/` Package Architecture](#31-bot-package-architecture)
   - [3.2. `core/` Package Architecture](#32-core-package-architecture)
@@ -73,9 +74,10 @@ The system automates the ingestion, standardization, social sharing, and booking
      - Programmatically guarantees the entire formatted event caption stays within Telegram's 1024-character caption limit via `enforce_caption_limit()`.
      - Inserts the generated event as `pending` into SQLite and sends the preview card to `ADMIN_CHAT_ID` with standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
 4. **Monitoring Pause / Resume (`/bot_pause`, `/bot_resume`, `/bot_status`):**
+   - **Persistence:** `is_paused`, `eventbrite_only` and `eventbrite_venue` are written through `bot.state.set_persisted` to the `bot_settings` table (`core.db.get_setting` / `set_setting`, JSON values) and restored by `load_persisted_state()` in `main.post_init`, so a restart keeps them; a switch never set keeps its default (`EVENTBRITE_ONLY_MODE` for the mode). Never assign these three on `runtime_state` directly.
    - Admins can send `/bot_pause` in `ADMIN_CHAT_ID` to make the bot temporarily "blind" to `PUBLIC_CHANNEL_ID` (it will not intercept, parse, or delete messages from the channel).
    - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state (including the Eventbrite-only mode below).
-   - `/bot_eventbrite_only_toggle` flips `runtime_state.eventbrite_only` (initial value `EVENTBRITE_ONLY_MODE`, in memory, needs Eventbrite configured). **ON:** the pending card (`get_approval_keyboard`) shows `[Discard]` and `[🚀 Telegram + EB] [🎟️ Solo Eventbrite]` (no plain Publish) and `_publish` no longer generates the automatic Instagram story preview. **OFF:** classic card, `[Publish] [Discard]` + `[🚀 Publish + Eventbrite]`. `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`) approves with **no channel post**; `[🚀 Telegram + EB]` still posts. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, admin-action notices); their Eventbrite booking announcements go to the admin chat instead. Only cards created after a toggle follow it. An Eventbrite-only event cannot be booked on Telegram.
+   - `/bot_eventbrite_only_toggle` flips `runtime_state.eventbrite_only` (initial value `EVENTBRITE_ONLY_MODE`, saved in `bot_settings`, needs Eventbrite configured). **ON:** the pending card (`get_approval_keyboard`) shows `[Discard]` and `[🚀 Telegram + EB] [🎟️ Solo Eventbrite]` (no plain Publish) and `_publish` no longer generates the automatic Instagram story preview. **OFF:** classic card, `[Publish] [Discard]` + `[🚀 Publish + Eventbrite]`. `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`) approves with **no channel post**; `[🚀 Telegram + EB]` still posts. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, admin-action notices); their Eventbrite booking announcements go to the admin chat instead. Only cards created after a toggle follow it. An Eventbrite-only event cannot be booked on Telegram.
 
 ### 2.2. AI Parsing (`core/ai_parser.py`)
 - Model configured via `GEMINI_MODEL` (default: `gemini-3.1-flash-lite`).
@@ -109,7 +111,8 @@ The system automates the ingestion, standardization, social sharing, and booking
 - For messages intercepted and deleted from `PUBLIC_CHANNEL_ID`, the raw `original_text` of the event is sent to `ADMIN_CHAT_ID` as a separate message so admins can verify if the AI made any mistakes (omitted for manual `/event_process` or `/ep` triggers where the original message is already in `ADMIN_CHAT_ID`).
 - Then, the parsed event is sent to `ADMIN_CHAT_ID` with inline keyboard buttons: `[Publish]`, `[Discard]`, `[Cancel]`, and `[👥 Gestisci Iscritti]`.
 - For privacy, the `Master/Host` field is omitted from generated Instagram Story images, but is displayed in the admin review message and the public channel post.
-- **[Discard]:** Deletes the local event image, permanently deletes the event and all associated reservations from SQLite database, updates message to `❌ SCARTATO` and removes inline action buttons.
+- **Stale cards:** Publish / Discard (and the Eventbrite publish buttons) act only on a `pending` event (`_refuse_stale_card`). On a duplicate card of an event already approved, cancelled or discarded, they show a popup (`format_stale_card_popup`) and switch the card to the event's real state (`_show_real_state`), so they never discard or re-post a published event.
+- **[Discard]:** soft delete. `core.db.discard_event` sets `status='discarded'` and `discarded_at` (only on a `pending` event); reservations and the image stay. The card gets `❌ SCARTATO` and a single `[↩️ Ripristina]` button (`restore_event_<id>`, `handle_restore_event`): `restore_discarded_event` puts it back to `pending` with the approval buttons, extracting the image from the day's `archive.zip` if the nightly job zipped it (`utils.night_images.restore_image_file`). The 23:59 job (`core.scheduler.archive.purge_old_discarded_events`) deletes for good, with reservations and loose image, the events discarded more than `DISCARDED_RETENTION_DAYS` (default 7) days ago; after that the button answers *eliminato definitivamente*.
 - **[Cancel]:** (after the confirmation step of §2.6) Updates DB status to `cancelled`, updates message to `⚠️ ANNULLATO`, switches keyboard to `[♻️ Riattiva Evento]` and `[👥 Gestisci Iscritti]`, and posts a notice to `DISCUSSION_GROUP_ID` tagging all subscribers.
 - **[Publish]:**
   1. Generates 1080x1920 Instagram Story image using `utils/image_utils.create_story_image()` and saves it in `[DATA_DIR]/YYYY/MM/DD/`.
@@ -139,6 +142,15 @@ The system automates the ingestion, standardization, social sharing, and booking
     - Informs them they are already registered for other event(s) on that day.
     - Lists all conflicting events with their bold titles (hyperlinked to the respective posts if available) and systems.
     - Advises the user to release their seat from whichever event they decide not to attend.
+- **Waitlist (`core/db/waitlist.py`, `bot/service/waitlist.py`):**
+  - Table `waitlist` (one row per user and event, `UNIQUE(event_id, user_id)`, order = `id`). `get_event` returns `waitlist_count`; `format_event_seats` adds `— ⏳ In attesa: N` to a full event.
+  - A full approved event shows `[⏳ Lista d'attesa]` (`full_<id>`, `handle_full` → `handle_waitlist_join`): `join_waitlist` returns `(position, newly_added)` and the user gets the position in a popup. Only approved events with a positive seat limit accept a queue (`accepts_waitlist`): an event with `max_seats` 0 (`0/0 Completo`, a private table) keeps `[🚫 Esauriti]` (`BUTTON_SOLD_OUT`, same `full_<id>` callback, `POPUP_TABLE_FULL`) and `join_waitlist` refuses it; a seat holder can queue for one more seat. `[➕ Prenota]` (`handle_book`) also queues when people are waiting, so a stale keyboard cannot jump the queue.
+  - **Promotion has one hook:** `bot.service.posts.update_event_messages`, which every seat change already calls (user unbook, admin −/remove, Eventbrite releases from the poller, `/event_edit_seats`). For an approved event with people waiting it calls `promote_waitlist` (one transaction: books the oldest entries into the free seats with `seats._add_telegram_seat` and deletes them), re-renders, runs the Eventbrite sync (so the pushed capacity already counts them) and then `announce_promotions` tags each one in the discussion group (only for events with a channel post) and tries a DM (`Forbidden` ignored).
+  - `[➖ Annulla]` from a user with no seats but a queue entry calls `leave_waitlist` (`POPUP_WAITLIST_LEFT`). The `[👥 Gestisci Iscritti]` panel and `/event_subs` list the queue (`format_waitlist_lines`). `disable_bookings_for_date` (23:59) clears the day's queues; `delete_event` deletes them.
+- **Private-chat release buttons and reminders:**
+  - `/event_mine` in a private chat answers with one message (`bot.service.listings.render_my_bookings`, if under 3800 characters) carrying a row per event: `[➖ title]` (`mineunbook_<id>`) and `[📅]` (Google Calendar URL, `utils.date_utils.google_calendar_url`: local times + `ctz=EVENTBRITE_TIMEZONE`, length `EVENT_DURATION_HOURS`). In groups it stays text-only. `event_links` / `event_title_and_date` (shared with `/event_next`) live in `bot/service/listings.py`.
+  - `bot.service.reminders.send_event_reminders`, registered by `main.post_init` with `add_cron_job` at `REMINDER_TIME` (unless `REMINDER_ENABLED=false`), DMs every Telegram reservation (with a `user_id`) of today's approved events, with `[➖ Libera un posto]` (`dmunbook_<id>`) and `[📅 Calendario]` (`get_reminder_keyboard`). `Forbidden` (user never opened the bot) is skipped; 0.1 s between sends.
+  - Both buttons call `handle_seat_unbooking(..., in_private=True)`: the private message is **not** passed to `update_event_messages` as `current_query` (that path would store it as the discussion reply), and the unbooking notice goes to `DISCUSSION_GROUP_ID` as a reply to `discussion_message_id`. `dmunbook_` then appends `✅ Posto liberato` to the DM; `mineunbook_` redraws the list in place. The freed seat goes through the waitlist hook like any other.
 - **Seat Release (`[➖ Annulla]` / `unbook_<event_id>`):**
   - Decrements seat reservation count or deletes reservation record if 0 seats remain.
   - Updates remaining seats on public channel post and discussion message.
@@ -181,6 +193,7 @@ The system automates the ingestion, standardization, social sharing, and booking
    - Collects images for all matching events.
    - Resizes images to a uniform average height preserving individual aspect ratios (no distortion, no cropped borders).
    - Arranges images into rows based on `MAX_EVENTS_PER_ROW` (centering shorter rows for a balanced layout) and saves to `[DATA_DIR]/YYYY/MM/DD/recap_collage_DD-MM-YYYY.jpg`.
+   - The saved collage is capped at `RECAP_COLLAGE_MAX_DIM` (2048 px) and `RECAP_COLLAGE_MAX_BYTES` (350 KB) so the Telegram upload stays light (a 1.7 MB 5000 px collage timed out); `compress_image_to_bytes` writes progressive 4:2:0 JPEGs and binary-searches the highest quality (>= 40) that fits the byte target. The size-rejection retry in `_send_collage` recompresses to 1600 px / 200 KB; the collage is sent through `send_photo_resilient` (temporary R2 URL, see §3.1).
 4. **Text Formatting (`utils/templates/recap.py`: `recap_generate_text` & `recap_links_text`):**
    - Italian day names (Lunedì, Mercoledì, etc.).
    - Lists events in caption with bold titles and live available seats: `- <b>Titolo</b> (Sistema) : X/Y` (or `- ❌ <b>Titolo</b> (Sistema) : X/Y [ANNULLATO]`).
@@ -271,7 +284,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
 
-**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the last row is `[❌ Chiudi]` (`ebvenue_close`, deletes the message); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (in memory, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
+**Venues:** `eventbrite_venue_ids()` = `EVENTBRITE_VENUE_ID` (default) + `EVENTBRITE_VENUE_ID_ALTERNATIVES`. `/bot_eventbrite_venue` (admin) shows one button per venue (names via `GET /venues/{id}/`, cached in `runtime_state.venue_names`; current ✅, default tagged); the last row is `[❌ Chiudi]` (`ebvenue_close`, deletes the message); the callback `ebvenue_<id>` (`bot/callbacks/venues.py`) sets `runtime_state.eventbrite_venue` (saved in `bot_settings`, validated against the configured ids). `_publish_blocking` stores the venue on the event (`events.eventbrite_venue_id`) **before** `create_event`, so syncs and a resumed draft keep it; `event_payload` sends `venue_id` only when the event has a stored venue, so events published before this feature keep whatever venue they have on Eventbrite and are never moved by a content sync, even if `EVENTBRITE_VENUE_ID` changes; the default only affects events published from then on. `clear_eventbrite_info` forgets it, so a recreate takes the current pick. The publish notice names the venue when several are configured. Venues are created/edited with `scripts/eventbrite_setup.py --create-venue` / `--update-venue` (the API cannot delete them; an update needs the whole address, the script merges it); the project skill `.claude/skills/eventbrite-venues` documents the workflow.
 
 **Description:** `description_modules` builds one structured-content text module: `Sistema`, `Master`/`Host`, `Posti totali: <max_seats>` (omitted for unlimited and `0/0` events; `seats` is therefore in `EVENTBRITE_CONTENT_FIELDS`), `Dettagli`, the description, the association address and the `Evento su Telegram` link.
 
@@ -309,6 +322,14 @@ Future-dated events are left alone until their day (so `[🎟️ Ricrea su Event
 
 **Eventbrite API notes.** Eventbrite has no sandbox (test with `EVENTBRITE_LISTED=false`) and is eventually consistent, so POST response bodies are trusted instead of reading back. The description uses structured content (the legacy `description` field is deprecated); its HTML is limited to `p, b, em, ul, li, a`, so multi-line text becomes one `<p>` per line.
 
+
+### 2.13. Nightly Database Backup (`core/scheduler/backup.py`)
+- Runs daily at `DB_BACKUP_TIME` (default **04:00**) via APScheduler (`run_database_backup`, the work in `asyncio.to_thread`).
+- `backup_database()` copies the live database with SQLite's online backup API (consistent while the bot writes, WAL contents included; a plain file copy is not), runs `PRAGMA integrity_check` on the copy, and gzips it to `[DATA_DIR]/backups/bot_database_YYYY-MM-DD.db.gz` (temp file + `os.replace`; a second run on the same day overwrites that day's file). On any failure the existing backups are left untouched and the admins get `format_db_backup_failed` (`utils/templates/control.py`).
+- Rotation (`prune_backups` / `backups_to_keep`): keeps the newest `DB_BACKUP_DAYS` (default 7) copies plus the oldest copy of each of the newest `DB_BACKUP_WEEKS` (default 4) ISO weeks, so at most 11 files (~60 KB each). Only `bot_database_*.db.gz` files are ever deleted. `DB_BACKUP_DAYS=0` disables backups.
+- `scripts/backup_db.py --now` / `--list` takes a backup by hand (do it before a manual DB fix) or lists the copies; the restore steps (bot stopped, `gunzip`, remove `-wal`/`-shm`) are in its docstring and in the README.
+- **Off-site copy:** with `DB_BACKUP_R2_BUCKET` set (a **private** R2 bucket, same R2 credentials; it is refused when equal to the public `R2_BUCKET`, since the DB holds usernames and user ids), `run_database_backup` then calls `upload_backup_offsite`: the file goes to `backups/<name>` and the remote copies are rotated with the same `backups_to_keep`. A failure there sends `format_db_backup_offsite_failed` and leaves the local backup in place. Generic R2 transfers live in `core.astro.storage` (`upload_file`, `download_file`, `list_keys`, `delete_key`; they raise, unlike `upload_media`). `scripts/backup_db.py --fetch YYYY-MM-DD` downloads a remote copy into `data/backups/`.
+- Without the off-site bucket the copies are on the same disk as the database: they protect against bad deletions/edits and a corrupted file, not against losing the disk.
 ---
 
 ## 3. Directory Structure
@@ -317,12 +338,12 @@ Future-dated events are left alone until their day (so `[🎟️ Ricrea su Event
 GdG-Event-Bot/
 ├── bot/
 │   ├── __init__.py
-│   ├── state.py          # Runtime state: pause flag + last published recap (runtime_state)
+│   ├── state.py          # Runtime state (runtime_state); pause / Eventbrite-only / venue persisted via set_persisted + load_persisted_state
 │   ├── keyboards.py      # Telegram inline keyboard layouts (+ SCHEDULE_DAYS)
 │   ├── common/           # Helpers shared by every bot package
 │   │   ├── auth.py       # admin_only decorator, is_admin_chat, describe_user
 │   │   ├── messages.py   # resolve_message, command parsing, HTML fallback, reply fallback, chunked replies
-│   │   ├── media.py      # Photo/document download helpers
+│   │   ├── media.py      # Photo/document download helpers, send_photo_resilient (temporary R2 URL, then direct upload)
 │   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
@@ -331,7 +352,7 @@ GdG-Event-Bot/
 │   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
 │   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads
 │   │   ├── extraction.py # handle_event_extraction: AI parse -> pending event -> admin approval card
-│   │   ├── edit.py       # /event_edit_* (EDIT_COMMAND_FIELDS / FIELD_EDITORS)
+│   │   ├── edit.py       # /event_edit_* command + image editor + answers to ✏️ Modifica prompts (logic in service/edits.py)
 │   │   ├── subscribers.py # /event_sub_add, /event_sub_remove, ForceReply add-subscriber prompt
 │   │   ├── recap.py      # /recap_generate, /recap_article and discussion-group forward handling
 │   │   ├── repost.py     # /event_repost, /event_schedule_invoke
@@ -346,12 +367,17 @@ GdG-Event-Bot/
 │   │   ├── booking.py    # ➕ Prenota / 🚫 Esauriti / ➖ Annulla
 │   │   ├── subscribers.py # 👥 Gestisci Iscritti panel (± seats, add prompt, close)
 │   │   ├── schedule.py   # Repost schedule weekday toggles, delete, close
+│   │   ├── edit_menu.py  # ✏️ Modifica on the admin card: field prompts (ForceReply), type toggle, back
 │   │   └── venues.py     # /bot_eventbrite_venue picker (ebvenue_<id>) and its [❌ Chiudi] (ebvenue_close)
 │   ├── service/          # Telegram side effects shared by handlers and callbacks
 │   │   ├── posts.py      # update_event_messages: sync channel post + discussion reply (with RetryAfter retry)
 │   │   ├── booking.py    # Seat booking/unbooking flows and same-day conflict warnings
 │   │   ├── notices.py    # send_admin_action_notice, send_discussion_notice
+│   │   ├── edits.py      # EDIT_COMMAND_FIELDS / FIELD_EDITORS, apply_edit, refresh_admin_message (shared by command and menu)
 │   │   ├── mentions.py   # User/subscriber mention formatting
+│   │   ├── waitlist.py   # announce_promotions: group tag + DM for users moved from the waitlist into a seat
+│   │   ├── reminders.py  # Day-of reminder DMs (REMINDER_TIME job registered by main.post_init)
+│   │   ├── listings.py   # /event_next & /event_mine entries; /event_mine view with release/calendar buttons
 │   │   ├── eventbrite/   # Eventbrite flows; import public names from bot.service.eventbrite
 │   │   │   ├── common.py  # admin notices/card refresh, venue names, collections, unlinking deleted events
 │   │   │   ├── publish.py # publish (background task), recreate
@@ -376,12 +402,15 @@ GdG-Event-Bot/
 │   │   ├── events.py     # events table: insert/update/delete, lookups, recap & upcoming queries
 │   │   ├── reservations.py # reservation lookups, identity normalization, same-day conflicts, a user's upcoming reservations (/event_mine)
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
-│   │   └── scheduled.py  # scheduled_events (repost templates)
+│   │   ├── scheduled.py  # scheduled_events (repost templates)
+│   │   ├── waitlist.py   # Waitlist: join/leave/position, promote_waitlist (books the first in line)
+│   │   └── settings.py   # bot_settings key/value store (runtime switches kept across restarts)
 │   ├── scheduler/        # APScheduler jobs
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
-│   │   ├── archive.py    # 23:59 image archiving + booking shutdown, 00:05 monthly log zips
-│   │   └── reposts.py    # 09:00 digest of scheduled reposts due today
+│   │   ├── archive.py    # 23:59 image archiving + booking shutdown + purge of old discarded events, 00:05 monthly log zips
+│   │   ├── reposts.py    # 09:00 digest of scheduled reposts due today
+│   │   └── backup.py     # 04:00 SQLite backup to DATA_DIR/backups (gzip, 7 daily + 4 weekly copies)
 │   ├── eventbrite/       # Eventbrite REST API (public API: `from core.eventbrite import ...`)
 │   │   ├── client.py     # eventbrite_enabled, eb_get / eb_post, EventbriteError, paginate
 │   │   ├── payload.py    # Pure builders: start/end, event payload, description modules, ticket_quantity, names, dashboard URLs
@@ -415,6 +444,7 @@ GdG-Event-Bot/
 │   ├── sync_images_to_r2.py # Upload a night's images (loose or in archive.zip) to R2 so a published article's links work (--dry-run / --force / --all)
 │   ├── clean_db.py       # Utility script to wipe database tables and clean image folders
 │   ├── unzip_images.py   # Utility script to extract archived images by directory or date range
+│   ├── backup_db.py      # Manual DB backup (--now) / list of the stored copies (--list); restore steps in its docstring
 │   ├── eventbrite_setup.py # Eventbrite helper: check token, list orgs/venues, create/update venues, create collections
 │   ├── eventbrite_inspect.py # Read-only Eventbrite check: quantity_sold vs orders/attendees (--watch)
 │   └── test_ig.py        # Diagnostic script to test Meta Graph API tokens
@@ -446,15 +476,16 @@ GdG-Event-Bot/
 - **Configuration is read at call time** through `from core import config` / `config.ADMIN_CHAT_ID` (also `PUBLIC_CHANNEL_ID`, `DISCUSSION_GROUP_ID`, `ALLOW_GROUP_EVENT_NEXT`, `DATA_DIR`, `TELEGRAM_BOT_USERNAME`). Tests patch these once at `core.config.*` (see §3.2). Patch functions where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `bot.callbacks.events.update_event_messages`.
 - **`bot/common/`:**
   - `auth.py`: `@admin_only()` / `@admin_only(notify=True)` restricts a handler to `ADMIN_CHAT_ID` (`notify=True` replies `Non sei autorizzato.` to outsiders). Also `is_admin_chat`, and `describe_user(user, role="Admin")` for the `Admin <id> (@username)` identifier in audit logs. Do not hand-write chat-ID checks in new admin commands.
-  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
-  - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`.
+  - `messages.py`: `resolve_message`, `command_argument` / `command_tokens`, `truncate_caption` / `CAPTION_LIMIT` (defined once in `utils/templates/common.py`), `edit_card(query, text, **kw)` (edits a callback card in place: the caption of a photo card, cut to `CAPTION_LIMIT`, else the text), `with_html_fallback(call)` (send with `parse_mode="HTML"`, retry as plain text; network errors and timeouts are re-raised, not retried), `send_with_reply_fallback` (reply in the discussion group, fall back to a plain send if the reply target is gone), `reply_in_chunks`, `send_image_or_error`, `private_chat_link`, `is_not_modified_error`.
+  - `media.py`: `download_media_bytes`, `download_first_image` (largest photo, then image document), `read_image_file`, and `send_photo_resilient(call, image_path, html=True)`, used by **every** photo sent from a local file (admin cards, channel publish, `/event_edit_image`, channel media edits, recap collage, story previews, schedule previews). By default it uploads the file directly (`write_timeout=60`). With `TELEGRAM_PHOTOS_VIA_R2=true` and R2 configured (`core.astro.r2_configured`; flag on without R2 logs a warning and uploads directly) it puts the image on R2 under `telegram-tmp/<uuid>/` and passes Telegram the public URL, so Telegram downloads it and nothing is uploaded from the bot: direct uploads kept timing out *while still being delivered*, which produced duplicate approval cards. The R2 object is deleted right after the call (`core.astro.delete_media`), successful or not. In that mode it falls back to the direct upload when the R2 upload fails or Telegram refuses the URL (`BadRequest`); a timeout on the URL send is raised, not retried. A send whose connection was never opened (`never_connected`: PTB's error has `httpx.ConnectError` / `httpx.ConnectTimeout` as `__cause__`) is retried up to twice (`PHOTO_CONNECT_RETRY_DELAYS`, 2 s then 5 s), URL or file alike, since nothing reached Telegram. `call(photo, **kw)` wraps the bound send (`lambda photo, **kw: bot.send_photo(..., photo=photo, **kw)`). `send_admin_preview` falls back to a text card (`PREVIEW_IMAGE_NOT_DELIVERED`) when the photo cannot be sent. `tests/__init__.py` clears the R2 credentials for the whole suite, so tests never reach the real bucket; tests that need R2 set it with `patched_config`.
   - `parsing.py`: `parse_seats_input(value)`, the single seat parser for `/event_edit_seats` and the `SEATS` argument of `/event_repost` / `/event_schedule_invoke`. It returns `None` for unlimited (`null`, `nessuno`, `illimitati`, `unlimited`, `none`, `0`, empty), `(free, total)` for `X/Y`, or `(None, total)` for a bare integer. Unlimited events display `UNLIMITED_SEATS_DISPLAY = "no limit"`, the same string the AI parser outputs. Also here: `contains_event_keywords` / `EVENT_KEYWORD_PATTERNS` (the pre-AI keyword filter) and `extract_event_id_from_reply`; `resolve_event_id(message)` combines it with a numeric command argument (`/cmd <id>`).
   - `previews.py`: `send_admin_preview` (approval card as photo caption or text), `build_admin_warning_block` / `date_anomaly_warning`, and `notify_quota_depleted`, the Gemini credit alert used by extraction, recap article generation and `/event_generate`.
 - **`bot/state.py`:** `runtime_state` (`BotRuntimeState`) holds the pause flag (`is_paused`) and the last published recap (`last_recap_message_id`, `last_recap_events`). `bot/callbacks/recap.py` records a published recap via `remember_published_recap(message_id, events)`; `bot/handlers/recap.py` reads it when the recap is auto-forwarded into the discussion group.
 - **`bot/handlers/`:**
   - `albums.py` owns `media_groups` / `admin_media_groups`, module-level dicts (changed in place, never reassigned) that buffer album photos for channel ingestion and for admin `/ep` / `/event_edit_image`. Reading a cached admin album (`get_media_group_data_from_cache`) waits for `ALBUM_DEBOUNCE` (2 s) of silence and for every photo download to finish, up to `ALBUM_DOWNLOAD_TIMEOUT` (30 s, then a warning is logged); `ALBUM_ARRIVAL_TIMEOUT` (3.5 s) only bounds the wait for the album to appear in the cache.
   - `extraction.handle_event_extraction` is the single ingestion pipeline. Channel posts, albums, `/ep`, `/event_repost` and `/event_schedule_invoke` all go through it.
-  - **`/event_edit_*` dispatch (`edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field: `/event_edit_title`, `/event_edit_date`, `/event_edit_system`, `/event_edit_seats`, `/event_edit_booked`, `/event_edit_host`, `/event_edit_extra`, `/event_edit_extra_add`, `/event_edit_description`, `/event_edit_image` and `/event_edit_type`. `FIELD_EDITORS` maps fields/commands that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `/event_edit_extra_add`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing) and register the command in `main.py`.
+  - **`/event_edit_*` dispatch (`bot/service/edits.py`, entry point `bot/handlers/edit.py`):** `EDIT_COMMAND_FIELDS` maps each command to a DB field: `/event_edit_title`, `/event_edit_date`, `/event_edit_system`, `/event_edit_seats`, `/event_edit_booked`, `/event_edit_host`, `/event_edit_extra`, `/event_edit_extra_add`, `/event_edit_description`, `/event_edit_image` and `/event_edit_type`. `FIELD_EDITORS` maps fields/commands that need custom logic (`image_path`, `date`, `seats`, `booked_seats`, `extra_info`, `/event_edit_extra_add`, `is_roleplay`) to editor coroutines `(update, event_id, current_event, value) -> bool`; other fields are written verbatim. Editors raise `EditInputError(reply, parse_mode)` for invalid input. `apply_edit(context, event_id, cmd, value, reply, admin_user, target_msg=, update=, editor=, card_keyboard=)` runs an editor, logs, redraws the admin card (`refresh_admin_message`) and the channel/discussion posts, and answers through `reply(text, parse_mode=None)`; both the command and the edit menu use it. The image editor (`_edit_image`) stays in `bot/handlers/edit.py` because it needs the album cache, and the command passes it as `editor`; in tests patch `bot.service.edits.update_event_messages` / `update_event_field`. To add an editable field, add one entry to `EDIT_COMMAND_FIELDS` (plus a `FIELD_EDITORS` entry if it needs parsing), register the command in `main.py`, and add it to `EDIT_MENU_FIELDS` (`utils/templates/edit.py`) for the menu.
+  - **✏️ Modifica menu (`bot/callbacks/edit_menu.py`):** pending and approved cards have `[✏️ Modifica]` (`editmenu_<id>`), which swaps in `get_edit_menu_keyboard`: one button per `EDIT_MENU_FIELDS` entry (`editfield_<id>_<key>`), `[🎲 Tipo …]` (`edittype_<id>`, toggles at once through `apply_edit`, the menu stays open) and `[↩️ Indietro]` (`editback_<id>`, `admin_card_keyboard(event)`). A field button restores the card's buttons and sends a ForceReply prompt (`format_edit_prompt`, marker `EDIT_PROMPT_MARKER`) under the card; `bot.state.remember_edit_prompt` keeps prompt id → (event, command, card message) in memory (last 50). `handle_admin_reply` routes answers to that prompt to `bot.handlers.edit.handle_edit_reply`, which calls `apply_edit` with the stored card; a wrong value keeps the prompt open, an unknown prompt (bot restarted) gets `EDIT_PROMPT_EXPIRED`. The image is not in the menu (it needs `/event_edit_image` with a photo).
   - Shared flows: `subscribers._add_subscriber_and_notify` (used by the ForceReply prompt and `/event_sub_add`), `subscribers._parse_subscriber_command` (shared by `/event_sub_add` and `/event_sub_remove`), `public._reply_with_participants` (used by `/event_subs` and the `start=subs_<id>` deep link), and `repost.extract_repost_content` (shared by repost and repost scheduling).
 - **`bot/callbacks/`:** `router.handle_callback_query` is the only `CallbackQueryHandler` registered in `main.py`. It walks `CALLBACK_ROUTES`, an ordered `(prefix, handler)` table, and calls `handler(query, context, payload)` with the callback data that follows the prefix. To add a button, give it a new callback prefix (one that is not a prefix of an existing entry; a test enforces this), write the handler in the matching feature module, and add one row to `CALLBACK_ROUTES`.
 - **`bot/service/`:**
@@ -475,7 +506,7 @@ GdG-Event-Bot/
   - `@db_safe(default)` logs `DB error in <function>: …` and returns `default` (`default=list` gives a fresh `[]`), so callers keep the old "never raises" contract.
   - `get_connection()` returns a raw connection for scripts.
   - SQL string literals use single quotes (`status IN ('approved', 'cancelled')`); double quotes are reserved for identifiers.
-- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start. For a change that is not a new column (rename, data rewrite), add `{N: (sql, ...)}` to `VERSIONED_MIGRATIONS` and set `SCHEMA_VERSION = N`: `init_db()` runs it once on databases whose `PRAGMA user_version` is lower. `init_db()` also switches the database to WAL journal mode (`bot_database.db-wal` / `-shm` files appear next to it; copy all three, or stop the bot, before backing it up).
+- **Schema changes:** add the column to the `CREATE TABLE` in `core/db/schema.py` *and* to `COLUMN_MIGRATIONS`, so existing databases get an `ALTER TABLE` on the next start. For a change that is not a new column (rename, data rewrite), add `{N: (sql, ...)}` to `VERSIONED_MIGRATIONS` and set `SCHEMA_VERSION = N`: `init_db()` runs it once on databases whose `PRAGMA user_version` is lower. `init_db()` also switches the database to WAL journal mode (`bot_database.db-wal` / `-shm` files appear next to it; copy all three, or stop the bot, before copying it by hand; the nightly backup of §2.13 uses SQLite's backup API and needs neither).
 - **Eventbrite columns** are written only through `set_eventbrite_info` / `clear_eventbrite_info` (a whitelist); they are deliberately not in `EDITABLE_EVENT_FIELDS`, so `/event_edit_*` cannot set them. `init_db()` also applies an `INDEXES` tuple (a unique index on `reservations(event_id, eventbrite_order_id)`).
 - **Seat bookkeeping (`core/db/seats.py`):** every reservation change runs in one transaction with `_load_seat_state` (event exists / not cancelled / capacity) and `_set_booked_seats`, which rewrites both `booked_seats` and the `free/max` `seats` string. `normalize_identity` applies the legacy rule "a username with spaces is a full name".
 - **Dates:** pure date helpers live in `utils/date_utils.py` (`parse_date_tuple_from_str`, `event_date_tuple`, `are_events_on_same_day`); `core.db` only queries.
@@ -497,7 +528,7 @@ GdG-Event-Bot/
 - **Patching convention:**
   - Settings: patch `core.config.*` (`patched_config(...)`).
   - Functions: patch them where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `core.wordpress.client.requests.post`.
-  - Isolation: tests must not read real tokens or touch the real `DB_PATH` / `DATA_DIR`. Point `DATA_DIR` at `self.temp_dir` for jobs that move or zip images.
+  - Isolation: tests must not read real tokens or touch the real `DB_PATH` / `DATA_DIR`, and the suite must pass without a `.env`. `tests/__init__.py` points `DB_PATH`, `DATA_DIR` and `LOGS_DIR` at a throwaway folder (and clears the R2 credentials), so a test that forgets to patch them cannot write images or logs into `data/`. Point `DATA_DIR` at `self.temp_dir` for jobs that move or zip images, or whenever a test checks the files written.
 
 ---
 
@@ -538,6 +569,7 @@ GdG-Event-Bot/
 | `eventbrite_quantity_total` | INTEGER | | Last ticket quantity pushed (skips no-op calls) |
 | `eventbrite_content_version` | INTEGER | DEFAULT 0 | Structured-content page version (each write sends last + 1) |
 | `eventbrite_synced_at` | TEXT | | Timestamp of the last successful poll |
+| `discarded_at` | TEXT | | UTC time of the Discard (`status='discarded'`); purged after `DISCARDED_RETENTION_DAYS` |
 
 ### Table: `reservations`
 | Column | Type | Constraints / Default | Description |
@@ -563,6 +595,21 @@ GdG-Event-Bot/
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | `advance_days` | INTEGER | DEFAULT 0 | Days before the event the digest reminder is sent (0-30; 0 = same day) |
 
+### Table: `waitlist`
+| Column | Type | Constraints / Default | Description |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Queue order (lowest first) |
+| `event_id` | INTEGER | NOT NULL | Event queued for |
+| `user_id` | INTEGER | NOT NULL, `UNIQUE(event_id, user_id)` | Telegram user |
+| `username` / `full_name` | TEXT | | Identity used when the seat is booked and in the mention |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Join time |
+
+### Table: `bot_settings`
+| Column | Type | Constraints / Default | Description |
+|---|---|---|---|
+| `key` | TEXT | PRIMARY KEY | Setting name (`is_paused`, `eventbrite_only`, `eventbrite_venue`) |
+| `value` | TEXT | | JSON-encoded value |
+
 ---
 
 ## 5. Environment Variables (`.env`)
@@ -585,6 +632,7 @@ GdG-Event-Bot/
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token credentials (Object Read & Write) | `xxxx` |
 | `R2_BUCKET` | (Optional) R2 bucket | `gdg-media` |
 | `R2_PUBLIC_URL` | Public base URL of the bucket, no trailing slash | `https://pub-xxxx.r2.dev` |
+| `TELEGRAM_PHOTOS_VIA_R2` | (Optional) `true` = send every photo to Telegram as a temporary R2 link (uploaded, sent, deleted) instead of uploading the file; a workaround for Telegram photo uploads that time out while still being delivered. Needs the R2 settings; default `false` (direct upload) | `false` |
 | `WP_URL` | WordPress base URL (only with `ARTICLE_BACKEND=wordpress`) | `https://www.gildadelgrifonetorino.it` |
 | `WP_USERNAME` | WordPress username | `direttivogilda` |
 | `WP_APP_PASSWORD` | WordPress Application Password | `xxxx xxxx xxxx xxxx` |
@@ -594,7 +642,12 @@ GdG-Event-Bot/
 | `DATA_DIR` | (Optional) Custom path for storage | `/var/gdg_data` |
 | `LOG_LEVEL` | (Optional) Logging level: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`; a typo falls back to `INFO`. `DEBUG` also shows the per-minute Eventbrite poller job lines (`JobLinesToDebug` in `core/log_utils.py`); httpx stays at `WARNING` regardless. Needs a restart | `INFO` |
 | `REPOSTS_TIME`, `RECAP_TIME`, `ARCHIVE_IMAGES_TIME`, `ARCHIVE_LOGS_TIME`, `EVENTBRITE_CLEANUP_TIME` | (Optional) Daily job times as 24h `HH:MM` local time, parsed by `core.config._env_time` (a typo falls back to the default). The 09:00 / 16:00 / 23:59 / 00:05 times quoted elsewhere in this file are the defaults. Needs a restart | `09:00`, `16:00`, `23:59`, `00:05`, `23:59` |
+| `DB_BACKUP_R2_BUCKET` | (Optional) Private R2 bucket that also receives each nightly backup (same rotation); empty = local copies only; must differ from `R2_BUCKET` | `gdg-backups` |
+| `DB_BACKUP_TIME` / `DB_BACKUP_DAYS` / `DB_BACKUP_WEEKS` | (Optional) Nightly database backup (§2.13): time (`HH:MM`), daily copies kept (`0` = no backups), extra weekly copies kept. Needs a restart | `04:00`, `7`, `4` |
+| `DISCARDED_RETENTION_DAYS` | (Optional) Days a discarded event is kept (restorable with `[↩️ Ripristina]`) before the 23:59 job deletes it | `7` |
 | `RECAP_WEEKDAYS` | (Optional) Weekdays with an automatic recap, comma-separated, `0` = Monday (`core.config._env_weekdays`; a typo falls back to the default). Needs a restart | `0,2,4,5,6` |
+| `REMINDER_ENABLED` / `REMINDER_TIME` | (Optional) Day-of reminder DMs (§2.4) on/off and time (`HH:MM`). Needs a restart | `true`, `12:00` |
+| `EVENT_DURATION_HOURS` | (Optional) Game night length used by the Google Calendar links (default: `EVENTBRITE_EVENT_DURATION_HOURS`) | `4` |
 | `EVENT_START_TIME` | (Optional) Game night start time (`HH:MM`) shown in the recap texts ("Ci vediamo alle ...") and the recap story footer; also the default of `EVENTBRITE_DEFAULT_START_TIME` and of `utils.date_utils.extract_event_datetime` | `20:45` |
 | `RECAP_CONTACTS` | (Optional) Comma-separated Telegram handles to contact to propose an event, used in the recap texts and the article prompt | `@Destard,@ManueleAbi` |
 | `MAX_EVENTS_PER_ROW` | (Optional) Maximum number of event images per row in collages. Numeric settings (this and the `EVENTBRITE_*` numbers) fall back to their default on a typo (`_env_int` / `_env_float`) | `4` |
@@ -613,8 +666,8 @@ GdG-Event-Bot/
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_CLEANUP_NOTIFICATIONS` | (Optional) Send the nightly `🧹 Eliminati da Eventbrite N eventi annullati` message to the admin chat (`true`/`false`). Events the cleanup could not delete are reported either way | `false` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
-| `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (in memory) | `2345678,3456789` |
-| `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (in memory) | `false` |
+| `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (saved, survives restarts) | `2345678,3456789` |
+| `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (saved in `bot_settings`; once set, the env value no longer applies) | `false` |
 | `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` | (Optional) Eventbrite Collection ids: published events join the roleplay one when `is_roleplay`, the board games one otherwise; both empty = off. Create one with `scripts/eventbrite_setup.py --create-collection "NAME"` (the API creates it as a draft; publish it from the dashboard) | none |
 | `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group, or in the admin chat for Eventbrite-only events (`true`/`false`); seats sync either way | `true` |
 

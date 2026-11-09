@@ -4,6 +4,10 @@ from core import config
 from core.ai_parser import GEMINI_DEPLETED_ALERT
 from utils.date_utils import validate_event_date_anomalies
 from utils.templates.approval import format_caption_limit_warning, format_date_anomaly_warning
+from telegram.error import BadRequest, NetworkError
+
+from utils.templates.approval import PREVIEW_IMAGE_NOT_DELIVERED
+from bot.common.media import send_photo_resilient
 from bot.common.messages import CAPTION_LIMIT, truncate_caption, with_html_fallback
 
 logger = logging.getLogger(__name__)
@@ -27,10 +31,16 @@ async def send_admin_preview(bot, text, image_path, keyboard):
     """Sends an event approval card to ADMIN_CHAT_ID (photo caption when an image exists, truncated to fit)."""
     if image_path:
         caption = truncate_caption(text)
-        with open(image_path, 'rb') as f:
-            return await with_html_fallback(lambda **kw: bot.send_photo(
-                chat_id=config.ADMIN_CHAT_ID, photo=f, caption=caption, reply_markup=keyboard, **kw
-            ))
+        try:
+            return await send_photo_resilient(lambda photo, **kw: bot.send_photo(
+                chat_id=config.ADMIN_CHAT_ID, photo=photo, caption=caption, reply_markup=keyboard, **kw
+            ), image_path)
+        except NetworkError as e:
+            if isinstance(e, BadRequest):
+                raise
+            # Keep the card usable: the admin can still approve, publishing sends the image again
+            logger.error(f"Approval card photo not delivered ({e}), sending the card as text")
+            text = PREVIEW_IMAGE_NOT_DELIVERED + text
     return await with_html_fallback(lambda **kw: bot.send_message(
         chat_id=config.ADMIN_CHAT_ID, text=text, reply_markup=keyboard, **kw
     ))
