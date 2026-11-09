@@ -528,7 +528,7 @@ GdG-Event-Bot/
 - **Patching convention:**
   - Settings: patch `core.config.*` (`patched_config(...)`).
   - Functions: patch them where they are *used*, e.g. `bot.handlers.extraction.parse_event_message` or `core.wordpress.client.requests.post`.
-  - Isolation: tests must not read real tokens or touch the real `DB_PATH` / `DATA_DIR`. Point `DATA_DIR` at `self.temp_dir` for jobs that move or zip images.
+  - Isolation: tests must not read real tokens or touch the real `DB_PATH` / `DATA_DIR`, and the suite must pass without a `.env`. `tests/__init__.py` points `DB_PATH`, `DATA_DIR` and `LOGS_DIR` at a throwaway folder (and clears the R2 credentials), so a test that forgets to patch them cannot write images or logs into `data/`. Point `DATA_DIR` at `self.temp_dir` for jobs that move or zip images, or whenever a test checks the files written.
 
 ---
 
