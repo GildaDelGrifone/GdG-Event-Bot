@@ -129,3 +129,17 @@ def format_open_seats_entry(title_link, system, seats_text):
     system = (system or "").strip()
     system_part = f" ({html.escape(system)})" if system else ""
     return f"• {title_link}{system_part} — {html.escape(seats_text)}"
+
+
+OPEN_SEATS_NO_DISCUSSION_GROUP = "❌ DISCUSSION_GROUP_ID non è configurato: non so dove pubblicare l'elenco."
+
+
+OPEN_SEATS_NOTHING_TO_SEND = "ℹ️ Nessun evento con posti liberi da domani in poi: niente da pubblicare."
+
+
+OPEN_SEATS_SEND_FAILED = "⚠️ Pubblicazione dell'elenco nel gruppo di discussione non riuscita. Controlla i log."
+
+
+def format_open_seats_posted(count):
+    events = "1 evento" if count == 1 else f"{count} eventi"
+    return f"✅ Elenco dei posti disponibili pubblicato nel gruppo di discussione ({events})."

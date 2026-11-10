@@ -9,7 +9,7 @@ from telegram.ext import CommandHandler, filters
 from main import global_error_handler, main, post_init, warn_if_boto3_missing
 from bot.service.open_seats import scheduled_open_seats_reminder
 from bot.service.reminders import send_event_reminders
-from bot.handlers.recap import recap_article_command
+from bot.handlers.recap import recap_article_command, recap_reminder_send_command
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
@@ -238,6 +238,9 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(h.block is False for h in ours))
         command_handler = next(h for h in ours if isinstance(h, CommandHandler))
         self.assertEqual(command_handler.commands, {"recap_article"})
+
+        reminder = [h for h in added if getattr(h, "callback", None) is recap_reminder_send_command]
+        self.assertEqual([h.commands for h in reminder], [{"recap_reminder_send"}])
 
     def test_publish_command_is_registered_for_text_and_caption(self):
         added = []

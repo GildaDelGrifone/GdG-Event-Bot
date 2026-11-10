@@ -72,10 +72,11 @@ async def _send_collage(bot, collage_path, caption, keyboard):
 
 
 async def generate_daily_recap(bot, manual_date=None, is_manual=False, reply_to_message_id=None):
-    """Builds the recap collage + text for a game night and sends it to ADMIN_CHAT_ID for approval."""
+    """Builds the recap collage + text for a game night and sends it to ADMIN_CHAT_ID for approval.
+
+    The automatic run (every day) sends a card whenever the day has events and stays silent otherwise; a manual run
+    tells the admins when there is nothing to recap."""
     now = datetime.now()
-    if not is_manual and now.weekday() not in config.RECAP_WEEKDAYS:
-        return False
 
     date_str = manual_date or now.strftime("%d-%m-%Y")
     day_str = DAYS_IT[_recap_day(manual_date, now).weekday()]

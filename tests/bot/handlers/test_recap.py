@@ -1,10 +1,15 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from telegram.error import TelegramError
+
 import core.db as db
-from bot.handlers.recap import handle_discussion_forward, manual_recap_command, recap_article_command
-from tests.support.config import as_admin_chat
+from bot.handlers.recap import (
+    handle_discussion_forward, manual_recap_command, recap_article_command, recap_reminder_send_command,
+)
+from bot.service.open_seats import send_open_seats_after_recap
+from tests.support.config import as_admin_chat, patched_config
 from tests.support.db import TempDBMixin, create_event
 from bot.state import runtime_state
 from tests.support.telegram import admin_update, make_context, make_message, make_update
@@ -199,6 +204,74 @@ class TestDiscussionForward(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual((call["chat_id"], call["message_id"]), (-100222, 4242))
         self.assertIn("Eventbrite", call["text"])
         self.assertEqual((call["parse_mode"], call["disable_web_page_preview"]), ("HTML", True))
+
+
+
+class TestRecapReminderSendCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        sent_patch = patch.object(runtime_state, "open_seats_sent_on", None)
+        sent_patch.start()
+        self.addCleanup(sent_patch.stop)
+        self.context = make_context()
+
+    def add_tomorrow_event(self, title="Domani"):
+        day = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
+        return create_event(status="approved", title=title, date=f"{day} 21:00", normalized_date=day,
+                            message_link="https://t.me/canale/5", max_seats=5, seats="5/5")
+
+    async def _run(self, update=None, **settings):
+        update = update or admin_update(text="/recap_reminder_send")
+        with as_admin_chat(**{"DISCUSSION_GROUP_ID": "-100777", **settings}):
+            await recap_reminder_send_command(update, self.context)
+        return update
+
+    def reply(self, update):
+        return update.message.reply_text.call_args[0][0]
+
+    async def test_posts_the_list_and_confirms(self):
+        self.add_tomorrow_event()
+        update = await self._run()
+
+        call = self.context.bot.send_message.call_args.kwargs
+        self.assertEqual(call["chat_id"], "-100777")
+        self.assertIn("Domani", call["text"])
+        self.assertEqual(self.reply(update), "✅ Elenco dei posti disponibili pubblicato nel gruppo di discussione (1 evento).")
+
+    async def test_posts_even_if_already_sent_today_and_blocks_the_automatic_one(self):
+        self.add_tomorrow_event()
+        runtime_state.open_seats_sent_on = datetime.now().strftime("%d-%m-%Y")
+        await self._run(OPEN_SEATS_REMINDER_ENABLED=False)
+        self.assertEqual(self.context.bot.send_message.await_count, 1)
+
+        with patched_config(DISCUSSION_GROUP_ID="-100777", OPEN_SEATS_REMINDER_ENABLED=True):
+            self.assertEqual(await send_open_seats_after_recap(self.context.bot), 0)
+        self.assertEqual(self.context.bot.send_message.await_count, 1)
+
+    async def test_nothing_to_post(self):
+        update = await self._run()
+        self.context.bot.send_message.assert_not_called()
+        self.assertIn("Nessun evento con posti liberi", self.reply(update))
+
+    async def test_no_discussion_group(self):
+        self.add_tomorrow_event()
+        update = await self._run(DISCUSSION_GROUP_ID=None)
+        self.context.bot.send_message.assert_not_called()
+        self.assertIn("DISCUSSION_GROUP_ID", self.reply(update))
+
+    async def test_failed_send_is_reported(self):
+        self.add_tomorrow_event()
+        self.context.bot.send_message.side_effect = TelegramError("chat not found")
+        with patch("bot.common.messages.logger"), self.assertLogs("bot.service.open_seats", "WARNING"):
+            update = await self._run()
+        self.assertIn("non riuscita", self.reply(update))
+
+    async def test_non_admin_is_ignored(self):
+        self.add_tomorrow_event()
+        update = make_update(text="/recap_reminder_send", chat_id=1, user=MagicMock(id=1, username="x"))
+        await self._run(update=update)
+        self.context.bot.send_message.assert_not_called()
+        update.message.reply_text.assert_not_called()
 
 
 if __name__ == "__main__":

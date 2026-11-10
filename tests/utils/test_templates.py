@@ -14,7 +14,7 @@ from utils.templates.event import (
 from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
 from utils.templates.public import (
     format_event_mine_entry, format_event_mine_prefix, format_open_seats_count, format_open_seats_day_header,
-    format_open_seats_entry,
+    format_open_seats_entry, format_open_seats_posted,
 )
 from utils.templates.wordpress import format_astro_draft_created
 from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
@@ -113,6 +113,10 @@ class TestOpenSeatsTexts(unittest.TestCase):
         self.assertEqual(format_open_seats_entry("<b>T</b>", "D&D", "1/4"), "• <b>T</b> (D&amp;D) — 1/4")
         self.assertEqual(format_open_seats_entry("<b>T</b>", "  ", "no limit"), "• <b>T</b> — no limit")
         self.assertEqual(format_open_seats_day_header("Mercoledì 11-11"), "📅 <b>Mercoledì 11-11</b>")
+
+    def test_posted_confirmation(self):
+        self.assertIn("(1 evento)", format_open_seats_posted(1))
+        self.assertIn("(3 eventi)", format_open_seats_posted(3))
 
 
 class TestRecapTexts(unittest.TestCase):

@@ -15,6 +15,7 @@ ADMIN_COMMAND_DESCRIPTIONS = (
     ("recap_generate", "[DD-MM-YYYY] Genera recap giornaliero (/rg)"),
     ("rg", "[DD-MM-YYYY] Genera recap giornaliero"),
     ("recap_article", "[DD-MM-YYYY] Rigenera solo l'articolo della serata"),
+    ("recap_reminder_send", "Pubblica ora nel gruppo l'elenco degli eventi con posti liberi"),
     ("bot_pause", "Mette in pausa l'intercettazione automatica"),
     ("bot_resume", "Riattiva l'intercettazione automatica"),
     ("bot_status", "Mostra lo stato operativo del bot"),

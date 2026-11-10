@@ -88,11 +88,13 @@ Se hai bisogno di forzare l'aggiunta o la rimozione di un utente (ad esempio se 
    - `/event_sub_remove @username [numero_posti]`
 
 ### 7. Generazione Recap
-- **Automatica:** Il bot genera automaticamente un riepilogo giornaliero alle **16:00** nei giorni di apertura (Lunedì, Mercoledì, Venerdì, Sabato, Domenica).
+- **Automatica:** Il bot genera automaticamente un riepilogo giornaliero alle **16:00** in ogni giorno in cui ci sono eventi, anche fuori dai giorni di apertura classici.
 - **Manuale:** Puoi forzare un recap in qualsiasi momento inviando il comando `/recap_generate` (o `/rg`). Per fare il recap di un giorno specifico usa `/rg DD-MM-YYYY`.
 - **Articolo:** sotto la bozza dell'articolo trovi **[Pubblica sul sito]** e **[🗑️ Scarta articolo]** (la bozza si scarta solo se non è già stata pubblicata). Per rigenerare solo l'articolo di una serata usa `/recap_article` (oggi) o `/recap_article DD-MM-YYYY`.
-  *(Nota: se non ci sono eventi in programma per la data richiesta, il bot avvisa direttamente nel gruppo admin)*.
-- Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo per il sito.
+  *(Nota: se non ci sono eventi in programma per la data richiesta, il bot avvisa direttamente nel gruppo admin. Il recap automatico invece, nei giorni senza eventi, non manda nessun messaggio.)*
+- Una volta generato il recap nel gruppo admin, puoi approvarlo cliccando **[Publish Recap]** per mandarlo sul canale, generare l'immagine per le storie di Instagram e redigere l'articolo per il sito. Subito dopo il recap e i link agli eventi della serata, nel gruppo di discussione esce anche l'elenco degli eventi dei prossimi giorni con posti liberi.
+- **Elenco posti liberi:** nei giorni senza eventi l'elenco esce da solo alle **16:00** (orario `OPEN_SEATS_REMINDER_TIME`, disattivabile con `OPEN_SEATS_REMINDER_ENABLED=false`). Esce al massimo una volta al giorno: se il recap viene scartato e non pubblicato, quel giorno l'elenco non esce da solo.
+- **Posti liberi a mano:** `/recap_reminder_send` pubblica subito nel gruppo di discussione l'elenco degli eventi con posti liberi (anche se è già uscito oggi); dopo, quello automatico della giornata non viene ripetuto.
 
 ### 8. Controlli Generali del Bot
 - `/bot_pause`: Mette in pausa la lettura automatica dei messaggi per la creazione di eventi (utile durante lunghe discussioni nel canale). La pausa resta attiva anche dopo un riavvio, fino a `/bot_resume`.
@@ -113,7 +115,7 @@ La prenotazione e la consultazione dei tavoli per i giocatori è semplicissima:
 - **Per Consultare gli Eventi (`/event_next`):** Invia `/event_next` in chat privata col bot, clicca sul deep link diretto (`https://t.me/GdG_Event_bot?start=event_next`), oppure invialo nel gruppo discussione per visualizzare l'elenco cronologico di tutti gli eventi di oggi e futuri con i rispettivi link ai canali e alle discussioni.
 - **Per Vedere le Tue Prenotazioni (`/event_mine`):** Invia `/event_mine` in chat privata col bot (o usa il link `https://t.me/GdG_Event_bot?start=event_mine`) per vedere solo gli eventi di oggi e dei prossimi giorni a cui sei prenotato, con i posti che hai riservato. Funziona anche nel gruppo discussione (se `/event_next` è attivo lì). Le prenotazioni fatte su Eventbrite non compaiono, perché non sono collegate al tuo account Telegram. In chat privata sotto l'elenco trovi, per ogni evento, **[➖ titolo]** per liberare un posto e **[📅]** per aggiungerlo a Google Calendar.
 - **Promemoria:** il giorno dell'evento, verso mezzogiorno, il bot ti manda in privato un promemoria con **[➖ Libera un posto]** (se non puoi più venire) e **[📅 Calendario]**. Lo ricevi solo se hai già scritto al bot in privato almeno una volta (basta aprire `/event_mine` o il pulsante **👥 Lista**).
-- **Posti ancora disponibili:** ogni giorno (subito dopo il riepilogo della serata nei giorni di apertura, altrimenti alle 16:00) il bot pubblica nel gruppo di discussione un breve elenco degli eventi dei prossimi giorni (da domani in poi) che hanno ancora posti liberi, divisi per giorno. Il titolo di ogni evento porta al suo post sul canale, dove puoi prenotare.
+- **Posti ancora disponibili:** ogni giorno (subito dopo il riepilogo della serata nei giorni in cui ci sono eventi, altrimenti alle 16:00) il bot pubblica nel gruppo di discussione un breve elenco degli eventi dei prossimi giorni (da domani in poi) che hanno ancora posti liberi, divisi per giorno. Il titolo di ogni evento porta al suo post sul canale, dove puoi prenotare.
 - **Per Prenotarsi:** Clicca sul pulsante inline **[➕ Prenota]** (oppure **[🚫 Esauriti]** se non ci sono più posti disponibili). Il contatore dei posti si aggiornerà in tempo reale e il bot confermerà la prenotazione taggandoti nei commenti.
 - **Per Vedere gli Iscritti:** 
   - Clicca sul pulsante **[👥 Lista]** sotto il messaggio dell'evento nel canale o nel gruppo discussione (il bot ti aprirà una chat privata mostrando l'elenco completo dei partecipanti senza intasare la chat di gruppo).
