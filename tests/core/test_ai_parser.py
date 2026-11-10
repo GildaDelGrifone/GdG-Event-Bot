@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from core.ai_parser import (
     GeminiQuotaError,
-    _apply_seat_safety_net,
+    apply_seat_safety_net,
     coerce_bool,
     generate_from_image,
     generate_astro_article,
@@ -12,12 +12,14 @@ from core.ai_parser import (
     strip_code_fence,
     _article_prompt,
     _astro_article_prompt,
+    _event_prompt,
     generate_wordpress_article,
     is_quota_error,
     parse_event_message,
     strip_json_fence,
 )
 from tests.support.config import patched_config
+from utils.templates.approval import APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, REACTIVATED_SUFFIX
 
 DEPLETED_ERROR = (
     "429 Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects "
@@ -85,16 +87,39 @@ class TestAiParserHelpers(unittest.TestCase):
 
     def test_seat_safety_net(self):
         data = {"max_seats": 5, "seats": "4/5", "booked_seats": 1}
-        _apply_seat_safety_net(data, "Posti liberi: 4/5")
+        apply_seat_safety_net(data, "Posti liberi: 4/5")
         self.assertEqual(data, {"max_seats": 4, "seats": "4/4", "booked_seats": 0})
 
         data = {}
-        _apply_seat_safety_net(data, "Posti: 0")
+        apply_seat_safety_net(data, "Posti: 0")
         self.assertEqual(data["seats"], "0/0 Completo")
 
         data = {"seats": "no limit"}
-        _apply_seat_safety_net(data, "Nessuna indicazione")
+        apply_seat_safety_net(data, "Nessuna indicazione")
         self.assertEqual(data, {"seats": "no limit"})
+
+    def test_seat_safety_net_restores_the_capacity_of_a_cancelled_post(self):
+        data = {}
+        apply_seat_safety_net(data, "📣 <b>❌ [ANNULLATO] Gioco</b>\n🪑 Posti: 0/4 [ANNULLATO]\n")
+        self.assertEqual(data, {"max_seats": 4, "seats": "4/4", "booked_seats": 0})
+
+        data = {"max_seats": 0, "seats": "0/0 Completo"}
+        apply_seat_safety_net(data, "🪑 Posti: 0 (Nessun limite) [ANNULLATO]")
+        self.assertEqual(data, {"max_seats": None, "seats": "no limit", "booked_seats": 0})
+
+        data = {}
+        apply_seat_safety_net(data, "Posti: 0/3 Completo")
+        self.assertEqual(data["seats"], "0/0 Completo")
+
+        # A tag on another line is not about the seats
+        data = {}
+        apply_seat_safety_net(data, "❌ [ANNULLATO] Gioco\nPosti: 0/3\n\n⚠️ ANNULLATO")
+        self.assertEqual(data["seats"], "0/0 Completo")
+
+    def test_event_prompt_lists_the_bot_status_tags(self):
+        prompt = _event_prompt("x")
+        for tag in (APPROVED_SUFFIX, CANCELLED_SUFFIX, REACTIVATED_SUFFIX, DISCARDED_SUFFIX, "[ANNULLATO]"):
+            self.assertIn(tag.strip(), prompt)
 
     def test_coerce_bool(self):
         self.assertTrue(coerce_bool(" Sì "))

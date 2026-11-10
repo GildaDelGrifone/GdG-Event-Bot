@@ -87,6 +87,20 @@ def _event_prompt(message_text):
     If the message is NOT an event announcement (e.g. general chat, irrelevant to games),
     return EXACTLY: {{"is_event": false}}
 
+    BOT STATUS TAGS (IGNORE THEM):
+    The message may be a copy of a post this bot already published or reviewed. It can then contain
+    status tags and admin warnings added by the bot that are NOT part of the event:
+    "✅ APPROVATO", "⚠️ ANNULLATO", "❌ [ANNULLATO]", "[ANNULLATO]", "✅ RIATTIVATO", "❌ SCARTATO",
+    "[In attesa di approvazione]", "⏳ In attesa: N", "(Prenotati: N)", "APPROVED", "DISCARDED", "CANCELLED",
+    "PUBLISHED", and any block starting with "🚨 ATTENZIONE" or "⚠️ Immagine non inviata".
+    Ignore them completely: never copy them (or what they mean, e.g. "evento annullato", "approvato")
+    into title, extra_info, description or any other field, and never return is_event false because of them.
+    Such a post uses these labels: "📣" title, "🗓️ Data", "🎲 Sistema", "👑 Master" / "👑 Host", "🪑 Posti",
+    "🏷️ Dettagli" (= extra_info), "📝" (= description).
+    A "Posti" line tagged [ANNULLATO] shows the original capacity as the second number:
+    "Posti: 0/4 [ANNULLATO]" -> 4 free seats (max_seats = 4, seats = "4/4");
+    "Posti: 0 (Nessun limite) [ANNULLATO]" -> no limit (max_seats = null, seats = "no limit").
+
     If it is an event, extract the following fields:
     - "title": The title of the event or game.
     - "date": The date and time (keep the string exactly as in the message or format nicely).
@@ -120,6 +134,7 @@ def _event_prompt(message_text):
       - Content warnings, safety tools, disclaimers (e.g. "Attenzione: gore, violenza", "X-Card: droghe", "Avviso: Effetti audio")
       - Genre / Themes (e.g. "Genere: Horror / Investigativo")
       Format them cleanly as short bulleted lines (using "• ") or concise text. If none of these exist in the message, output "".
+      extra_info NEVER contains bot status tags or admin warnings (see BOT STATUS TAGS above).
     - "description": The synopsis or pitch of the event (focus on the story or game description; do not duplicate lines already extracted into extra_info).
     - "is_roleplay": Boolean (true or false). Output true if the event is a tabletop roleplaying game session (RPG / GDR, e.g., D&D, Pathfinder, Call of Cthulhu, Sine Requie, Cyberpunk, etc.) where someone acts as Master / Game Master / Dungeon Master. Output false if it is a board game, card game, tournament, or other non-RPG event (where the organizer is a Host).
 
@@ -130,15 +145,25 @@ def _event_prompt(message_text):
     """
 
 
-def _apply_seat_safety_net(data, message_text):
-    """Overrides the AI's seat fields with what the "Posti: X[/Y]" line actually says."""
+def apply_seat_safety_net(data, message_text):
+    """Overrides the AI's seat fields with what the "Posti: X[/Y]" line actually says; True if there was one."""
     m = _SEATS_FRACTION_RE.search(message_text) or _SEATS_SINGLE_RE.search(message_text)
     if not m:
-        return
-    free = int(m.group(1))
+        return False
+    line_end = message_text.find('\n', m.end())
+    seats_line = message_text[m.start():line_end if line_end != -1 else len(message_text)]
+    if '[annullato]' in seats_line.lower():
+        # A cancelled post shows 0 free seats: the original capacity is the table total, or no limit
+        if m.re is _SEATS_SINGLE_RE:
+            data.update(max_seats=None, booked_seats=0, seats="no limit")
+            return True
+        free = int(m.group(2))
+    else:
+        free = int(m.group(1))
     data['max_seats'] = free
     data['booked_seats'] = 0
     data['seats'] = "0/0 Completo" if free == 0 else f"{free}/{free}"
+    return True
 
 
 def parse_event_message(message_text):
@@ -149,7 +174,7 @@ def parse_event_message(message_text):
         if isinstance(data, dict) and data.get("is_event", True):
             data['extra_info'] = str(data.get('extra_info') or '').strip()
             data['is_roleplay'] = coerce_bool(data.get('is_roleplay'))
-            _apply_seat_safety_net(data, message_text)
+            apply_seat_safety_net(data, message_text)
             logger.info(f"AI Parser: Successfully parsed event '{data.get('title')}' for date '{data.get('date')}'.")
         elif isinstance(data, dict):
             logger.info("AI Parser: Message identified as non-event (is_event=False).")
