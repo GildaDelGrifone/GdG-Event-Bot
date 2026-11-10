@@ -29,6 +29,8 @@ class BotRuntimeState:
     edit_prompts: dict = field(default_factory=dict)
     last_recap_message_id: int | None = None
     last_recap_events: list | None = None
+    # Day (dd-mm-yyyy) the open-seats reminder was last posted, so the recap path and the daily job never both send it
+    open_seats_sent_on: str | None = None
 
 
 runtime_state = BotRuntimeState()

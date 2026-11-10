@@ -242,9 +242,11 @@ def get_approved_events_for_date(date_str):
 
 
 @db_safe(default=list)
-def get_upcoming_events(include_today=True):
-    """Approved and pending events from today (or tomorrow) on, chronologically; undated events last."""
-    now = datetime.now()
+def get_upcoming_events(include_today=True, now=None):
+    """Approved and pending events from today (or tomorrow) on, chronologically; undated events last.
+
+    `now` (a datetime) replaces the current time, for jobs and tests that run for a given day."""
+    now = now or datetime.now()
     today = (now.year, now.month, now.day)
 
     dated, undated = [], []

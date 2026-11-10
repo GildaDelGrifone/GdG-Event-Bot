@@ -35,6 +35,7 @@ from bot.callbacks.router import handle_callback_query
 from bot.state import load_persisted_state
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
+from bot.service.open_seats import scheduled_open_seats_reminder
 from bot.service.reminders import send_event_reminders
 from core.scheduler.runner import add_cron_job, add_interval_job, start_scheduler, stop_scheduler
 from core.log_utils import DailyMonthlyLogHandler, JobLinesToDebug
@@ -62,6 +63,8 @@ async def post_init(application: Application):
     start_scheduler(application.bot)
     if config.REMINDER_ENABLED:
         add_cron_job(send_event_reminders, *config.REMINDER_TIME, [application.bot])
+    if config.OPEN_SEATS_REMINDER_ENABLED:
+        add_cron_job(scheduled_open_seats_reminder, *config.OPEN_SEATS_REMINDER_TIME, [application.bot])
     if eventbrite_enabled():
         add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
         add_cron_job(delete_cancelled_eventbrite_events, *config.EVENTBRITE_CLEANUP_TIME, [application.bot])

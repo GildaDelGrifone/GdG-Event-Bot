@@ -12,7 +12,10 @@ from utils.templates.event import (
     format_discussion_booking_message, format_event_seats, format_instagram_story, format_public_event_message,
 )
 from utils.templates.recap import format_contacts, recap_generate_text, recap_links_text
-from utils.templates.public import format_event_mine_entry, format_event_mine_prefix
+from utils.templates.public import (
+    format_event_mine_entry, format_event_mine_prefix, format_open_seats_count, format_open_seats_day_header,
+    format_open_seats_entry,
+)
 from utils.templates.wordpress import format_astro_draft_created
 from utils.templates.subscribers import format_event_participants_message, format_reservation_subscriber_display
 import utils.templates as templates_package
@@ -98,6 +101,18 @@ class TestFormatEventSeats(unittest.TestCase):
                          "0/4 [ANNULLATO]")
         self.assertEqual(format_event_seats({"booked_seats": 2, "max_seats": None, "status": "cancelled"}),
                          "0 (Nessun limite) [ANNULLATO]")
+
+
+class TestOpenSeatsTexts(unittest.TestCase):
+    def test_seat_count(self):
+        self.assertEqual(format_open_seats_count({"max_seats": 5, "booked_seats": 3}), "2/5")
+        self.assertEqual(format_open_seats_count({"max_seats": 5, "booked_seats": None}), "5/5")
+        self.assertEqual(format_open_seats_count({"max_seats": None, "booked_seats": 9}), "no limit")
+
+    def test_entry_escapes_the_system_and_omits_it_when_empty(self):
+        self.assertEqual(format_open_seats_entry("<b>T</b>", "D&D", "1/4"), "• <b>T</b> (D&amp;D) — 1/4")
+        self.assertEqual(format_open_seats_entry("<b>T</b>", "  ", "no limit"), "• <b>T</b> — no limit")
+        self.assertEqual(format_open_seats_day_header("Mercoledì 11-11"), "📅 <b>Mercoledì 11-11</b>")
 
 
 class TestRecapTexts(unittest.TestCase):

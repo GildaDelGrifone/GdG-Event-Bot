@@ -133,6 +133,28 @@ class TestDiscussionForward(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         message.forward_origin = MagicMock(type="channel", message_id=777)
         return make_update(message=message)
 
+    async def test_recap_forward_gets_the_links_then_the_open_seats_list(self):
+        events = [{"id": self.event_id, "title": "Stasera", "system": "D&D", "status": "approved",
+                   "message_link": "https://t.me/c/1/777"}]
+        order = []
+        self.context.bot.send_message.side_effect = lambda **kw: order.append("links")
+        after = patch("bot.handlers.recap.send_open_seats_after_recap", side_effect=lambda bot: order.append("open seats"))
+        with patch.object(runtime_state, "last_recap_message_id", 777), \
+             patch.object(runtime_state, "last_recap_events", events), after as send_after:
+            await handle_discussion_forward(self.forward(), self.context)
+
+        self.assertEqual(order, ["links", "open seats"])
+        send_after.assert_called_once_with(self.context.bot)
+        self.assertEqual(self.context.bot.send_message.call_args.kwargs["reply_to_message_id"], 888)
+
+    async def test_open_seats_list_follows_the_recap_even_without_links(self):
+        with patch.object(runtime_state, "last_recap_message_id", 777), \
+             patch.object(runtime_state, "last_recap_events", []), \
+             patch("bot.handlers.recap.send_open_seats_after_recap") as send_after:
+            await handle_discussion_forward(self.forward(), self.context)
+        send_after.assert_called_once_with(self.context.bot)
+        self.context.bot.send_message.assert_not_called()
+
     async def test_first_forward_posts_the_booking_reply_without_a_link(self):
         await handle_discussion_forward(self.forward(), self.context)
 

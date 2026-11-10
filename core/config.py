@@ -159,6 +159,9 @@ DB_BACKUP_R2_BUCKET = os.getenv("DB_BACKUP_R2_BUCKET", "").strip()
 # Day-of DM reminders to the Telegram users booked to the day's events
 REMINDER_ENABLED = os.getenv("REMINDER_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
 REMINDER_TIME = _env_time("REMINDER_TIME", "12:00")
+# Daily list of the upcoming events (from tomorrow) that still have free seats, posted in the discussion group
+OPEN_SEATS_REMINDER_ENABLED = _env_bool("OPEN_SEATS_REMINDER_ENABLED", True)
+OPEN_SEATS_REMINDER_TIME = _env_time("OPEN_SEATS_REMINDER_TIME", "16:00")
 DISCARDED_RETENTION_DAYS = _env_int("DISCARDED_RETENTION_DAYS", 7)  # discarded events are deleted after this many days
 RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 

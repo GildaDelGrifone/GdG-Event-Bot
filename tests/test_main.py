@@ -7,6 +7,7 @@ from telegram.error import NetworkError
 from telegram.ext import CommandHandler, filters
 
 from main import global_error_handler, main, post_init, warn_if_boto3_missing
+from bot.service.open_seats import scheduled_open_seats_reminder
 from bot.service.reminders import send_event_reminders
 from bot.handlers.recap import recap_article_command
 from bot.handlers.albums import cache_admin_media_group
@@ -99,7 +100,7 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         mock_app.bot = make_bot()
 
         with patch("main.start_scheduler"), patch("main.eventbrite_enabled", return_value=False), \
-             patch("main.ADMIN_CHAT_ID", "-100123456"), patched_config(REMINDER_ENABLED=False):
+             patch("main.ADMIN_CHAT_ID", "-100123456"), patched_config(REMINDER_ENABLED=False, OPEN_SEATS_REMINDER_ENABLED=False):
             await post_init(mock_app)
 
         set_commands = mock_app.bot.set_my_commands
@@ -166,7 +167,7 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
                      patch("main.add_cron_job") as add_cron, \
                      patch("main.eventbrite_enabled", return_value=enabled), \
                      patch("main.config.EVENTBRITE_POLL_MINUTES", 5), patch("main.ADMIN_CHAT_ID", None), \
-                     patched_config(REMINDER_ENABLED=False):
+                     patched_config(REMINDER_ENABLED=False, OPEN_SEATS_REMINDER_ENABLED=False):
                     await post_init(mock_app)
 
                 self.assertEqual(add_job.call_count, expected_calls)
@@ -182,7 +183,7 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         with patch("main.start_scheduler", calls.start), patch("main.add_interval_job", calls.add), \
              patch("main.add_cron_job", calls.cron), \
              patch("main.eventbrite_enabled", return_value=True), patch("main.ADMIN_CHAT_ID", None), \
-             patched_config(REMINDER_ENABLED=False):
+             patched_config(REMINDER_ENABLED=False, OPEN_SEATS_REMINDER_ENABLED=False):
             await post_init(mock_app)
         self.assertEqual([c[0] for c in calls.mock_calls], ["start", "add", "cron"])
 
@@ -193,10 +194,25 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
                 mock_app.bot = make_bot()
                 with patch("main.start_scheduler"), patch("main.add_cron_job") as add_cron, \
                      patch("main.eventbrite_enabled", return_value=False), patch("main.ADMIN_CHAT_ID", None), \
-                     patched_config(REMINDER_ENABLED=enabled, REMINDER_TIME=(12, 30)):
+                     patched_config(REMINDER_ENABLED=enabled, REMINDER_TIME=(12, 30), OPEN_SEATS_REMINDER_ENABLED=False):
                     await post_init(mock_app)
                 if enabled:
                     add_cron.assert_called_once_with(send_event_reminders, 12, 30, [mock_app.bot])
+                else:
+                    add_cron.assert_not_called()
+
+    async def test_open_seats_reminder_is_scheduled_unless_disabled(self):
+        for enabled in (True, False):
+            with self.subTest(enabled=enabled):
+                mock_app = MagicMock()
+                mock_app.bot = make_bot()
+                with patch("main.start_scheduler"), patch("main.add_cron_job") as add_cron, \
+                     patch("main.eventbrite_enabled", return_value=False), patch("main.ADMIN_CHAT_ID", None), \
+                     patched_config(REMINDER_ENABLED=False, OPEN_SEATS_REMINDER_ENABLED=enabled,
+                                    OPEN_SEATS_REMINDER_TIME=(16, 15)):
+                    await post_init(mock_app)
+                if enabled:
+                    add_cron.assert_called_once_with(scheduled_open_seats_reminder, 16, 15, [mock_app.bot])
                 else:
                     add_cron.assert_not_called()
 
