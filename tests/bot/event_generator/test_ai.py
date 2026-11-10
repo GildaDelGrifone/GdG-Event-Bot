@@ -1,8 +1,11 @@
 import json
 import unittest
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from bot.event_generator.ai import generate_event_data_with_ai, normalize_bgg_ids
+from bot.event_generator.ai import (
+    _build_prompt, generate_event_data_with_ai, normalize_bgg_ids, normalize_generated_event,
+)
 from core.ai_parser import GeminiQuotaError
 
 
@@ -54,3 +57,35 @@ class TestNormalizeBggIds(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGeneratedSeats(unittest.TestCase):
+    def _normalize(self, prompt, **ai_fields):
+        return normalize_generated_event({"title": "Catan", **ai_fields}, prompt)
+
+    def test_seats_in_the_instructions_beat_the_game_player_count(self):
+        for prompt in ("Catan venerdì, 6 posti", "Catan venerdì\nPosti: 6", "Catan, posti liberi: 6/8"):
+            with self.subTest(prompt=prompt):
+                data = self._normalize(prompt, max_seats=4, seats="4/4", booked_seats=2)
+                self.assertEqual((data["max_seats"], data["seats"], data["booked_seats"]), (6, "6/6", 0))
+
+    def test_without_seats_in_the_instructions_gemini_value_is_kept_and_made_consistent(self):
+        data = self._normalize("Catan venerdì", max_seats=5, seats="4/4")
+        self.assertEqual((data["max_seats"], data["seats"]), (5, "5/5"))
+
+        data = self._normalize("Catan venerdì", max_seats="6", seats="6")
+        self.assertEqual((data["max_seats"], data["seats"]), (6, "6/6"))
+
+    def test_unlimited_and_full(self):
+        for value in (None, "null", "no limit", -3):
+            with self.subTest(value=value):
+                data = self._normalize("Catan venerdì", max_seats=value, seats="4/4")
+                self.assertEqual((data["max_seats"], data["seats"]), (None, "no limit"))
+
+        data = self._normalize("Catan venerdì, 0 posti", max_seats=4)
+        self.assertEqual((data["max_seats"], data["seats"]), (0, "0/0 Completo"))
+
+    def test_prompt_states_that_the_instructions_win(self):
+        prompt = _build_prompt("Catan 6 posti", datetime(2026, 11, 10))
+        self.assertIn("ALWAYS wins", prompt)
+        self.assertNotIn('"max_seats": 4', prompt)
