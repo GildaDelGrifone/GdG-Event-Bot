@@ -1,4 +1,5 @@
-"""/event_process, /event_next, /event_subs and /start texts."""
+"""/event_process, /event_next, /event_subs and /start texts, and the daily open-seats reminder."""
+import html
 
 PROCESS_NO_TEXT_IN_REPLY = "Nessun testo trovato nel messaggio o nel comando. Includi il testo o invia una didascalia."
 
@@ -101,3 +102,30 @@ def format_event_next_subscribers_link(seats_str, bot_username=None, event_id=No
     if bot_username:
         return f'<a href="https://t.me/{bot_username.lstrip("@")}?start=subs_{event_id}">👥 Iscritti</a> ({seats_str})'
     return f'👥 Iscritti ({seats_str})'
+
+
+OPEN_SEATS_TITLE = "🎲 <b>Posti ancora disponibili</b>"
+
+
+# Seats shown for an event with no seat limit (the same string as the channel post)
+OPEN_SEATS_UNLIMITED = "no limit"
+
+
+def format_open_seats_count(event):
+    """Free seats of an event as `free/max`, or OPEN_SEATS_UNLIMITED when it has no limit."""
+    max_seats = event.get('max_seats')
+    if max_seats is None:
+        return OPEN_SEATS_UNLIMITED
+    free = int(max_seats) - int(event.get('booked_seats') or 0)
+    return f"{max(free, 0)}/{int(max_seats)}"
+
+
+def format_open_seats_day_header(day_label):
+    return f"📅 <b>{html.escape(day_label)}</b>"
+
+
+def format_open_seats_entry(title_link, system, seats_text):
+    """One event line; `title_link` is already HTML (format_event_title_link), `system` is raw text."""
+    system = (system or "").strip()
+    system_part = f" ({html.escape(system)})" if system else ""
+    return f"• {title_link}{system_part} — {html.escape(seats_text)}"

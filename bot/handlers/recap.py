@@ -19,6 +19,7 @@ from bot.callbacks.recap import run_article_pipeline
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
+from bot.service.open_seats import send_open_seats_after_recap
 from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
@@ -77,9 +78,14 @@ def _channel_forward_origin(message):
 
 
 async def _reply_recap_links(context, message, forward_msg_id):
+    """Replies to the recap forward with the links to the night's events, then posts the open-seats list of the next days."""
     links_text = recap_links_text(runtime_state.last_recap_events)
-    if not links_text:
-        return
+    if links_text:
+        await _send_recap_links(context, message, forward_msg_id, links_text)
+    await send_open_seats_after_recap(context.bot)
+
+
+async def _send_recap_links(context, message, forward_msg_id, links_text):
     try:
         await context.bot.send_message(
             chat_id=message.chat_id,
