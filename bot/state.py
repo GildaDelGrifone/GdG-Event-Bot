@@ -3,12 +3,12 @@ from dataclasses import dataclass, field
 import logging
 
 from core import config
-from core.db import get_setting, set_setting
+from core.db import clear_settings, get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 
 # Runtime switches saved in the bot_settings table, so a restart keeps them
-PERSISTED_SETTINGS = ("is_paused", "eventbrite_only", "eventbrite_venue")
+PERSISTED_SETTINGS = ("is_paused", "eventbrite_only", "eventbrite_venue", "eventbrite_booking_notifications")
 
 
 @dataclass
@@ -18,6 +18,8 @@ class BotRuntimeState:
     eventbrite_only: bool = field(default_factory=lambda: config.EVENTBRITE_ONLY_MODE)
     # Venue picked with /bot_eventbrite_venue for new Eventbrite events (None = the default venue)
     eventbrite_venue: str | None = None
+    # /bot_eb_notif_toggle: announce Eventbrite bookings/releases (seats sync either way)
+    eventbrite_booking_notifications: bool = field(default_factory=lambda: config.EVENTBRITE_BOOKING_NOTIFICATIONS)
     venue_names: dict = field(default_factory=dict)
     # Eventbrite publishes running in the background: the tasks (kept so they are not garbage collected) and the
     # event ids in flight (a second press for the same event is refused)
@@ -54,6 +56,19 @@ def set_persisted(name, value):
     setattr(runtime_state, name, value)
     if not set_setting(name, value):
         logger.warning(f"Could not save {name}={value!r}: it will be lost on restart.")
+
+
+def reset_persisted_state():
+    """/bot_settings_clear: deletes the saved switches and puts them back to their defaults (env values).
+    Returns False when the database could not be cleared (the switches are reset in memory anyway)."""
+    cleared = clear_settings()
+    defaults = BotRuntimeState()
+    for name in PERSISTED_SETTINGS:
+        setattr(runtime_state, name, getattr(defaults, name))
+    if not cleared:
+        logger.warning("Could not clear bot_settings: the saved switches will come back on restart.")
+    logger.info("Persisted settings reset: " + ", ".join(f"{n}={getattr(runtime_state, n)!r}" for n in PERSISTED_SETTINGS))
+    return cleared
 
 
 def remember_published_recap(message_id, events):

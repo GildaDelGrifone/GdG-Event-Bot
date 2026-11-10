@@ -194,3 +194,21 @@ def format_cleanup_deleted(count, labels):
 
 def format_cleanup_kept(labels):
     return f"⚠️ Non eliminati da Eventbrite: {', '.join(labels)}"
+
+
+def format_eb_churn_alert(name, releases, minutes, event_link):
+    return (
+        f"🔇 <b>{html.escape(name)}</b> ha annullato {releases} prenotazioni Eventbrite in {minutes} minuti per: "
+        f"{event_link}\nAnnunci silenziati per questa persona su questo evento; i posti restano sincronizzati. "
+        f"Annulla i suoi ordini dai link sotto se serve."
+    )
+
+
+def format_eb_unmuted(admin):
+    return f"🔔 Annunci riattivati da {admin}."
+
+
+POPUP_EB_UNMUTED = "Annunci riattivati"
+
+
+POPUP_EB_UNMUTE_GONE = "Già riattivati."

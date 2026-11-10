@@ -20,6 +20,8 @@ ADMIN_COMMAND_DESCRIPTIONS = (
     ("bot_status", "Mostra lo stato operativo del bot"),
     ("bot_eventbrite_venue", "Scegli la sede Eventbrite per i nuovi eventi"),
     ("bot_eventbrite_only_toggle", "Attiva/disattiva la modalità solo Eventbrite"),
+    ("bot_eb_notif_toggle", "Attiva/disattiva gli annunci delle prenotazioni Eventbrite"),
+    ("bot_settings_clear", "Ripristina le impostazioni del bot ai valori di .env"),
     ("event_edit_title", "<Titolo> Modifica il titolo dell'evento"),
     ("event_edit_date", "<DD-MM-YYYY HH:MM> Modifica data e ora"),
     ("event_edit_system", "<Sistema> Modifica il sistema/gioco"),

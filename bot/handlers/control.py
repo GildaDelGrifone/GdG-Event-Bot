@@ -9,11 +9,11 @@ from core import config
 from core.eventbrite import eventbrite_enabled, eventbrite_venue_ids
 from bot.keyboards import get_venue_keyboard
 from bot.service.eventbrite import venue_name
-from bot.state import runtime_state, set_persisted
+from bot.state import reset_persisted_state, runtime_state, set_persisted
 from utils.templates.control import (
     BOT_PAUSED_TEXT, BOT_RESUMED_TEXT, CHOOSE_VENUE_TEXT, EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT,
-    EVENTBRITE_ONLY_OFF_TEXT, EVENTBRITE_ONLY_ON_TEXT, EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SINGLE_VENUE_TEXT,
-    format_bot_status,
+    EVENTBRITE_NOTIFICATIONS_OFF_TEXT, EVENTBRITE_NOTIFICATIONS_ON_TEXT, EVENTBRITE_ONLY_OFF_TEXT, EVENTBRITE_ONLY_ON_TEXT,
+    EVENTBRITE_ONLY_UNAVAILABLE_TEXT, SETTINGS_CLEAR_FAILED_TEXT, SETTINGS_CLEARED_TEXT, SINGLE_VENUE_TEXT, format_bot_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,25 @@ async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTyp
     await update.message.reply_text(text)
 
 
+@admin_only()
+async def bot_eb_notif_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not eventbrite_enabled():
+        await update.message.reply_text(EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT)
+        return
+    enabled = not runtime_state.eventbrite_booking_notifications
+    set_persisted("eventbrite_booking_notifications", enabled)
+    logger.info(f"{describe_user(update.effective_user)} turned Eventbrite booking notifications {'ON' if enabled else 'OFF'}.")
+    await update.message.reply_text(EVENTBRITE_NOTIFICATIONS_ON_TEXT if enabled else EVENTBRITE_NOTIFICATIONS_OFF_TEXT)
+
+
+@admin_only()
+async def bot_settings_clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cleared = reset_persisted_state()
+    logger.info(f"{describe_user(update.effective_user)} cleared the persisted settings.")
+    header = SETTINGS_CLEARED_TEXT if cleared else SETTINGS_CLEAR_FAILED_TEXT
+    await update.message.reply_text(f"{header}\n\n{await _status_text()}")
+
+
 def current_venue_id():
     """The venue new Eventbrite events get: the /bot_eventbrite_venue pick, else the default."""
     picked = runtime_state.eventbrite_venue
@@ -73,8 +92,13 @@ async def bot_eventbrite_venue_command(update: Update, context: ContextTypes.DEF
 @admin_only()
 async def bot_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"{describe_user(update.effective_user)} requested bot status.")
-    venue = None
-    if eventbrite_enabled() and len(eventbrite_venue_ids()) > 1:
-        venue = await asyncio.to_thread(venue_name, current_venue_id())
-    text = format_bot_status(runtime_state.is_paused, runtime_state.eventbrite_only, venue)
-    await update.message.reply_text(text)
+    await update.message.reply_text(await _status_text())
+
+
+async def _status_text():
+    venue = notifications = None
+    if eventbrite_enabled():
+        notifications = runtime_state.eventbrite_booking_notifications
+        if len(eventbrite_venue_ids()) > 1:
+            venue = await asyncio.to_thread(venue_name, current_venue_id())
+    return format_bot_status(runtime_state.is_paused, runtime_state.eventbrite_only, venue, notifications)

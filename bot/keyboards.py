@@ -2,7 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from core import config
 from core.db import get_event
-from core.eventbrite import dashboard_url, eventbrite_enabled, order_url
+from core.eventbrite import dashboard_url, eventbrite_enabled, order_cancel_url, order_url
 from bot.state import runtime_state
 from utils.templates.keyboards import (
     BUTTON_ADD_SUBSCRIBER, BUTTON_BACK, BUTTON_BOOK, BUTTON_CANCEL_EVENT, BUTTON_CLOSE, BUTTON_CONFIRM_CANCEL,
@@ -10,6 +10,7 @@ from utils.templates.keyboards import (
     BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL, BUTTON_SOLD_OUT,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
+    BUTTON_EB_UNMUTE, format_eb_order_button, format_eb_unmute_panel_button,
     BUTTON_REACTIVATE, BUTTON_REFRESH, BUTTON_RESTORE, BUTTON_EDIT_MENU, format_edit_type_button,
     BUTTON_UNBOOK, BUTTON_CALENDAR, BUTTON_RELEASE_SEAT, SUBSCRIBER_FALLBACK_NAME, format_release_seat_button, format_decrement_seat_button, format_eventbrite_order_row_button,
     format_increment_seat_button, format_schedule_advance_button, format_schedule_day_button, format_venue_button,
@@ -142,7 +143,23 @@ def get_discarded_event_keyboard(event_id):
     return InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_RESTORE, callback_data=f"restore_event_{event_id}")]])
 
 
-def get_subscribers_management_keyboard(event_id, reservations, event=None):
+def _short(name, limit=12):
+    return name if len(name) <= limit else name[:limit - 1] + "…"
+
+
+def get_eventbrite_churn_keyboard(eb_event_id, orders, mute_id):
+    """Churn alert: one "Cancel order" link per order the silenced name still holds, then [🔔 Riattiva annunci]."""
+    rows = []
+    if eb_event_id:
+        rows = [
+            [InlineKeyboardButton(format_eb_order_button(name, seats), url=order_cancel_url(eb_event_id, order_id))]
+            for order_id, name, seats in orders
+        ]
+    rows.append([InlineKeyboardButton(BUTTON_EB_UNMUTE, callback_data=f"ebmute_clear_{mute_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def get_subscribers_management_keyboard(event_id, reservations, event=None, mutes=None):
     keyboard = []
     for res in reservations:
         if res.get('source') == 'eventbrite':
@@ -162,6 +179,10 @@ def get_subscribers_management_keyboard(event_id, reservations, event=None):
             InlineKeyboardButton(format_decrement_seat_button(label, seats), callback_data=f"sub_dec_{event_id}_{res_id}"),
             InlineKeyboardButton(format_increment_seat_button(label, seats), callback_data=f"sub_inc_{event_id}_{res_id}"),
         ])
+    for mute in mutes or []:  # names silenced by the Eventbrite churn detection
+        keyboard.append([InlineKeyboardButton(
+            format_eb_unmute_panel_button(_short(mute['name'], 20)), callback_data=f"ebmute_panel_{mute['id']}"
+        )])
     keyboard.append([InlineKeyboardButton(BUTTON_ADD_SUBSCRIBER, callback_data=f"sub_addnew_{event_id}")])
     keyboard.append([
         InlineKeyboardButton(BUTTON_REFRESH, callback_data=f"manage_subs_{event_id}"),

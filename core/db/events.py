@@ -69,6 +69,7 @@ def delete_event(event_id):
     with transaction() as cur:
         cur.execute('DELETE FROM reservations WHERE event_id = ?', (event_id,))
         cur.execute('DELETE FROM waitlist WHERE event_id = ?', (event_id,))
+        cur.execute('DELETE FROM eventbrite_mutes WHERE event_id = ?', (event_id,))
         cur.execute('DELETE FROM events WHERE id = ?', (event_id,))
     return True
 

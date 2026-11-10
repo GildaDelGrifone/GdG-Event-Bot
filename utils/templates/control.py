@@ -16,6 +16,20 @@ EVENTBRITE_ONLY_ON_TEXT = ("🎟️ Modalità solo Eventbrite ATTIVA: la scheda 
 EVENTBRITE_ONLY_OFF_TEXT = "📣 Modalità solo Eventbrite DISATTIVATA: pulsanti Telegram e storia Instagram di nuovo attivi."
 
 
+EVENTBRITE_NOTIFICATIONS_ON_TEXT = "🔔 Annunci delle prenotazioni Eventbrite ATTIVI."
+
+
+EVENTBRITE_NOTIFICATIONS_OFF_TEXT = ("🔕 Annunci delle prenotazioni Eventbrite DISATTIVATI: i posti restano sincronizzati, "
+                                     "ma prenotazioni e cancellazioni Eventbrite non vengono annunciate.")
+
+
+SETTINGS_CLEARED_TEXT = "🧹 Impostazioni salvate cancellate: il bot usa di nuovo i valori del file .env."
+
+
+SETTINGS_CLEAR_FAILED_TEXT = ("⚠️ Non sono riuscito a cancellare le impostazioni salvate: ripristinate solo fino al "
+                              "prossimo riavvio.")
+
+
 EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT = "❌ Eventbrite non è configurato."
 
 
@@ -37,12 +51,20 @@ PUBLISH_MODE_EVENTBRITE_ONLY = "🎟️ SOLO EVENTBRITE (nessun pulsante Telegra
 PUBLISH_MODE_NORMAL = "📣 normale"
 
 
-def format_bot_status(paused, eventbrite_only, venue=None):
+EB_NOTIFICATIONS_ON = "🔔 attivi"
+
+
+EB_NOTIFICATIONS_OFF = "🔕 disattivati"
+
+
+def format_bot_status(paused, eventbrite_only, venue=None, eb_notifications=None):
     status = BOT_STATUS_PAUSED if paused else BOT_STATUS_ACTIVE
     mode = PUBLISH_MODE_EVENTBRITE_ONLY if eventbrite_only else PUBLISH_MODE_NORMAL
     text = f"Stato del bot: {status}\nModalità pubblicazione: {mode}"
     if venue:
         text += f"\nSede Eventbrite: {venue}"
+    if eb_notifications is not None:
+        text += f"\nAnnunci prenotazioni Eventbrite: {EB_NOTIFICATIONS_ON if eb_notifications else EB_NOTIFICATIONS_OFF}"
     return text + "\n\nQueste impostazioni restano salvate anche dopo un riavvio del bot."
 
 

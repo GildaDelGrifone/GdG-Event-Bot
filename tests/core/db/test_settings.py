@@ -19,5 +19,12 @@ class TestSettings(TempDBMixin, unittest.TestCase):
         self.assertIsNone(db.get_setting("eventbrite_venue", "v1"))
 
 
+    def test_clear_removes_every_key(self):
+        db.set_setting("is_paused", True)
+        db.set_setting("eventbrite_venue", "v2")
+        self.assertTrue(db.clear_settings())
+        self.assertEqual(db.get_setting("is_paused", "unset"), "unset")
+        self.assertEqual(db.get_setting("eventbrite_venue", "unset"), "unset")
+
 if __name__ == "__main__":
     unittest.main()

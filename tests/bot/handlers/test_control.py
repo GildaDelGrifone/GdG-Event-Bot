@@ -4,7 +4,7 @@ from unittest.mock import patch
 import core.db as db
 from bot.callbacks.venues import handle_venue_pick
 from bot.handlers.control import (
-    bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_pause_command, bot_resume_command, bot_status_command,
+    bot_eb_notif_toggle_command, bot_settings_clear_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_pause_command, bot_resume_command, bot_status_command,
 )
 from bot.state import runtime_state
 from bot.handlers.edit import event_edit_command
@@ -82,6 +82,96 @@ class TestEventbriteOnlyToggle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         with patch("bot.common.auth.config.ADMIN_CHAT_ID", "12345"), eventbrite_credentials():
             await bot_eventbrite_only_toggle_command(update, make_context())
         self.assertFalse(runtime_state.eventbrite_only)
+
+
+class TestEbNotifToggle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        patcher = patch.object(runtime_state, "eventbrite_booking_notifications", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    async def test_toggle_flips_the_announcements_and_tells_the_admin(self):
+        update = admin_update(user=make_user(998877, "admin_boss"))
+        with as_admin_chat(), eventbrite_credentials(), patch("bot.handlers.control.logger") as mock_logger:
+            await bot_eb_notif_toggle_command(update, make_context())
+            self.assertFalse(runtime_state.eventbrite_booking_notifications)
+            self.assertIs(db.get_setting("eventbrite_booking_notifications"), False)
+            self.assertIn("DISATTIVATI", update.message.reply_text.call_args.args[0])
+            self.assertTrue(any("998877" in msg and "OFF" in msg for msg in _info_messages(mock_logger)))
+
+            await bot_eb_notif_toggle_command(update, make_context())
+            self.assertTrue(runtime_state.eventbrite_booking_notifications)
+            self.assertIn("ATTIVI", update.message.reply_text.call_args.args[0])
+
+    async def test_without_eventbrite_nothing_changes(self):
+        update = admin_update()
+        with as_admin_chat(), patched_config(EVENTBRITE_TOKEN=None):
+            await bot_eb_notif_toggle_command(update, make_context())
+        self.assertTrue(runtime_state.eventbrite_booking_notifications)
+        self.assertIn("non è configurato", update.message.reply_text.call_args.args[0])
+
+    async def test_outsiders_cannot_toggle_it(self):
+        update = admin_update()
+        with patch("bot.common.auth.config.ADMIN_CHAT_ID", "12345"), eventbrite_credentials():
+            await bot_eb_notif_toggle_command(update, make_context())
+        self.assertTrue(runtime_state.eventbrite_booking_notifications)
+
+    async def test_status_shows_the_announcements_only_with_eventbrite(self):
+        update = admin_update()
+        with as_admin_chat(), eventbrite_credentials():
+            await bot_status_command(update, make_context())
+            self.assertIn("Annunci prenotazioni Eventbrite: 🔔 attivi", update.message.reply_text.call_args.args[0])
+            runtime_state.eventbrite_booking_notifications = False
+            await bot_status_command(update, make_context())
+            self.assertIn("🔕 disattivati", update.message.reply_text.call_args.args[0])
+        with as_admin_chat(), patched_config(EVENTBRITE_TOKEN=None):
+            await bot_status_command(update, make_context())
+            self.assertNotIn("Annunci prenotazioni", update.message.reply_text.call_args.args[0])
+
+
+class TestSettingsClear(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        for name in ("is_paused", "eventbrite_only", "eventbrite_venue", "eventbrite_booking_notifications"):
+            patcher = patch.object(runtime_state, name, getattr(runtime_state, name))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    async def test_clear_restores_the_env_defaults_and_shows_the_status(self):
+        update = admin_update(user=make_user(998877, "admin_boss"))
+        with as_admin_chat(), eventbrite_credentials():
+            await bot_pause_command(update, make_context())
+            await bot_eventbrite_only_toggle_command(update, make_context())
+            await bot_eb_notif_toggle_command(update, make_context())
+            db.set_setting("eventbrite_venue", "v2")
+            runtime_state.eventbrite_venue = "v2"
+
+            with patched_config(EVENTBRITE_ONLY_MODE=False, EVENTBRITE_BOOKING_NOTIFICATIONS=True), \
+                    patch("bot.handlers.control.logger") as mock_logger:
+                await bot_settings_clear_command(update, make_context())
+
+        self.assertEqual((runtime_state.is_paused, runtime_state.eventbrite_only, runtime_state.eventbrite_venue,
+                          runtime_state.eventbrite_booking_notifications), (False, False, None, True))
+        for name in ("is_paused", "eventbrite_only", "eventbrite_venue", "eventbrite_booking_notifications"):
+            self.assertEqual(db.get_setting(name, "unset"), "unset")
+        reply = update.message.reply_text.call_args.args[0]
+        self.assertTrue(reply.startswith("🧹 Impostazioni salvate cancellate"))
+        self.assertIn("Stato del bot: 🟢 ATTIVO", reply)
+        self.assertTrue(any("998877" in msg and "cleared" in msg for msg in _info_messages(mock_logger)))
+
+    async def test_a_database_failure_is_reported(self):
+        update = admin_update()
+        with as_admin_chat(), patch("bot.state.clear_settings", return_value=False):
+            await bot_settings_clear_command(update, make_context())
+        self.assertIn("Non sono riuscito", update.message.reply_text.call_args.args[0])
+
+    async def test_outsiders_cannot_clear(self):
+        db.set_setting("is_paused", True)
+        update = admin_update()
+        with patch("bot.common.auth.config.ADMIN_CHAT_ID", "12345"):
+            await bot_settings_clear_command(update, make_context())
+        self.assertIs(db.get_setting("is_paused"), True)
 
 
 class TestEventbriteVenueCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):

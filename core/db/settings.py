@@ -23,3 +23,10 @@ def set_setting(key, value):
         (key, json.dumps(value)),
     )
     return True
+
+
+@db_safe(default=False)
+def clear_settings():
+    """Deletes every saved switch: the bot goes back to the .env defaults."""
+    execute("DELETE FROM bot_settings")
+    return True

@@ -74,9 +74,10 @@ The system automates the ingestion, standardization, social sharing, and booking
      - Programmatically guarantees the entire formatted event caption stays within Telegram's 1024-character caption limit via `enforce_caption_limit()`.
      - Inserts the generated event as `pending` into SQLite and sends the preview card to `ADMIN_CHAT_ID` with standard approval buttons (`[Publish]`, `[Discard]`, `[👥 Gestisci Iscritti]`).
 4. **Monitoring Pause / Resume (`/bot_pause`, `/bot_resume`, `/bot_status`):**
-   - **Persistence:** `is_paused`, `eventbrite_only` and `eventbrite_venue` are written through `bot.state.set_persisted` to the `bot_settings` table (`core.db.get_setting` / `set_setting`, JSON values) and restored by `load_persisted_state()` in `main.post_init`, so a restart keeps them; a switch never set keeps its default (`EVENTBRITE_ONLY_MODE` for the mode). Never assign these three on `runtime_state` directly.
+   - **Persistence:** `is_paused`, `eventbrite_only`, `eventbrite_venue` and `eventbrite_booking_notifications` are written through `bot.state.set_persisted` to the `bot_settings` table (`core.db.get_setting` / `set_setting`, JSON values) and restored by `load_persisted_state()` in `main.post_init`, so a restart keeps them; a switch never set keeps its default (`EVENTBRITE_ONLY_MODE` for the mode, `EVENTBRITE_BOOKING_NOTIFICATIONS` for the announcements). Never assign these on `runtime_state` directly. `/bot_settings_clear` (`reset_persisted_state`: `core.db.clear_settings` empties `bot_settings`, then every persisted switch goes back to its default) returns the bot to the `.env` values and replies with the `/bot_status` text.
    - Admins can send `/bot_pause` in `ADMIN_CHAT_ID` to make the bot temporarily "blind" to `PUBLIC_CHANNEL_ID` (it will not intercept, parse, or delete messages from the channel).
-   - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state (including the Eventbrite-only mode below).
+   - Send `/bot_resume` to re-enable interception, and `/bot_status` to check the current operational state (including the Eventbrite-only mode below and, with Eventbrite configured, whether Eventbrite bookings are announced).
+   - `/bot_eb_notif_toggle` flips `runtime_state.eventbrite_booking_notifications` (initial value `EVENTBRITE_BOOKING_NOTIFICATIONS`, saved in `bot_settings`, needs Eventbrite configured): off, the poller keeps syncing Eventbrite seats but announces no booking or release (§2.12). Useful to cancel an Eventbrite order by hand without a group notice.
    - `/bot_eventbrite_only_toggle` flips `runtime_state.eventbrite_only` (initial value `EVENTBRITE_ONLY_MODE`, saved in `bot_settings`, needs Eventbrite configured). **ON:** the pending card (`get_approval_keyboard`) shows `[Discard]` and `[🚀 Telegram + EB] [🎟️ Solo Eventbrite]` (no plain Publish) and `_publish` no longer generates the automatic Instagram story preview. **OFF:** classic card, `[Publish] [Discard]` + `[🚀 Publish + Eventbrite]`. `[🎟️ Solo Eventbrite]` (`publish_eb_only_<id>`) approves with **no channel post**; `[🚀 Telegram + EB]` still posts. Rule behind it: `send_discussion_notice` sends nothing for an event with no `telegram_message_id`, so Eventbrite-only events produce no discussion-group traffic (cancellations, admin-action notices); their Eventbrite booking announcements go to the admin chat instead. Only cards created after a toggle follow it. An Eventbrite-only event cannot be booked on Telegram.
 
 ### 2.2. AI Parsing (`core/ai_parser.py`)
@@ -273,13 +274,15 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Telegram booking vs Eventbrite.** `handle_seat_booking` books in the database, then `reserve_on_eventbrite` pushes the new `quantity_total` for a linked `live` event with limited seats and reads `quantity_sold` from that same response (the later sync then skips its push). If Eventbrite already sold more than we hold (`quantity_sold + Telegram seats > max_seats`, or a 400 rejecting a total below the sold count) the booking is undone (`unbook_seat`), `poll_event_now` pulls the orders in, the card is refreshed and the user gets an alert (`EVENTBRITE_TAKEN`). Any other failure (network, 5xx) keeps the booking: the poller's overbooking notice is the safety net.
 
-**Booking poller** (`bot.service.eventbrite_poll.poll_eventbrite_bookings`, registered by `main.post_init` through `core.scheduler.runner.add_interval_job` every `EVENTBRITE_POLL_MINUTES`). For each `get_eventbrite_tracked_events()` row (linked, `approved`/`cancelled`, dated today or later, or yesterday) it fetches the Eventbrite event (1 call, with `expand=ticket_classes`) and sums `quantity_sold`. Only when that differs from the Eventbrite seats we have stored (`eventbrite_seat_count`), when the response has no ticket classes, or when a full check is due (`EVENTBRITE_FULL_SYNC_MINUTES`, default 30, `0` = every poll; last full fetch kept in memory per event) does it also fetch the active orders (attendees neither cancelled nor refunded), because the orders are only needed for the attendees' names. Verified on a real event: cancelling an order lowers `quantity_sold`, turns the order `refunded` and flags its attendee `cancelled` and `refunded`. A total that stays equal while the people change (one cancels, another books between two polls) is only caught by the periodic full check. If `quantity_sold` keeps disagreeing with the orders after a full fetch, that is logged once and the orders are fetched on every poll for that event until they agree. Then it:
+**Booking poller** (`bot.service.eventbrite_poll.poll_eventbrite_bookings`, registered by `main.post_init` through `core.scheduler.runner.add_interval_job` every `EVENTBRITE_POLL_MINUTES`). For each `get_eventbrite_tracked_events()` row (linked, `approved`/`cancelled`, dated today or later, or yesterday) it fetches the Eventbrite event (1 call, with `expand=ticket_classes`) and sums `quantity_sold`. Only when that differs from the Eventbrite seats we have stored (`eventbrite_seat_count`), when the response has no ticket classes, or when a full check is due (`EVENTBRITE_FULL_SYNC_MINUTES`, default 30, `0` = every poll; last full fetch kept in memory per event) does it also fetch the active orders (attendees neither cancelled nor refunded), because the orders are only needed for the attendees' names. Verified on a real event: cancelling an order lowers `quantity_sold`, turns the order `refunded` and flags its attendee `cancelled` and `refunded`. A total that stays equal while the people change (one cancels, another books between two polls) is only caught by the periodic full check. If `quantity_sold` keeps disagreeing with the orders after a full fetch, that is logged once and the orders are fetched on every poll for that event until they agree. New or bigger orders are applied at once; a **smaller or missing order is applied only when two consecutive order fetches agree** (`_pending_releases`, kept in memory; a pending drop forces the next fetch, so a real cancellation lands one poll later). Eventbrite sometimes answers with a list that briefly lacks an order, and trusting that single snapshot made the bot release and re-book the same seat over and over, announcing every flip. Transient drops are logged (`waiting for the next fetch to confirm` / `transient and has been ignored`), and every applied order change is logged at INFO (`Eventbrite #id: order X (Name) old -> new seats`). Then it:
 - events already `canceled` on Eventbrite, and `draft` ones (a failed publish), are not polled (`get_eventbrite_tracked_events` skips them); an event **deleted by hand** (`NOT_FOUND` on the fetch, or on a sync) is unlinked by `unlink_deleted_eventbrite_event` (link cleared, one notice replying to the card, card refreshed, so an approved event offers `[🎟️ Pubblica su Eventbrite]` again), and resuming a deleted draft starts over once; and an `ALREADY_CANCELED` answer to a cancel call (event cancelled by hand) counts as cancelled, so it is never retried;
 - records an Eventbrite-side cancellation (`✅ … annullato su Eventbrite` for a Telegram-cancelled event, `⚠️ … annullato su Eventbrite ma attivo su Telegram` otherwise);
 - diffs the orders against `reservations(source='eventbrite')` and applies every change with `core.db.seats.apply_eventbrite_order` (no capacity check: the booking already happened; it returns `overbooked` when `booked > max_seats`);
-- when something changed, calls `update_event_messages` (which also pushes the corrected capacity), announces each change in the discussion group, or, for an Eventbrite-only event (no `telegram_message_id`), in the admin chat as a reply to the admin card via `notify_admin(parse_mode="HTML")` (`🎟️ Mario R. ha prenotato 2 posti tramite Eventbrite per: …` / `❌ Mario R. ha liberato … (Eventbrite) per: …`, only while the event is `approved` and `EVENTBRITE_BOOKING_NOTIFICATIONS` is on) and alerts the admins on overbooking (naming the latest Telegram booker);
+- when something changed, calls `update_event_messages` (which also pushes the corrected capacity), announces each change in the discussion group, or, for an Eventbrite-only event (no `telegram_message_id`), in the admin chat as a reply to the admin card via `notify_admin(parse_mode="HTML")` (`🎟️ Mario R. ha prenotato 2 posti tramite Eventbrite per: …` / `❌ Mario R. ha liberato … (Eventbrite) per: …`, only while the event is `approved` and the announcements are on: `runtime_state.eventbrite_booking_notifications`, `/bot_eb_notif_toggle`) and alerts the admins on overbooking (naming the latest Telegram booker);
 - for a Telegram-cancelled event in `closed` state with no active orders left, calls `finish_eventbrite_cancellation(..., from_poller=True)`, which completes the Eventbrite cancellation;
 - on `EventbriteError` with `HIT_RATE_LIMIT` it stops the cycle; any other error only skips that event.
+
+**Churn detection** (abuse: someone booking and cancelling over and over to flood the group). While an event is `approved` and `live`, each confirmed Eventbrite release is recorded per (event, attendee name) in memory (`_release_times`; the name, e.g. `Mario R.`, is the only identity we store, so two people with the same name on one event share a counter). `EVENTBRITE_CHURN_RELEASES` (default 3, `0` = off) releases within `EVENTBRITE_CHURN_WINDOW_MINUTES` (default 60) silence that name on that event: a row in `eventbrite_mutes` (`core.db.mute_eventbrite_name`, kept across restarts), its bookings/releases are no longer announced (the one that triggered it included; seats keep syncing), and the admins get **one** alert as a reply to the admin card (`format_eb_churn_alert`, sent even when `/bot_eb_notif_toggle` is off) with a `❌ Name (n)` order-cancel link per order the name still holds and `[🔔 Riattiva annunci]` (`ebmute_clear_<mute_id>`). Releases on `closed`/cancelled events never count, so cancelling every order of a cancelled event is not churn. Unmuting (`bot/callbacks/eventbrite_mutes.py`, admin chat only) deletes the row and the name's release history (`forget_churn`), so the next release does not silence it again at once; the alert gets `🔔 Annunci riattivati da …` and loses its buttons. Eventbrite has no API to block a person or cancel an order, so this only stops the bot amplifying the spam; the orders are cancelled from the dashboard.
 - **Rate budget:** about one Eventbrite call per tracked event per poll (the orders call only on a change or at the periodic full check). With 10 events every 2 minutes that is about 300 calls per hour plus ~20 for the full checks, under Eventbrite's limits of 2,000 calls/hour and 48,000/day per application (event creation/copy and publishing: 200/hour each).
 
 **Setup** (`scripts/eventbrite_setup.py`): `--check --orgs` (token and `EVENTBRITE_ORGANIZATION_ID`), `--create-venue` (`EVENTBRITE_VENUE_ID`), optionally `--create-collection "NAME"` once per collection (ids for the two `EVENTBRITE_COLLECTION_*` settings; collections made by hand in the dashboard expose their id at the end of their URL, `/cc/name-<id>`). The API creates collections as drafts and cannot publish them: publish each from the dashboard. Restart the bot afterwards.
@@ -318,7 +321,7 @@ The Eventbrite API has **no call to cancel an order or attendee**, and the refun
 
 Future-dated events are left alone until their day (so `[🎟️ Ricrea su Eventbrite]` stays usable), a `HIT_RATE_LIMIT` stops the run until the next night, and one failing event never blocks the others. The admins get a single plain-text summary (`🧹 Eliminati da Eventbrite N eventi annullati: …` / `⚠️ Non eliminati da Eventbrite: …`), only if something happened. The `Eliminati` line is sent only when `EVENTBRITE_CLEANUP_NOTIFICATIONS` is on (default off); the `Non eliminati` list is always sent, since an admin has to act on it. Not yet verified on a real account: whether Eventbrite lets you delete an event whose orders were all cancelled; if it refuses, the event is kept and reported.
 
-**Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to that order's page on Eventbrite (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored.
+**Admin panel.** In `[👥 Gestisci Iscritti]` Eventbrite rows are prefixed `🎟️` and are a single URL button to that order's page on Eventbrite (no ± buttons); the DB layer also refuses admin ± on them, and Telegram lookups (`book_seat`, `unbook_seat`, `admin_add_subscriber`, `admin_remove_subscriber`, `get_reservation_by_user`) never match Eventbrite rows, so a Telegram user named "Mario R." cannot touch an Eventbrite booking. Attendees are stored as first name plus initial (`attendee_display_name`); emails are never stored. Names silenced by the churn detection are listed under the subscribers (`🔇 Annunci Eventbrite silenziati: …`) with one `[🔔 Riattiva: Name]` button each (`ebmute_panel_<mute_id>`, unmutes and redraws the panel).
 
 **Eventbrite API notes.** Eventbrite has no sandbox (test with `EVENTBRITE_LISTED=false`) and is eventually consistent, so POST response bodies are trusted instead of reading back. The description uses structured content (the legacy `description` field is deprecated); its HTML is limited to `p, b, em, ul, li, a`, so multi-line text becomes one `<p>` per line.
 
@@ -338,7 +341,7 @@ Future-dated events are left alone until their day (so `[🎟️ Ricrea su Event
 GdG-Event-Bot/
 ├── bot/
 │   ├── __init__.py
-│   ├── state.py          # Runtime state (runtime_state); pause / Eventbrite-only / venue persisted via set_persisted + load_persisted_state
+│   ├── state.py          # Runtime state (runtime_state); pause / Eventbrite-only / venue / EB announcements persisted via set_persisted + load_persisted_state, reset_persisted_state
 │   ├── keyboards.py      # Telegram inline keyboard layouts (+ SCHEDULE_DAYS)
 │   ├── common/           # Helpers shared by every bot package
 │   │   ├── auth.py       # admin_only decorator, is_admin_chat, describe_user
@@ -347,7 +350,7 @@ GdG-Event-Bot/
 │   │   ├── parsing.py    # Seat parsing, event keyword filter, event-ID extraction from replies
 │   │   └── previews.py   # Admin approval card sending, warning blocks, Gemini quota alert
 │   ├── handlers/         # Telegram command & message handlers (registered in main.py)
-│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_eventbrite_only_toggle, /bot_eventbrite_venue
+│   │   ├── control.py    # /bot_pause, /bot_resume, /bot_status, /bot_eventbrite_only_toggle, /bot_eventbrite_venue, /bot_eb_notif_toggle, /bot_settings_clear
 │   │   ├── public.py     # /start, /event_next, /event_mine, /event_subs
 │   │   ├── ingestion.py  # Channel interception (process_message) and /event_process (/ep)
 │   │   ├── albums.py     # Media-group (album) buffering for channel posts and admin uploads
@@ -368,6 +371,7 @@ GdG-Event-Bot/
 │   │   ├── subscribers.py # 👥 Gestisci Iscritti panel (± seats, add prompt, close)
 │   │   ├── schedule.py   # Repost schedule weekday toggles, delete, close
 │   │   ├── edit_menu.py  # ✏️ Modifica on the admin card: field prompts (ForceReply), type toggle, back
+│   │   ├── eventbrite_mutes.py # [🔔 Riattiva annunci] on the churn alert (ebmute_clear_) and in the subscribers panel (ebmute_panel_)
 │   │   └── venues.py     # /bot_eventbrite_venue picker (ebvenue_<id>) and its [❌ Chiudi] (ebvenue_close)
 │   ├── service/          # Telegram side effects shared by handlers and callbacks
 │   │   ├── posts.py      # update_event_messages: sync channel post + discussion reply (with RetryAfter retry)
@@ -404,7 +408,8 @@ GdG-Event-Bot/
 │   │   ├── seats.py      # Booking rules: book/unbook, admin seat ± and subscriber add/remove
 │   │   ├── scheduled.py  # scheduled_events (repost templates)
 │   │   ├── waitlist.py   # Waitlist: join/leave/position, promote_waitlist (books the first in line)
-│   │   └── settings.py   # bot_settings key/value store (runtime switches kept across restarts)
+│   │   ├── eventbrite_mutes.py # Eventbrite names silenced per event by the poller's churn detection
+│   │   └── settings.py   # bot_settings key/value store (runtime switches kept across restarts; clear_settings)
 │   ├── scheduler/        # APScheduler jobs
 │   │   ├── runner.py     # start_scheduler / stop_scheduler (job timetable)
 │   │   ├── recap.py      # 16:00 daily recap card for admin approval
@@ -604,10 +609,18 @@ GdG-Event-Bot/
 | `username` / `full_name` | TEXT | | Identity used when the seat is booked and in the mention |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Join time |
 
+### Table: `eventbrite_mutes`
+| Column | Type | Constraints / Default | Description |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mute id (in the unmute buttons' callback data) |
+| `event_id` | INTEGER | NOT NULL, `UNIQUE(event_id, name)` | Event the silencing applies to (deleted with the event) |
+| `name` | TEXT | NOT NULL | Eventbrite attendee display name (`Mario R.`) whose announcements are silenced |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | When the churn detection silenced it |
+
 ### Table: `bot_settings`
 | Column | Type | Constraints / Default | Description |
 |---|---|---|---|
-| `key` | TEXT | PRIMARY KEY | Setting name (`is_paused`, `eventbrite_only`, `eventbrite_venue`) |
+| `key` | TEXT | PRIMARY KEY | Setting name (`is_paused`, `eventbrite_only`, `eventbrite_venue`, `eventbrite_booking_notifications`); emptied by `/bot_settings_clear` |
 | `value` | TEXT | | JSON-encoded value |
 
 ---
@@ -665,11 +678,12 @@ GdG-Event-Bot/
 | `EVENTBRITE_POLL_MINUTES` | (Optional) Poll interval for Eventbrite bookings | `2` |
 | `EVENTBRITE_DELETE_CANCELLED` | (Optional) At 23:59 delete cancelled events dated today or earlier from Eventbrite (`true`/`false`); Telegram is never touched | `true` |
 | `EVENTBRITE_CLEANUP_NOTIFICATIONS` | (Optional) Send the nightly `🧹 Eliminati da Eventbrite N eventi annullati` message to the admin chat (`true`/`false`). Events the cleanup could not delete are reported either way | `false` |
+| `EVENTBRITE_CHURN_RELEASES` / `EVENTBRITE_CHURN_WINDOW_MINUTES` | (Optional) Churn detection (§2.12): this many Eventbrite releases by the same name on the same event within the window silence that name's announcements on that event and alert the admins; `0` releases = off | `3`, `60` |
 | `EVENTBRITE_FULL_SYNC_MINUTES` | (Optional) How often the poller fetches the full order list even when `quantity_sold` is unchanged (safety net); `0` = on every poll | `30` |
 | `EVENTBRITE_VENUE_ID_ALTERNATIVES` | (Optional) Extra venue ids, comma-separated. `EVENTBRITE_VENUE_ID` stays the default; with several, `/bot_eventbrite_venue` picks the one used for new events (saved, survives restarts) | `2345678,3456789` |
 | `EVENTBRITE_ONLY_MODE` | (Optional) Initial state of the Eventbrite-only mode (`true`/`false`); `/bot_eventbrite_only_toggle` changes it at runtime (saved in `bot_settings`; once set, the env value no longer applies) | `false` |
 | `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` | (Optional) Eventbrite Collection ids: published events join the roleplay one when `is_roleplay`, the board games one otherwise; both empty = off. Create one with `scripts/eventbrite_setup.py --create-collection "NAME"` (the API creates it as a draft; publish it from the dashboard) | none |
-| `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Announce Eventbrite bookings/releases in the discussion group, or in the admin chat for Eventbrite-only events (`true`/`false`); seats sync either way | `true` |
+| `EVENTBRITE_BOOKING_NOTIFICATIONS` | (Optional) Initial state of the Eventbrite booking announcements in the discussion group, or in the admin chat for Eventbrite-only events (`true`/`false`); seats sync either way. `/bot_eb_notif_toggle` changes it at runtime (saved in `bot_settings`; once set, the env value no longer applies until `/bot_settings_clear`) | `true` |
 
 ---
 
