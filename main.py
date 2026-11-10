@@ -22,7 +22,7 @@ from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
 from bot.handlers.public import event_mine_command, event_next_command, event_subs_command, start_command
-from bot.handlers.recap import manual_recap_command, recap_article_command, handle_discussion_forward
+from bot.handlers.recap import manual_recap_command, recap_article_command, recap_reminder_send_command, handle_discussion_forward
 from bot.handlers.repost import event_repost_command, event_schedule_invoke_command
 from bot.handlers.repost_schedule import (
     event_schedule_command, event_schedule_update_command, event_schedule_list_command,
@@ -139,6 +139,7 @@ def main():
     application.add_handler(CommandHandler("recap_generate", manual_recap_command))
     application.add_handler(CommandHandler("rg", manual_recap_command))
     application.add_handler(CommandHandler("recap_article", recap_article_command, block=False))
+    application.add_handler(CommandHandler("recap_reminder_send", recap_reminder_send_command))
     application.add_handler(CommandHandler("bot_pause", bot_pause_command))
     application.add_handler(CommandHandler("bot_resume", bot_resume_command))
     application.add_handler(CommandHandler("bot_status", bot_status_command))

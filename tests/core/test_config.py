@@ -65,23 +65,6 @@ class TestEnvNumbers(unittest.TestCase):
             self.assertEqual(config._env_int("UNSET", 5), 5)
 
 
-class TestEnvWeekdays(unittest.TestCase):
-    def days(self, value):
-        with patch.dict("os.environ", {} if value is None else {"DAYS": value}, clear=True):
-            return config._env_weekdays("DAYS", "0,2,4")
-
-    def test_default_when_unset(self):
-        self.assertEqual(self.days(None), frozenset({0, 2, 4}))
-
-    def test_valid_value_is_parsed(self):
-        self.assertEqual(self.days(" 1, 3 ,6"), frozenset({1, 3, 6}))
-
-    def test_an_invalid_value_falls_back_to_the_default(self):
-        for value in ("mon", "7", "", "1,,x"):
-            with self.subTest(value=value):
-                self.assertEqual(self.days(value), frozenset({0, 2, 4}))
-
-
 class TestRequiredSettings(unittest.TestCase):
     def test_lists_unset_required_settings(self):
         with patch.object(config, "TELEGRAM_BOT_TOKEN", None), patch.object(config, "ADMIN_CHAT_ID", "-100"):

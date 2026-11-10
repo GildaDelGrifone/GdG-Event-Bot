@@ -42,17 +42,6 @@ def _env_time(name, default):
     raise ValueError(f"Invalid default time for {name}: {default}")
 
 
-def _env_weekdays(name, default):
-    """A frozenset of weekday numbers (0 = Monday) from a comma-separated value; a typo falls back to the default."""
-    try:
-        days = frozenset(int(part) for part in os.getenv(name, default).split(",") if part.strip())
-    except ValueError:
-        days = None
-    if not days or not days <= set(range(7)):
-        days = frozenset(int(part) for part in default.split(","))
-    return days
-
-
 def _env_choice(name, choices, default):
     """One of `choices` from the environment (case-insensitive); anything else logs a warning and falls back to the default."""
     value = os.getenv(name, default).strip().lower()
@@ -163,7 +152,6 @@ REMINDER_TIME = _env_time("REMINDER_TIME", "12:00")
 OPEN_SEATS_REMINDER_ENABLED = _env_bool("OPEN_SEATS_REMINDER_ENABLED", True)
 OPEN_SEATS_REMINDER_TIME = _env_time("OPEN_SEATS_REMINDER_TIME", "16:00")
 DISCARDED_RETENTION_DAYS = _env_int("DISCARDED_RETENTION_DAYS", 7)  # discarded events are deleted after this many days
-RECAP_WEEKDAYS = _env_weekdays("RECAP_WEEKDAYS", "0,2,4,5,6")  # Mon, Wed, Fri, Sat, Sun game nights
 
 MAX_EVENTS_PER_ROW = _env_int("MAX_EVENTS_PER_ROW", 0)
 

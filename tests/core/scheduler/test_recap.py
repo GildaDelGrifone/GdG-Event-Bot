@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.scheduler.recap import generate_daily_recap
@@ -56,6 +57,22 @@ class TestAutomaticRecap(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(res)
         bot.send_message.assert_not_called()
+
+    async def test_automatic_recap_runs_on_any_day_with_events(self):
+        bot = make_bot()
+        event = {"id": 7, "title": "Martedì", "system": "D&D", "status": "approved", "normalized_date": "10-11-2026",
+                 "booked_seats": 1, "max_seats": 4, "image_path": None}
+
+        with as_admin_chat(), patch("core.scheduler.recap.datetime") as mock_dt, \
+             patch("core.scheduler.recap.get_pending_events_for_recap", return_value=[event]) as load, \
+             patch("core.scheduler.recap.mark_events_as_recap"):
+            mock_dt.now.return_value = datetime(2026, 11, 10, 16, 0)  # a Tuesday, not a classic opening day
+            res = await generate_daily_recap(bot, is_manual=False)
+
+        self.assertTrue(res)
+        load.assert_called_once_with("10-11-2026")
+        self.assertEqual(bot.send_message.call_args.kwargs["chat_id"], "999")
+        self.assertIn("Martedì", bot.send_message.call_args.kwargs["text"])
 
 
 if __name__ == "__main__":

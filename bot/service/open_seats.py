@@ -1,6 +1,6 @@
 """Daily list of the upcoming events that still have free seats, posted in the discussion group.
 
-On a recap day with events the list follows the published recap and its links (send_open_seats_after_recap, called
+On a day with events (the automatic recap card goes out) the list follows the published recap and its links (send_open_seats_after_recap, called
 from the recap forward in bot.handlers.recap); on the other days the OPEN_SEATS_REMINDER_TIME job registered by
 main.post_init posts it (scheduled_open_seats_reminder). It is posted at most once a day.
 """
@@ -88,9 +88,9 @@ def _day_key(now=None):
 
 
 def recap_follows_today(now=None):
-    """True on a recap weekday with events: the daily recap card goes out, and the list waits for the published recap."""
-    now = now or datetime.now()
-    return now.weekday() in config.RECAP_WEEKDAYS and bool(get_pending_events_for_recap(_day_key(now)))
+    """True when today has events: the daily recap card goes out (same query as the recap job), and the list waits for
+    the published recap."""
+    return bool(get_pending_events_for_recap(_day_key(now)))
 
 
 async def scheduled_open_seats_reminder(bot, now=None):

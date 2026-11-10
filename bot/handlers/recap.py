@@ -11,6 +11,9 @@ from core.db import (
 from core.scheduler.recap import generate_daily_recap
 from utils.date_utils import parse_user_date
 from utils.templates.event import format_discussion_booking_message
+from utils.templates.public import (
+    OPEN_SEATS_NO_DISCUSSION_GROUP, OPEN_SEATS_NOTHING_TO_SEND, OPEN_SEATS_SEND_FAILED, format_open_seats_posted,
+)
 from utils.templates.recap import (
     RECAP_ARTICLE_INVALID_DATE, RECAP_INVALID_DATE, RECAP_NO_EVENTS_TODAY, format_recap_article_started,
     format_recap_done, format_recap_no_events_for_date, recap_links_text,
@@ -19,7 +22,7 @@ from bot.callbacks.recap import run_article_pipeline
 from bot.common.auth import admin_only, describe_user
 from bot.common.messages import is_not_modified_error
 from bot.keyboards import get_event_booking_keyboard
-from bot.service.open_seats import send_open_seats_after_recap
+from bot.service.open_seats import open_seat_events, send_open_seats_after_recap, send_open_seats_reminder
 from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,20 @@ async def manual_recap_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(done_text)
         else:
             await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=done_text)
+
+
+@admin_only()
+async def recap_reminder_send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Posts the open-seats list in the discussion group now, even if it already went out today (counts as today's post)."""
+    logger.info(f"{describe_user(update.effective_user)} requested the open-seats list (/recap_reminder_send).")
+    if not config.DISCUSSION_GROUP_ID:
+        reply = OPEN_SEATS_NO_DISCUSSION_GROUP
+    elif not open_seat_events():
+        reply = OPEN_SEATS_NOTHING_TO_SEND
+    else:
+        count = await send_open_seats_reminder(context.bot)
+        reply = format_open_seats_posted(count) if count else OPEN_SEATS_SEND_FAILED
+    await update.message.reply_text(reply)
 
 
 @admin_only()

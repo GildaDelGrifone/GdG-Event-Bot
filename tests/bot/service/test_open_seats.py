@@ -131,8 +131,8 @@ class TestSendOpenSeatsReminder(ResetSentDay, TempDBMixin, unittest.IsolatedAsyn
             self.assertEqual(await send_open_seats_reminder(bot, now=NOW), 0)
 
 
-RECAP_DAY = datetime(2026, 11, 11, 16, 0)  # a Wednesday, a recap weekday by default
-QUIET_DAY = datetime(2026, 11, 10, 16, 0)  # a Tuesday, no recap
+RECAP_DAY = datetime(2026, 11, 11, 16, 0)  # a Wednesday, a classic opening day
+QUIET_DAY = datetime(2026, 11, 10, 16, 0)  # a Tuesday, not an opening day
 
 
 class TestScheduling(ResetSentDay, TempDBMixin, unittest.IsolatedAsyncioTestCase):
@@ -140,17 +140,27 @@ class TestScheduling(ResetSentDay, TempDBMixin, unittest.IsolatedAsyncioTestCase
         super().setUp()
         channel_event("Venerdì", "13-11-2026", max_seats=5, seats="5/5")
         self.bot = make_bot()
-        config_patch = patched_config(DISCUSSION_GROUP_ID="-100777", RECAP_WEEKDAYS=[0, 2, 4, 5, 6],
-                                      OPEN_SEATS_REMINDER_ENABLED=True)
+        config_patch = patched_config(DISCUSSION_GROUP_ID="-100777", OPEN_SEATS_REMINDER_ENABLED=True)
         config_patch.__enter__()
         self.addCleanup(config_patch.__exit__, None, None, None)
 
-    async def test_the_job_posts_on_a_day_without_recap(self):
+    async def test_the_job_posts_on_a_day_without_events(self):
         self.assertEqual(await scheduled_open_seats_reminder(self.bot, now=QUIET_DAY), 1)
         self.assertEqual(runtime_state.open_seats_sent_on, "10-11-2026")
 
-    async def test_the_job_posts_on_a_recap_weekday_with_no_event_tonight(self):
+    async def test_the_job_posts_on_an_opening_day_with_no_event_tonight(self):
         self.assertEqual(await scheduled_open_seats_reminder(self.bot, now=RECAP_DAY), 1)
+
+    async def test_the_job_waits_for_the_recap_on_any_day_with_events(self):
+        channel_event("Martedì", "10-11-2026", max_seats=5, seats="5/5")
+        self.assertEqual(await scheduled_open_seats_reminder(self.bot, now=QUIET_DAY), 0)
+        self.bot.send_message.assert_not_called()
+
+        self.assertEqual(await send_open_seats_after_recap(self.bot, now=QUIET_DAY), 1)
+
+    async def test_a_cancelled_event_tonight_also_waits_for_the_recap(self):
+        channel_event("Annullato", "10-11-2026", status="cancelled", max_seats=5, seats="5/5")
+        self.assertEqual(await scheduled_open_seats_reminder(self.bot, now=QUIET_DAY), 0)
 
     async def test_the_job_leaves_it_to_the_recap_when_there_are_events_tonight(self):
         channel_event("Stasera", "11-11-2026", max_seats=5, seats="5/5")
