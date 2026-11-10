@@ -47,7 +47,8 @@ from core.db.seats import (
     admin_remove_subscriber,
     apply_eventbrite_order,
 )
-from core.db.settings import get_setting, set_setting
+from core.db.settings import clear_settings, get_setting, set_setting
+from core.db.eventbrite_mutes import get_eventbrite_mute, get_eventbrite_mutes, mute_eventbrite_name, unmute_eventbrite
 from core.db.waitlist import (
     clear_waitlist, get_waitlist, join_waitlist, leave_waitlist, promote_waitlist, waitlist_count, waitlist_position,
 )
@@ -73,6 +74,11 @@ __all__ = [
     "promote_waitlist",
     "waitlist_count",
     "waitlist_position",
+    "clear_settings",
+    "get_eventbrite_mute",
+    "get_eventbrite_mutes",
+    "mute_eventbrite_name",
+    "unmute_eventbrite",
     "get_setting",
     "set_setting",
     "insert_event",

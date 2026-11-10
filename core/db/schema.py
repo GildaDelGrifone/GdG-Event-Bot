@@ -78,6 +78,15 @@ TABLES = (
         value TEXT
     )
     ''',
+    '''
+    CREATE TABLE IF NOT EXISTS eventbrite_mutes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (event_id, name)
+    )
+    ''',
 )
 
 # Columns added after the first release; ALTERed into older databases at startup

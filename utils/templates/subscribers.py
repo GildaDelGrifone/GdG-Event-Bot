@@ -119,7 +119,15 @@ def format_subscriber_usage(command):
     )
 
 
-def format_subscribers_panel(event, reservations, waitlist=None):
+def format_eventbrite_mutes_line(mutes):
+    """'🔇 Annunci Eventbrite silenziati: …' (names silenced by the churn detection), or ''."""
+    if not mutes:
+        return ""
+    names = ", ".join(html.escape(m['name']) for m in mutes)
+    return f"\n🔇 Annunci Eventbrite silenziati: {names}\n"
+
+
+def format_subscribers_panel(event, reservations, waitlist=None, mutes=None):
     booked = int(event.get('booked_seats', 0) or 0)
     max_s = event.get('max_seats')
     max_str = str(max_s) if max_s is not None else "Nessun limite"
@@ -142,6 +150,7 @@ def format_subscribers_panel(event, reservations, waitlist=None):
     if any(res.get('source') == 'eventbrite' for res in reservations):
         text += SUBSCRIBERS_PANEL_EVENTBRITE_LEGEND
     text += format_waitlist_lines(waitlist)
+    text += format_eventbrite_mutes_line(mutes)
 
     text += (
         f"\n<i>Modifica con i tasti sotto oppure invia:</i>\n"

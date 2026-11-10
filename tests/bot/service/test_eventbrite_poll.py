@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import core.db as db
 import bot.service.eventbrite_poll as poller
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
+from bot.state import runtime_state
 from core.eventbrite import EventbriteError
 from tests.support.config import as_admin_chat, eventbrite_credentials, patched_config
 from tests.support.db import TempDBMixin, create_event
@@ -26,11 +27,14 @@ class PollCase(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.sold = None  # None: the Eventbrite response carries no ticket classes (the poller then always fetches orders)
         poller._last_full_fetch.clear()
         poller._mismatch_logged.clear()
+        poller._pending_releases.clear()
+        poller._release_times.clear()
         self.get_event_mock = patch("bot.service.eventbrite_poll.get_eventbrite_event", side_effect=self.eb_event).start()
         self.orders_mock = patch("bot.service.eventbrite_poll.fetch_active_orders",
                                  side_effect=lambda eb_id: dict(self.orders)).start()
         self.update_messages = patch("bot.service.eventbrite_poll.update_event_messages", new_callable=AsyncMock).start()
         self.finish = patch("bot.service.eventbrite_poll.finish_eventbrite_cancellation", new_callable=AsyncMock).start()
+        patch.object(runtime_state, "eventbrite_booking_notifications", True).start()
         self.addCleanup(patch.stopall)
 
     def eb_event(self, eb_id):
@@ -89,13 +93,14 @@ class TestDiff(PollCase):
         self.bot.send_message.reset_mock()
         self.orders = {}
         await poll_eventbrite_bookings(self.bot)
+        await poll_eventbrite_bookings(self.bot)  # a release is applied once two fetches agree
         self.assertIn("ha liberato 2 posti (Eventbrite)", self.admin_texts()[0])
 
     async def test_eventbrite_only_announcements_follow_the_notifications_switch(self):
         self.make_event(telegram_message_id=None)
         self.orders = {"o1": ("Mario R.", 1)}
 
-        with patched_config(EVENTBRITE_BOOKING_NOTIFICATIONS=False):
+        with patch.object(runtime_state, "eventbrite_booking_notifications", False):
             await poll_eventbrite_bookings(self.bot)
 
         self.assertEqual(self.admin_texts(), [])
@@ -104,7 +109,7 @@ class TestDiff(PollCase):
         event_id = self.make_event()
         self.orders = {"o1": ("Mario R.", 1)}
 
-        with patched_config(EVENTBRITE_BOOKING_NOTIFICATIONS=False):
+        with patch.object(runtime_state, "eventbrite_booking_notifications", False):  # /bot_eb_notif_toggle
             await poll_eventbrite_bookings(self.bot)
 
         self.assertEqual(self.discussion_calls(), [])
@@ -132,6 +137,7 @@ class TestDiff(PollCase):
 
         self.orders = {"o1": ("Mario R.", 3), "o2": ("Anna B.", 1)}  # +1 for Mario, -2 for Anna
         await poll_eventbrite_bookings(self.bot)
+        await poll_eventbrite_bookings(self.bot)  # Anna's drop is confirmed by the second fetch
         texts = [c.kwargs["text"] for c in self.discussion_calls()]
         self.assertEqual(len(texts), 2)
         self.assertIn("🎟️ Mario R. ha prenotato 1 posto tramite Eventbrite", texts[0])
@@ -140,6 +146,7 @@ class TestDiff(PollCase):
 
         self.bot.send_message.reset_mock()
         self.orders = {"o1": ("Mario R.", 3)}  # Anna's order disappeared (cancelled by the attendee)
+        await poll_eventbrite_bookings(self.bot)
         await poll_eventbrite_bookings(self.bot)
         (call,) = self.discussion_calls()
         self.assertIn("❌ Anna B. ha liberato 1 posto (Eventbrite)", call.kwargs["text"])
@@ -153,6 +160,7 @@ class TestDiff(PollCase):
         self.orders = {"o1": ("Mario R.", 1)}
         await poll_eventbrite_bookings(self.bot)
         self.orders = {}
+        await poll_eventbrite_bookings(self.bot)
         await poll_eventbrite_bookings(self.bot)
 
         self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
@@ -334,6 +342,8 @@ class TestAutoCompleteCancellation(PollCase):
 
         self.orders = {}
         await poll_eventbrite_bookings(self.bot)
+        self.finish.assert_not_awaited()  # the drop is not confirmed yet: the seat is still stored
+        await poll_eventbrite_bookings(self.bot)
         self.finish.assert_awaited_once()
         self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
 
@@ -359,6 +369,7 @@ class TestEventbriteOnlyCancellation(PollCase):
         self.bot.send_message.reset_mock()
 
         self.orders = {}  # the admin cancelled the order from the dashboard
+        await poll_eventbrite_bookings(self.bot)
         await poll_eventbrite_bookings(self.bot)
 
         self.assertEqual(self.discussion_calls(), [])
@@ -427,8 +438,10 @@ class TestQuantitySoldShortcut(PollCase):
 
         self.sold, self.orders = 0, {}
         await self.poll(advance_minutes=2)
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)  # seen once: waiting for confirmation
+        await self.poll(advance_minutes=2)
 
-        self.orders_mock.assert_called_once()
+        self.assertEqual(self.orders_mock.call_count, 2)
         self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
         (call,) = self.discussion_calls()
         self.assertIn("ha liberato 2 posti (Eventbrite)", call.kwargs["text"])
@@ -447,6 +460,10 @@ class TestQuantitySoldShortcut(PollCase):
 
         await self.poll(advance_minutes=10)  # 32 minutes after the last full check
         self.orders_mock.assert_called_once()
+        # Anna is booked at once; Mario's missing order waits for the next fetch, which the pending drop forces
+        self.assertEqual(sorted(r["full_name"] for r in db.get_eventbrite_reservations(event_id)), ["Anna B.", "Mario R."])
+        await self.poll(advance_minutes=2)
+        self.assertEqual(self.orders_mock.call_count, 2)
         self.assertEqual([r["full_name"] for r in db.get_eventbrite_reservations(event_id)], ["Anna B."])
 
     async def test_the_full_check_interval_is_configurable_and_zero_means_every_poll(self):
@@ -535,3 +552,234 @@ class TestQuantitySoldShortcut(PollCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReleaseConfirmation(PollCase):
+    """A smaller or missing order is applied only when two consecutive orders fetches agree."""
+
+    def setUp(self):
+        super().setUp()
+        self.clock = 1000.0
+        patch("bot.service.eventbrite_poll._now", side_effect=lambda: self.clock).start()
+
+    async def poll(self, advance_minutes=1):
+        self.clock += advance_minutes * 60
+        await poll_eventbrite_bookings(self.bot)
+
+    async def booked_event(self, seats=1):
+        event_id = self.make_event()
+        self.sold, self.orders = seats, {"o1": ("Giovanni F.", seats)}
+        await self.poll()
+        self.update_messages.reset_mock()
+        self.bot.send_message.reset_mock()
+        return event_id
+
+    async def test_an_order_missing_from_one_fetch_is_ignored(self):
+        event_id = await self.booked_event()
+        reservation_id = db.get_eventbrite_reservations(event_id)[0]["id"]
+
+        self.sold, self.orders = 0, {}  # degraded answer: the order and the sold count are briefly gone
+        with self.assertLogs("bot.service.eventbrite_poll", level="INFO") as logs:
+            await self.poll()
+            self.sold, self.orders = 1, {"o1": ("Giovanni F.", 1)}
+            await self.poll()
+
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
+        self.assertEqual(db.get_eventbrite_reservations(event_id)[0]["id"], reservation_id)  # never deleted
+        self.update_messages.assert_not_awaited()
+        self.assertEqual(self.discussion_calls(), [])
+        self.assertTrue(any("waiting for the next fetch" in line for line in logs.output))
+        self.assertTrue(any("transient" in line for line in logs.output))
+        self.assertEqual(poller._pending_releases, {})
+
+    async def test_a_flapping_order_never_produces_announcements(self):
+        event_id = await self.booked_event()
+        for _ in range(3):
+            self.sold, self.orders = 0, {}
+            await self.poll()
+            self.sold, self.orders = 1, {"o1": ("Giovanni F.", 1)}
+            await self.poll()
+        self.assertEqual(self.discussion_calls(), [])
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
+
+    async def test_a_missing_order_confirmed_twice_is_released_once(self):
+        event_id = await self.booked_event()
+        self.sold, self.orders = 0, {}
+        await self.poll()
+        await self.poll()
+        await self.poll()
+
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 0)
+        (call,) = self.discussion_calls()
+        self.assertIn("❌ Giovanni F. ha liberato 1 posto (Eventbrite)", call.kwargs["text"])
+        self.update_messages.assert_awaited_once()
+
+    async def test_a_seat_decrease_needs_confirmation_too(self):
+        event_id = await self.booked_event(seats=2)
+        self.sold, self.orders = 1, {"o1": ("Giovanni F.", 1)}
+        await self.poll()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)
+        await self.poll()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
+
+    async def test_a_pending_drop_forces_the_next_orders_fetch(self):
+        await self.booked_event()
+        self.orders = {}  # quantity_sold still says 1, so only the pending drop triggers the fetch
+        poller._last_full_fetch.clear()
+        await self.poll()  # full check: sees the drop
+        self.orders_mock.reset_mock()
+
+        await self.poll()
+
+        self.orders_mock.assert_called_once()
+
+    async def test_a_pending_drop_does_not_log_a_quantity_mismatch(self):
+        await self.booked_event()
+        self.sold, self.orders = 0, {}
+        with self.assertLogs("bot.service.eventbrite_poll", level="WARNING") as logs:
+            await self.poll()
+        self.assertFalse(any("still differs" in line for line in logs.output))
+
+    async def test_new_orders_are_applied_on_the_first_fetch(self):
+        event_id = self.make_event()
+        self.sold, self.orders = 1, {"o1": ("Mario R.", 1)}
+        with self.assertLogs("bot.service.eventbrite_poll", level="INFO") as logs:
+            await self.poll()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 1)
+        self.assertTrue(any("order o1 (Mario R.) 0 -> 1 seats" in line for line in logs.output))
+
+
+class TestChurn(PollCase):
+    """Repeated Eventbrite releases by one name on one live event silence that name and alert the admins."""
+
+    def setUp(self):
+        super().setUp()
+        self.clock = 1000.0
+        patch("bot.service.eventbrite_poll._now", side_effect=lambda: self.clock).start()
+
+    async def poll(self, advance_minutes=1):
+        self.clock += advance_minutes * 60
+        await poll_eventbrite_bookings(self.bot)
+
+    async def cycle(self, order_id, name="Giovanni F.", keep=None, gap_minutes=1):
+        """Books one seat with a new order, then cancels it (two polls confirm the release)."""
+        keep = dict(keep or {})
+        self.orders = {**keep, order_id: (name, 1)}
+        await self.poll(gap_minutes)
+        self.orders = keep
+        await self.poll()
+        await self.poll()
+
+    def group_texts(self):
+        return [c.kwargs["text"] for c in self.discussion_calls()]
+
+    def churn_alerts(self):
+        return [c for c in self.bot.send_message.call_args_list
+                if c.kwargs["chat_id"] == ADMIN_CHAT_ID and c.kwargs["text"].startswith("🔇")]
+
+    async def test_third_release_silences_the_name_and_alerts_the_admins_once(self):
+        event_id = self.make_event()
+        for i in range(3):
+            await self.cycle(f"o{i}")
+
+        texts = self.group_texts()
+        self.assertEqual(sum("ha prenotato" in t for t in texts), 3)
+        self.assertEqual(sum("ha liberato" in t for t in texts), 2)  # the third release is not announced
+        (alert,) = self.churn_alerts()
+        self.assertIn("<b>Giovanni F.</b> ha annullato 3 prenotazioni Eventbrite in 60 minuti", alert.kwargs["text"])
+        self.assertEqual(alert.kwargs["parse_mode"], "HTML")
+        (mute,) = db.get_eventbrite_mutes(event_id)
+        self.assertEqual(mute["name"], "Giovanni F.")
+        buttons = [b for row in alert.kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertEqual([b.callback_data for b in buttons], [f"ebmute_clear_{mute['id']}"])
+
+        self.bot.send_message.reset_mock()
+        await self.cycle("o3")  # silenced: seats sync, nothing is announced, no second alert
+        self.assertEqual(self.group_texts(), [])
+        self.assertEqual(self.churn_alerts(), [])
+        self.orders = {"o4": ("Giovanni F.", 2)}
+        await self.poll()
+        self.assertEqual(db.get_event(event_id)["booked_seats"], 2)
+        self.assertEqual(self.group_texts(), [])
+
+    async def test_the_alert_links_the_orders_the_name_still_holds(self):
+        self.make_event()
+        keep = {"held": ("Giovanni F.", 1)}
+        self.orders = dict(keep)
+        await self.poll()
+        for i in range(3):
+            await self.cycle(f"o{i}", keep=keep)
+
+        (alert,) = self.churn_alerts()
+        rows = alert.kwargs["reply_markup"].inline_keyboard
+        self.assertEqual(rows[0][0].text, "❌ Giovanni F. (1)")
+        self.assertEqual(rows[0][0].url, "https://www.eventbrite.com/order-cancel?eid=eb1&oid=held&aid=")
+        self.assertTrue(rows[-1][0].callback_data.startswith("ebmute_clear_"))
+
+    async def test_releases_spread_beyond_the_window_do_not_count(self):
+        event_id = self.make_event()
+        for i in range(3):
+            await self.cycle(f"o{i}", gap_minutes=40)
+        self.assertEqual(self.churn_alerts(), [])
+        self.assertEqual(db.get_eventbrite_mutes(event_id), [])
+        self.assertEqual(sum("ha liberato" in t for t in self.group_texts()), 3)
+
+    async def test_other_names_are_still_announced(self):
+        self.make_event()
+        for i in range(3):
+            await self.cycle(f"o{i}")
+        self.bot.send_message.reset_mock()
+
+        self.orders = {"a1": ("Anna B.", 1)}
+        await self.poll()
+        (text,) = self.group_texts()
+        self.assertIn("Anna B. ha prenotato", text)
+
+    async def test_the_limit_is_configurable_and_zero_disables_it(self):
+        event_id = self.make_event()
+        with patched_config(EVENTBRITE_CHURN_RELEASES=0):
+            for i in range(4):
+                await self.cycle(f"o{i}")
+        self.assertEqual(self.churn_alerts(), [])
+        self.assertEqual(db.get_eventbrite_mutes(event_id), [])
+
+        poller._release_times.clear()
+        with patched_config(EVENTBRITE_CHURN_RELEASES=2, EVENTBRITE_CHURN_WINDOW_MINUTES=10):
+            await self.cycle("p0")
+            await self.cycle("p1")
+        self.assertEqual(len(self.churn_alerts()), 1)
+        self.assertIn("in 10 minuti", self.churn_alerts()[0].kwargs["text"])
+
+    async def test_releases_on_closed_or_cancelled_events_do_not_count(self):
+        closed = self.make_event(eb_id="eb1")
+        db.set_eventbrite_info(closed, eventbrite_status="closed")
+        cancelled = self.make_event(status="cancelled", eb_id="eb2")
+        for i in range(3):
+            await self.cycle(f"o{i}")
+        self.assertEqual(self.churn_alerts(), [])
+        self.assertEqual(db.get_eventbrite_mutes(closed) + db.get_eventbrite_mutes(cancelled), [])
+
+    async def test_the_alert_is_sent_even_with_announcements_turned_off(self):
+        event_id = self.make_event()
+        with patch.object(runtime_state, "eventbrite_booking_notifications", False):
+            for i in range(3):
+                await self.cycle(f"o{i}")
+        self.assertEqual(self.group_texts(), [])
+        self.assertEqual(len(self.churn_alerts()), 1)
+        self.assertEqual(len(db.get_eventbrite_mutes(event_id)), 1)
+
+    async def test_an_existing_mute_survives_a_restart_and_is_not_alerted_again(self):
+        event_id = self.make_event()
+        db.mute_eventbrite_name(event_id, "Giovanni F.")  # saved before the restart; counters start empty
+        for i in range(4):
+            await self.cycle(f"o{i}")
+        self.assertEqual(self.group_texts(), [])
+        self.assertEqual(self.churn_alerts(), [])
+
+    async def test_an_event_deleted_on_eventbrite_forgets_its_history(self):
+        event_id = self.make_event()
+        await self.cycle("o0")
+        self.assertIn((event_id, "Giovanni F."), poller._release_times)
+        self.get_event_mock.side_effect = EventbriteError(404, "NOT_FOUND", "gone")
+        await self.poll()
+        self.assertNotIn((event_id, "Giovanni F."), poller._release_times)

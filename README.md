@@ -147,6 +147,8 @@ IG_ACCOUNT_ID=178414...
 # EVENTBRITE_DELETE_CANCELLED=true       # at 23:59 delete cancelled events dated today or earlier from Eventbrite (Telegram is unchanged)
 # EVENTBRITE_CLEANUP_NOTIFICATIONS=false  # 23:59 "🧹 Eliminati da Eventbrite N eventi annullati" message (events it could not delete are always reported)
 # EVENTBRITE_FULL_SYNC_MINUTES=30        # full order check this often even if quantity_sold is unchanged (0 = every poll)
+# EVENTBRITE_CHURN_RELEASES=3            # this many Eventbrite cancellations by one person on one event...
+# EVENTBRITE_CHURN_WINDOW_MINUTES=60     # ...within this window silence their announcements and alert the admins (0 releases = off)
 # EVENTBRITE_ONLY_MODE=false           # start in Eventbrite-only mode (see /bot_eventbrite_only_toggle): no Telegram publish buttons, no Instagram story
 # EVENTBRITE_COLLECTION_ROLEPLAY=         # Eventbrite collection id for roleplaying events (python3 scripts/eventbrite_setup.py --create-collection "Giochi di ruolo")
 # EVENTBRITE_COLLECTION_BOARDGAMES=       # same, for the other events; both empty = events are not put in collections
@@ -219,7 +221,7 @@ python3 main.py
 - **Same-Day Conflict Warning:** If a user reserves a seat on an event while already subscribed to another valid event (not cancelled or unsubscribed) scheduled for the same day, the bot processes the reservation normally and immediately posts a warning in the discussion chat. The warning tags the user, lists the conflicting event(s) with titles and direct message links, and reminds the user to release their seat from whichever event they decide not to attend.
 - Users click `[➖ Annulla]` to release reserved seats.
 - **Waitlist:** on a full event the button reads `[⏳ Lista d'attesa]`: pressing it queues the user (popup with the position) and the post shows `— ⏳ In attesa: N`. When a seat frees up (someone cancels, an admin removes a seat, an Eventbrite order is cancelled, or seats are added), the first in line is booked automatically, tagged in the discussion group, and gets a DM if they have ever opened the bot. `[➖ Annulla]` takes a queued user (without seats) off the list. Events published as `0/0 Completo` (private tables) have no waitlist: they keep `[🚫 Esauriti]`. Queues are cleared at 23:59 on the event day.
-- **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group, or in the admin chat (as a reply to the event card) for Eventbrite-only events (`EVENTBRITE_BOOKING_NOTIFICATIONS=false` silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored.
+- **Eventbrite bookings:** for events published on Eventbrite, the discussion-group booking message also carries `🎟️ Prenota anche su Eventbrite: link` (the channel post is unchanged). Eventbrite bookings and releases are picked up every `EVENTBRITE_POLL_MINUTES`, update the seats and are announced in the discussion group, or in the admin chat (as a reply to the event card) for Eventbrite-only events (`/bot_eb_notif_toggle`, initial state `EVENTBRITE_BOOKING_NOTIFICATIONS`, silences the announcement only). Attendees appear as first name plus initial (`Mario R.`); emails are never stored. Someone who cancels `EVENTBRITE_CHURN_RELEASES` times within `EVENTBRITE_CHURN_WINDOW_MINUTES` on one event is silenced on that event (seats still sync): the admins get one alert with a cancel link per order that person still holds and `[🔔 Riattiva annunci]`; the subscribers panel lists silenced names with the same button.
 
 ### 3. Daily Recap Flow
 - Runs automatically at **16:00** on Mondays, Wednesdays, Fridays, Saturdays, and Sundays (silent if no events are scheduled).
@@ -287,9 +289,11 @@ In `ADMIN_CHAT_ID` only:
 - `/event_schedule_list`: Lists all events scheduled for reposting with their IDs and clickable `/event_schedule_invoke` commands.
 - `/bot_pause`: Pauses public channel monitoring (bot becomes "blind" and will not intercept or delete events posted to the channel). The pause survives a restart until `/bot_resume`.
 - `/bot_resume`: Resumes public channel monitoring.
-- `/bot_status`: Checks whether the bot is currently active or paused, and the Eventbrite-only mode.
+- `/bot_status`: Checks whether the bot is currently active or paused, the Eventbrite-only mode and (with Eventbrite configured) whether Eventbrite bookings are announced.
 - `/bot_eventbrite_venue`: With more than one venue configured (`EVENTBRITE_VENUE_ID` plus `EVENTBRITE_VENUE_ID_ALTERNATIVES`), shows them as buttons; the pick is the venue of every event published on Eventbrite from then on (each event keeps its own); `[❌ Chiudi]` removes the message. Saved in the database, so it survives a restart.
 - `/bot_eventbrite_only_toggle`: Turns the Eventbrite-only mode on/off (initial state: `EVENTBRITE_ONLY_MODE`). While on, new pending cards hide the Telegram publish buttons (only `[Discard]`, `[🚀 Telegram + EB]`, `[🎟️ Solo Eventbrite]`) and no automatic Instagram story is generated. Saved in the database, so it survives a restart (the env value only applies until the command is used once).
+- `/bot_eb_notif_toggle`: Turns the announcements of Eventbrite bookings and releases on/off (initial state: `EVENTBRITE_BOOKING_NOTIFICATIONS`). Seats keep syncing either way; handy to cancel an Eventbrite order by hand without a notice in the group. Saved in the database, so it survives a restart.
+- `/bot_settings_clear`: Deletes every saved switch (pause, Eventbrite-only mode, venue, Eventbrite announcements) so the bot goes back to the `.env` values, and shows the resulting status.
 
 ---
 

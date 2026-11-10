@@ -36,6 +36,12 @@ class TestEventbriteRoutes(unittest.TestCase):
         self.assertIs(routes["eb_logo_"], events.handle_eventbrite_logo_retry)
         self.assertIs(routes["eb_cancel_do_"], events.handle_eventbrite_cancel_do)
 
+    def test_unmute_prefixes_are_routed(self):
+        from bot.callbacks import eventbrite_mutes
+        routes = dict(router.CALLBACK_ROUTES)
+        self.assertIs(routes["ebmute_clear_"], eventbrite_mutes.handle_mute_clear)
+        self.assertIs(routes["ebmute_panel_"], eventbrite_mutes.handle_mute_clear_panel)
+
     def test_each_callback_data_resolves_to_exactly_one_route(self):
         prefixes = [p for p, _ in router.CALLBACK_ROUTES]
         for data in ("publish_event_1", "publish_eb_event_1", "eb_publish_1", "eb_recreate_1", "cancel_event_1", "cancel_confirm_1", "cancel_abort_1", "eb_cancel_retry_1", "eb_cancel_ask_1", "eb_cancel_do_1", "eb_logo_1", "book_1", "unbook_1", "publish_wp_1", "publish_astro_23-10-2026", "discard_wp_1", "discard_astro_23-10-2026", "discard_recap_05-09-2026", "discard_event_1"):

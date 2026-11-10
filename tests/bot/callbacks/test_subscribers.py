@@ -160,6 +160,25 @@ class TestEventbriteInManagementView(unittest.TestCase):
         self.assertIn("2. <b>🎟️ Anna B.</b> — 2 posti", view)
 
 
+class TestSilencedNamesInManagementView(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    async def test_the_panel_lists_silenced_names_with_an_unmute_button(self):
+        event_id = create_subscribed_event()
+        mute_id = db.mute_eventbrite_name(event_id, "Giovanni <F.>")
+        update, query = callback_update(f"manage_subs_{event_id}", text="Card")
+        context = make_context()
+        await handle_callback_query(update, context)
+
+        kwargs = context.bot.send_message.call_args.kwargs
+        self.assertIn("🔇 Annunci Eventbrite silenziati: Giovanni &lt;F.&gt;", kwargs["text"])
+        buttons = [b for row in kwargs["reply_markup"].inline_keyboard for b in row]
+        unmute = [b for b in buttons if b.callback_data == f"ebmute_panel_{mute_id}"]
+        self.assertEqual([b.text for b in unmute], ["🔔 Riattiva: Giovanni <F.>"])
+
+    def test_no_line_without_silenced_names(self):
+        event = {**SUBSCRIBED_EVENT, "id": 1, "message_link": None}
+        self.assertNotIn("🔇", format_subscribers_management_view(event, [], []))
+
+
 class TestEventbriteSeatButtons(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def test_stale_seat_buttons_on_eventbrite_rows_are_refused(self):
         event_id = create_subscribed_event()

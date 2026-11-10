@@ -3,7 +3,10 @@ import logging
 from telegram import ForceReply
 from telegram.error import TelegramError
 
-from core.db import get_event, get_reservations_for_event, get_reservation, get_waitlist, admin_add_seat, admin_remove_seat
+from core.db import (
+    get_event, get_eventbrite_mutes, get_reservations_for_event, get_reservation, get_waitlist, admin_add_seat,
+    admin_remove_seat,
+)
 from utils.templates.common import POPUP_CLOSED, POPUP_EVENT_NOT_FOUND
 from utils.templates.subscribers import SUBSCRIBERS_PANEL_TITLE, format_add_subscriber_prompt, format_subscribers_panel
 from bot.common.auth import describe_user
@@ -17,13 +20,15 @@ logger = logging.getLogger(__name__)
 PANEL_TITLE = SUBSCRIBERS_PANEL_TITLE
 
 
-def format_subscribers_management_view(event, reservations):
-    return format_subscribers_panel(event, reservations, get_waitlist(event['id']))
+def format_subscribers_management_view(event, reservations, mutes=None):
+    return format_subscribers_panel(event, reservations, get_waitlist(event['id']), mutes)
 
 
 def _render_panel(event_id, event):
     reservations = get_reservations_for_event(event_id)
-    return format_subscribers_management_view(event, reservations), get_subscribers_management_keyboard(event_id, reservations, event=event)
+    mutes = get_eventbrite_mutes(event_id)
+    return (format_subscribers_management_view(event, reservations, mutes),
+            get_subscribers_management_keyboard(event_id, reservations, event=event, mutes=mutes))
 
 
 async def handle_manage_subs(query, context, payload):

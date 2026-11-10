@@ -14,7 +14,10 @@ from core.config import (
 from core.db import init_db
 from core.eventbrite import eventbrite_enabled
 from bot.handlers.albums import cache_admin_media_group
-from bot.handlers.control import bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command
+from bot.handlers.control import (
+    bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command,
+    bot_eb_notif_toggle_command, bot_settings_clear_command,
+)
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
@@ -138,6 +141,8 @@ def main():
     application.add_handler(CommandHandler("bot_status", bot_status_command))
     application.add_handler(CommandHandler("bot_eventbrite_only_toggle", bot_eventbrite_only_toggle_command))
     application.add_handler(CommandHandler("bot_eventbrite_venue", bot_eventbrite_venue_command))
+    application.add_handler(CommandHandler("bot_eb_notif_toggle", bot_eb_notif_toggle_command))
+    application.add_handler(CommandHandler("bot_settings_clear", bot_settings_clear_command))
     
     edit_cmds = [
         "event_edit_title", "event_edit_date",

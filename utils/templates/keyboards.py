@@ -167,3 +167,10 @@ def format_increment_seat_button(label, seats):
 
 def format_eventbrite_order_row_button(name, seats):
     return f"{EVENTBRITE_ROW_PREFIX}{name} ({seats})"
+
+
+BUTTON_EB_UNMUTE = "🔔 Riattiva annunci"
+
+
+def format_eb_unmute_panel_button(name):
+    return f"🔔 Riattiva: {name}"
