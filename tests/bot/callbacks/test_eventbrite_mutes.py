@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 import core.db as db
 import bot.service.eventbrite_poll as poller
