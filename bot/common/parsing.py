@@ -16,6 +16,7 @@ EVENT_CALLBACK_PREFIXES = (
     "discard_event_",
     "cancel_event_",
     "reactivate_event_",
+    "delete_event_",
     "manage_subs_",
     "sub_inc_",
     "sub_dec_",

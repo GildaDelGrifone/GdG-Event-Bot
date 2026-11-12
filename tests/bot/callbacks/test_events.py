@@ -2,8 +2,11 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from telegram.error import Forbidden
+
 import core.db as db
 from bot.callbacks.router import handle_callback_query
+from bot.service.deletion import DeletionResult
 from bot.state import runtime_state
 from tests.support.config import eventbrite_credentials, patched_config
 from tests.support.db import TempDBMixin, create_event, create_subscribed_event
@@ -478,3 +481,220 @@ class TestStaleApprovalCard(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         await handle_callback_query(update, make_context())
         self.assertIsNotNone(db.get_event(event_id))
         self.assertIn("annullato", query.answer.call_args.args[0])
+
+
+class TestDeleteEventCallbacks(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.context = make_context()
+        self.event_id = create_event(status="cancelled", telegram_message_id=11)
+
+    def press(self, action, event_id=None):
+        update, query = callback_update(f"{action}_{event_id or self.event_id}", text=None,
+                                        caption="Card\n\n⚠️ ANNULLATO", photo=True)
+        return update, query
+
+    def markup_callbacks(self, query):
+        markup = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+    async def test_delete_only_asks_for_confirmation(self):
+        update, query = self.press("delete_event")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(self.markup_callbacks(query),
+                         [f"delete_confirm_{self.event_id}", f"delete_abort_{self.event_id}"])
+        self.assertIsNotNone(db.get_event(self.event_id))
+
+    async def test_abort_restores_the_cancelled_buttons(self):
+        update, query = self.press("delete_abort")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(query.answer.call_args.args[0], "Eliminazione interrotta.")
+        self.assertIn(f"reactivate_event_{self.event_id}", self.markup_callbacks(query))
+        self.assertIn(f"delete_event_{self.event_id}", self.markup_callbacks(query))
+
+    async def test_confirm_deletes_and_marks_the_card(self):
+        update, query = self.press("delete_confirm")
+        with patched_config(PUBLIC_CHANNEL_ID="-1001"):
+            await handle_callback_query(update, self.context)
+        self.assertIsNone(db.get_event(self.event_id))
+        self.context.bot.delete_message.assert_awaited_once_with(chat_id="-1001", message_id=11)
+        caption = query.edit_message_caption.call_args.kwargs
+        self.assertTrue(caption["caption"].endswith("🗑️ ELIMINATO"))
+        self.assertNotIn("ANNULLATO", caption["caption"])
+        self.assertEqual(caption["reply_markup"].inline_keyboard, ())
+        self.context.bot.send_message.assert_not_awaited()  # nothing left over to report
+
+    async def test_confirm_reports_messages_that_could_not_be_deleted(self):
+        self.context.bot.delete_message.side_effect = Forbidden("no rights")
+        update, query = self.press("delete_confirm")
+        with patched_config(PUBLIC_CHANNEL_ID="-1001"):
+            await handle_callback_query(update, self.context)
+        self.assertIsNone(db.get_event(self.event_id))
+        self.assertIn("post sul canale", self.context.bot.send_message.call_args.kwargs["text"])
+
+    async def test_second_confirm_on_a_deleted_event(self):
+        db.delete_event(self.event_id)
+        update, query = self.press("delete_confirm")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(query.answer.call_args.args[0], "Questo evento è già stato eliminato.")
+        self.context.bot.delete_message.assert_not_awaited()
+
+    async def test_only_cancelled_events_can_be_deleted(self):
+        db.update_event_status(self.event_id, "approved")
+        update, query = self.press("delete_confirm")
+        await handle_callback_query(update, self.context)
+        self.assertIsNotNone(db.get_event(self.event_id))
+        self.assertIn("solo gli eventi annullati", query.answer.call_args.args[0])
+
+    async def test_eventbrite_orders_still_open_block_the_deletion(self):
+        db.set_eventbrite_info(self.event_id, eventbrite_event_id="eb1", eventbrite_status="closed")
+        update, query = self.press("delete_confirm")
+        with patch("bot.callbacks.events.delete_event_everywhere", new_callable=AsyncMock) as delete:
+            await handle_callback_query(update, self.context)
+        delete.assert_not_awaited()
+        self.assertIsNotNone(db.get_event(self.event_id))
+        self.assertIn("prenotazioni attive su Eventbrite", query.answer.call_args.args[0])
+
+    async def test_eventbrite_refusal_keeps_the_event_and_the_buttons(self):
+        update, query = self.press("delete_confirm")
+        with patch("bot.callbacks.events.delete_event_everywhere", new_callable=AsyncMock,
+                   return_value=DeletionResult(eventbrite_error="CANNOT_DELETE")):
+            await handle_callback_query(update, self.context)
+        self.assertIn("CANNOT_DELETE", self.context.bot.send_message.call_args.kwargs["text"])
+        self.assertIn(f"delete_event_{self.event_id}", self.markup_callbacks(query))
+        query.edit_message_caption.assert_not_awaited()
+
+    async def test_reactivate_on_a_deleted_event_changes_nothing(self):
+        db.delete_event(self.event_id)
+        update, query = self.press("reactivate_event")
+        with patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock) as refresh:
+            await handle_callback_query(update, self.context)
+        refresh.assert_not_awaited()
+        query.edit_message_caption.assert_not_awaited()
+        self.assertTrue(query.answer.call_args.kwargs.get("show_alert"))
+
+
+class TestCommandConfirmationPrompts(TempDBMixin, unittest.IsolatedAsyncioTestCase):
+    """Confirm/back on the prompt sent by /event_cancel, /event_cancel_eventbrite, /event_delete (`_cmd` marker):
+    the clicked message is the prompt, so the stored admin card is redrawn instead."""
+
+    def setUp(self):
+        super().setUp()
+        self.context = make_context()
+        self.update_messages = patch("bot.callbacks.events.update_event_messages", new_callable=AsyncMock).start()
+        self.notice = patch("bot.callbacks.events.send_cancellation_notice", new_callable=AsyncMock).start()
+        self.addCleanup(patch.stopall)
+
+    def with_card(self, event_id):
+        db.update_event_field(event_id, "admin_message_id", 500)
+        return event_id
+
+    def press(self, data):
+        return callback_update(data, text="⚠️ Annullare l'evento?", message_id=900)
+
+    def stored_card_edit(self):
+        return self.context.bot.edit_message_caption.call_args.kwargs
+
+    async def test_cancel_confirm_redraws_the_stored_card_and_closes_the_prompt(self):
+        event_id = self.with_card(create_event(status="approved"))
+        update, query = self.press(f"cancel_confirm_{event_id}_cmd")
+        with patched_config(ADMIN_CHAT_ID="-100777"):
+            await handle_callback_query(update, self.context)
+
+        self.assertEqual(db.get_event(event_id)["status"], "cancelled")
+        card = self.stored_card_edit()
+        self.assertEqual((card["chat_id"], card["message_id"]), ("-100777", 500))
+        self.assertTrue(card["caption"].endswith("⚠️ ANNULLATO"))
+        self.assertIn(f"reactivate_event_{event_id}",
+                      [b.callback_data for row in card["reply_markup"].inline_keyboard for b in row])
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"], f"⚠️ Evento #{event_id} annullato.")
+        self.assertNotIn("reply_markup", query.edit_message_text.call_args.kwargs)
+        self.assertIsNone(self.update_messages.call_args.kwargs["current_query"])
+        self.notice.assert_awaited_once()
+
+    async def test_text_card_falls_back_to_a_text_edit(self):
+        event_id = self.with_card(create_event(status="approved"))
+        self.context.bot.edit_message_caption.side_effect = Exception("Bad Request: there is no caption in the message to edit")
+        update, _query = self.press(f"cancel_confirm_{event_id}_cmd")
+        with patched_config(ADMIN_CHAT_ID="-100777"):
+            await handle_callback_query(update, self.context)
+        self.assertTrue(self.context.bot.edit_message_text.call_args.kwargs["text"].endswith("⚠️ ANNULLATO"))
+
+    async def test_without_a_stored_card_only_the_prompt_changes(self):
+        event_id = create_event(status="approved")
+        update, query = self.press(f"cancel_confirm_{event_id}_cmd")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(db.get_event(event_id)["status"], "cancelled")
+        self.context.bot.edit_message_caption.assert_not_awaited()
+        query.edit_message_text.assert_awaited_once()
+
+    async def test_cancel_abort_only_closes_the_prompt(self):
+        event_id = self.with_card(create_event(status="approved"))
+        update, query = self.press(f"cancel_abort_{event_id}_cmd")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"], "Annullamento interrotto.")
+        query.edit_message_reply_markup.assert_not_awaited()
+        self.assertEqual(db.get_event(event_id)["status"], "approved")
+
+    async def test_repeated_cancel_confirm_closes_the_prompt(self):
+        event_id = create_event(status="cancelled")
+        update, query = self.press(f"cancel_confirm_{event_id}_cmd")
+        await handle_callback_query(update, self.context)
+        self.notice.assert_not_awaited()
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"], "Evento già annullato.")
+
+    async def test_delete_confirm_from_a_command(self):
+        event_id = self.with_card(create_event(status="cancelled", telegram_message_id=11))
+        update, query = self.press(f"delete_confirm_{event_id}_cmd")
+        with patched_config(ADMIN_CHAT_ID="-100777", PUBLIC_CHANNEL_ID="-1001"):
+            await handle_callback_query(update, self.context)
+
+        self.assertIsNone(db.get_event(event_id))
+        self.context.bot.delete_message.assert_awaited_once_with(chat_id="-1001", message_id=11)
+        card = self.stored_card_edit()
+        self.assertTrue(card["caption"].endswith("🗑️ ELIMINATO"))
+        self.assertEqual(card["reply_markup"].inline_keyboard, ())
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"], f"🗑️ Evento #{event_id} eliminato.")
+
+    async def test_delete_eventbrite_refusal_from_a_command_leaves_the_card(self):
+        event_id = self.with_card(create_event(status="cancelled"))
+        update, query = self.press(f"delete_confirm_{event_id}_cmd")
+        with patch("bot.callbacks.events.delete_event_everywhere", new_callable=AsyncMock,
+                   return_value=DeletionResult(eventbrite_error="CANNOT_DELETE")):
+            await handle_callback_query(update, self.context)
+        self.assertIn("CANNOT_DELETE", query.edit_message_text.call_args.kwargs["text"])
+        self.context.bot.edit_message_caption.assert_not_awaited()
+        self.assertIsNotNone(db.get_event(event_id))
+
+    async def test_delete_abort_from_a_command(self):
+        event_id = create_event(status="cancelled")
+        update, query = self.press(f"delete_abort_{event_id}_cmd")
+        await handle_callback_query(update, self.context)
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"], "Eliminazione interrotta.")
+        self.assertIsNotNone(db.get_event(event_id))
+
+    async def test_delete_from_a_command_on_an_event_no_longer_cancelled(self):
+        event_id = create_event(status="approved")
+        update, query = self.press(f"delete_confirm_{event_id}_cmd")
+        await handle_callback_query(update, self.context)
+        self.assertIn("solo gli eventi annullati", query.edit_message_text.call_args.kwargs["text"])
+        self.assertIsNotNone(db.get_event(event_id))
+
+    async def test_eventbrite_cancel_from_a_command(self):
+        event_id = create_event(status="approved")
+        db.set_eventbrite_info(event_id, eventbrite_event_id="eb1", eventbrite_status="live")
+        update, query = self.press(f"eb_cancel_do_{event_id}_cmd")
+        with patch("bot.callbacks.events.cancel_only_on_eventbrite", new_callable=AsyncMock) as cancel:
+            await handle_callback_query(update, self.context)
+        cancel.assert_awaited_once()
+        self.assertEqual(cancel.call_args.args[1]["id"], event_id)
+        self.assertIn("Eventbrite", query.edit_message_text.call_args.kwargs["text"])
+
+    async def test_eventbrite_cancel_from_a_command_with_nothing_to_cancel(self):
+        event_id = create_event(status="approved")
+        update, query = self.press(f"eb_cancel_do_{event_id}_cmd")
+        with patch("bot.callbacks.events.cancel_only_on_eventbrite", new_callable=AsyncMock) as cancel:
+            await handle_callback_query(update, self.context)
+        cancel.assert_not_awaited()
+        self.assertEqual(query.edit_message_text.call_args.kwargs["text"],
+                         "Niente da annullare su Eventbrite per questo evento.")

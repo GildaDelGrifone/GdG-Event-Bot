@@ -75,6 +75,12 @@ BUTTON_BACK = "↩️ Indietro"
 BUTTON_CONFIRM_CANCEL = "✅ Sì, annulla"
 
 
+BUTTON_DELETE_EVENT = "🗑️ Elimina evento"
+
+
+BUTTON_CONFIRM_DELETE = "✅ Sì, elimina per sempre"
+
+
 BUTTON_REACTIVATE = "♻️ Riattiva Evento"
 
 

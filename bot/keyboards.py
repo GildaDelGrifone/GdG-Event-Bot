@@ -6,7 +6,7 @@ from core.eventbrite import dashboard_url, eventbrite_enabled, order_cancel_url,
 from bot.state import runtime_state
 from utils.templates.keyboards import (
     BUTTON_ADD_SUBSCRIBER, BUTTON_BACK, BUTTON_BOOK, BUTTON_CANCEL_EVENT, BUTTON_CLOSE, BUTTON_CONFIRM_CANCEL,
-    BUTTON_DELETE, BUTTON_DISCARD, BUTTON_DISCARD_ARTICLE, BUTTON_DISCARD_RECAP, BUTTON_EB_CANCEL, BUTTON_EB_COMPLETE_CANCEL,
+    BUTTON_CONFIRM_DELETE, BUTTON_DELETE, BUTTON_DELETE_EVENT, BUTTON_DISCARD, BUTTON_DISCARD_ARTICLE, BUTTON_DISCARD_RECAP, BUTTON_EB_CANCEL, BUTTON_EB_COMPLETE_CANCEL,
     BUTTON_EB_CONFIRM_CANCEL, BUTTON_EB_DASHBOARD_LINK, BUTTON_EB_PUBLISH, BUTTON_EB_RECREATE, BUTTON_FULL, BUTTON_SOLD_OUT,
     BUTTON_LIST, BUTTON_MANAGE_SUBS, BUTTON_PUBLISH, BUTTON_PUBLISH_EB_ONLY, BUTTON_PUBLISH_PLUS_EB,
     BUTTON_PUBLISH_ASTRO, BUTTON_PUBLISH_RECAP, BUTTON_PUBLISH_TELEGRAM_AND_EB, BUTTON_PUBLISH_WORDPRESS,
@@ -115,27 +115,42 @@ def _eventbrite_row(event_id, event):
     return row
 
 
-def get_eventbrite_cancel_confirmation_keyboard(event_id):
+# Callback marker of the confirmation prompts sent by /event_cancel, /event_cancel_eventbrite and /event_delete:
+# there the clicked message is the prompt, not the admin card (bot.callbacks.events._parse_payload)
+COMMAND_MARKER = "_cmd"
+
+
+def _confirmation_keyboard(confirm_label, confirm_prefix, abort_prefix, event_id, from_command):
+    marker = COMMAND_MARKER if from_command else ""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(confirm_label, callback_data=f"{confirm_prefix}{event_id}{marker}"),
+        InlineKeyboardButton(BUTTON_BACK, callback_data=f"{abort_prefix}{event_id}{marker}"),
+    ]])
+
+
+def get_eventbrite_cancel_confirmation_keyboard(event_id, from_command=False):
     """Confirmation for [🚫 Annulla su Eventbrite]: cancels only the Eventbrite event, Telegram stays active."""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(BUTTON_EB_CONFIRM_CANCEL, callback_data=f"eb_cancel_do_{event_id}"),
-        InlineKeyboardButton(BUTTON_BACK, callback_data=f"cancel_abort_{event_id}"),
-    ]])
+    return _confirmation_keyboard(BUTTON_EB_CONFIRM_CANCEL, "eb_cancel_do_", "cancel_abort_", event_id, from_command)
 
 
-def get_cancel_confirmation_keyboard(event_id):
+def get_cancel_confirmation_keyboard(event_id, from_command=False):
     """Shown in place of the approved-card buttons after [❌ Annulla Evento], so a misclick cannot cancel an event."""
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(BUTTON_CONFIRM_CANCEL, callback_data=f"cancel_confirm_{event_id}"),
-        InlineKeyboardButton(BUTTON_BACK, callback_data=f"cancel_abort_{event_id}"),
-    ]])
+    return _confirmation_keyboard(BUTTON_CONFIRM_CANCEL, "cancel_confirm_", "cancel_abort_", event_id, from_command)
 
 
 def get_cancelled_event_keyboard(event_id):
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(BUTTON_REACTIVATE, callback_data=f"reactivate_event_{event_id}"),
-        _manage_subs_button(event_id),
-    ]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(BUTTON_REACTIVATE, callback_data=f"reactivate_event_{event_id}"),
+            _manage_subs_button(event_id),
+        ],
+        [InlineKeyboardButton(BUTTON_DELETE_EVENT, callback_data=f"delete_event_{event_id}")],
+    ])
+
+
+def get_delete_confirmation_keyboard(event_id, from_command=False):
+    """Shown in place of the cancelled-card buttons after [🗑️ Elimina evento]: the deletion cannot be undone."""
+    return _confirmation_keyboard(BUTTON_CONFIRM_DELETE, "delete_confirm_", "delete_abort_", event_id, from_command)
 
 
 def get_discarded_event_keyboard(event_id):

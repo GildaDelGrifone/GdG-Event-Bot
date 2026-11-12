@@ -14,7 +14,7 @@ class TestEventGenerateCommand(unittest.IsolatedAsyncioTestCase):
 
         with patched_config(ADMIN_CHAT_ID=ADMIN_CHAT):
             await event_generate_command(update, make_context())
-            update.message.reply_text.assert_called_once_with("Non sei autorizzato.")
+            update.message.reply_text.assert_not_called()
 
     async def test_event_generate_command_no_text_shows_help(self):
         update = make_update(chat_id=ADMIN_CHAT, text="/event_generate")

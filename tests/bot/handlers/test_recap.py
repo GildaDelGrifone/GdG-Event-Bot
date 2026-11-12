@@ -6,7 +6,7 @@ from telegram.error import TelegramError
 
 import core.db as db
 from bot.handlers.recap import (
-    handle_discussion_forward, manual_recap_command, recap_article_command, recap_reminder_send_command,
+    handle_discussion_forward, manual_recap_command, recap_article_generate_command, recap_reminder_send_command,
 )
 from bot.service.open_seats import send_open_seats_after_recap
 from tests.support.config import as_admin_chat, patched_config
@@ -17,12 +17,12 @@ from tests.support.telegram import admin_update, make_context, make_message, mak
 
 class TestRecapArticleCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def _run(self, args, events=(), update=None):
-        update = update or admin_update(message_id=5)
-        context = make_context(args=args)
+        update = update or admin_update(text=" ".join(["/recap_article_generate", *args]), message_id=5)
+        context = make_context()
         with as_admin_chat(), \
              patch("bot.handlers.recap.get_pending_events_for_recap", return_value=list(events)) as load, \
              patch("bot.handlers.recap.run_article_pipeline") as pipeline:
-            await recap_article_command(update, context)
+            await recap_article_generate_command(update, context)
         return update, context, load, pipeline
 
     async def test_regenerates_the_article_for_the_given_date(self):
@@ -53,7 +53,7 @@ class TestRecapArticleCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         pipeline.assert_not_called()
 
     async def test_non_admin_is_ignored(self):
-        update = make_update(text="/recap_article", chat_id=1, user=MagicMock(id=1, username="x"))
+        update = make_update(text="/recap_article_generate", chat_id=1, user=MagicMock(id=1, username="x"))
         _update, _context, load, pipeline = await self._run([], [{"id": 1}], update=update)
 
         load.assert_not_called()
@@ -61,9 +61,10 @@ class TestRecapArticleCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class TestManualRecapCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
-    async def _recap(self, args, message_id=1, send_side_effect=None):
-        update = admin_update(message_id=message_id)
-        context = make_context(args=args)
+    async def _recap(self, args, message_id=1, send_side_effect=None, caption=False):
+        text = " ".join(["/recap_generate", *args])
+        update = admin_update(message_id=message_id, **({"caption": text, "photo": [object()]} if caption else {"text": text}))
+        context = make_context()
         context.bot.send_message.side_effect = send_side_effect
         with as_admin_chat(DATA_DIR=self.temp_dir.name), patch("core.scheduler.recap.create_collage", return_value=None):
             await manual_recap_command(update, context)
@@ -99,6 +100,10 @@ class TestManualRecapCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs["text"], "Nessun evento in programma per la data 15-09-2026.")
         self.assertEqual(call_kwargs["reply_to_message_id"], 778)
         update.message.reply_text.assert_not_called()
+
+    async def test_date_in_a_photo_caption_is_read(self):
+        update, send_message = await self._recap(["15-09-2026"], message_id=778, caption=True)
+        self.assertEqual(send_message.call_args.kwargs["text"], "Nessun evento in programma per la data 15-09-2026.")
 
     async def test_manual_recap_command_invalid_date_format(self):
         update, _send_message = await self._recap(["not-a-valid-date"])

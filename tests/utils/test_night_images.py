@@ -1,6 +1,7 @@
 import datetime
 import os
 import unittest
+import zipfile
 
 from tests.support.config import patched_config
 from tests.support.folders import FolderTestCase
@@ -76,6 +77,58 @@ class TestNightImages(FolderTestCase):
         self.zip({"collage_a.jpg": b"1", "collage_b.jpg": b"2"})
 
         self.assertEqual(sorted(night_images.collage_names([self.day])), ["collage_a.jpg", "collage_b.jpg"])
+
+
+
+class TestDeleteEventImages(FolderTestCase):
+    def setUp(self):
+        super().setUp()
+        self.event = {"id": 7, "normalized_date": "28-10-2026", "image_path": os.path.join(self.day, "event_x.jpg")}
+
+    def names_in_zip(self, path):
+        with zipfile.ZipFile(path) as archive:
+            return sorted(archive.namelist())
+
+    def test_remove_from_archive_keeps_the_other_members(self):
+        archive = self.zip({"event_x.jpg": b"a", "event_y.jpg": b"b"})
+        self.assertEqual(night_images.remove_from_archive(archive, ["event_x.jpg"]), ["event_x.jpg"])
+        self.assertEqual(self.names_in_zip(archive), ["event_y.jpg"])
+
+    def test_remove_from_archive_deletes_an_empty_zip(self):
+        archive = self.zip({"event_x.jpg": b"a"})
+        night_images.remove_from_archive(archive, ["event_x.jpg"])
+        self.assertFalse(os.path.exists(archive))
+
+    def test_loose_and_zipped_files_of_the_event_are_deleted(self):
+        self.write("event_x.jpg")
+        self.write("story_7_abc.jpg")
+        self.write("story_77_abc.jpg")  # another event: same digits, different id
+        self.write("event_other.jpg")
+        archive = self.zip({"story_7_old.jpg": b"s", "event_other2.jpg": b"o"})
+        with patched_config(DATA_DIR=self.data):
+            deleted = night_images.delete_event_images(self.event)
+        self.assertEqual(sorted(deleted), ["event_x.jpg", "story_7_abc.jpg", "story_7_old.jpg"])
+        self.assertEqual(sorted(os.listdir(self.day)), ["archive.zip", "event_other.jpg", "story_77_abc.jpg"])
+        self.assertEqual(self.names_in_zip(archive), ["event_other2.jpg"])
+
+    def test_image_in_the_archive_is_removed(self):
+        archive = self.zip({"event_x.jpg": b"a", "event_y.jpg": b"b"})
+        with patched_config(DATA_DIR=self.data):
+            night_images.delete_event_images(self.event)
+        self.assertEqual(self.names_in_zip(archive), ["event_y.jpg"])
+
+    def test_keep_image_leaves_the_shared_file(self):
+        self.write("event_x.jpg")
+        self.write("story_7_abc.jpg")
+        with patched_config(DATA_DIR=self.data):
+            night_images.delete_event_images(self.event, keep_image=True)
+        self.assertEqual(os.listdir(self.day), ["event_x.jpg"])
+
+    def test_event_without_date_or_image_touches_nothing(self):
+        self.write("story_7_abc.jpg")
+        with patched_config(DATA_DIR=self.data):
+            self.assertEqual(night_images.delete_event_images({"id": 7, "normalized_date": "", "image_path": None}), [])
+        self.assertTrue(os.path.exists(os.path.join(self.day, "story_7_abc.jpg")))
 
 
 if __name__ == "__main__":

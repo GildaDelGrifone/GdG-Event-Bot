@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from core import config
 from core.db import clear_eventbrite_info, get_eventbrite_cleanup_candidates
 from core.eventbrite import EventbriteError, delete_eventbrite_event, eventbrite_enabled
-from bot.service.eventbrite import refresh_admin_card
+from bot.service.eventbrite import is_gone, refresh_admin_card
 from utils.templates.eventbrite import (
     format_cleanup_deleted, format_cleanup_failed, format_cleanup_kept, format_cleanup_label,
     format_cleanup_pending_orders, format_cleanup_refused,
@@ -20,10 +20,6 @@ RATE_LIMIT_ERROR = "HIT_RATE_LIMIT"
 
 def _label(event):
     return format_cleanup_label(event['id'], event.get('title'))
-
-
-def _already_gone(error):
-    return error.status_code == 404 or error.error == "NOT_FOUND"
 
 
 async def _send_summary(bot, deleted, kept):
@@ -61,7 +57,7 @@ async def delete_cancelled_eventbrite_events(bot, today=None):
             try:
                 await asyncio.to_thread(delete_eventbrite_event, event['eventbrite_event_id'])
             except EventbriteError as e:
-                if not _already_gone(e):
+                if not is_gone(e):
                     raise
             clear_eventbrite_info(event['id'])
             deleted.append(label)

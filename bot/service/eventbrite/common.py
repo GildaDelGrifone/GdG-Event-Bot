@@ -125,9 +125,15 @@ def _assign_collection(event, leave_other=False):
     return None
 
 
+def eventbrite_cancellable(event):
+    """True when [🚫 Annulla su Eventbrite] / /event_cancel_eventbrite can act: approved, linked, live or unpublished."""
+    return bool(event and event.get('status') == 'approved' and event.get('eventbrite_event_id')
+                and event.get('eventbrite_status') in ('live', 'unpublished'))
+
+
 def is_gone(error):
     """True when Eventbrite says the event does not exist any more (e.g. it was deleted by hand in the dashboard)."""
-    return isinstance(error, EventbriteError) and error.error == 'NOT_FOUND'
+    return isinstance(error, EventbriteError) and (error.error == 'NOT_FOUND' or error.status_code == 404)
 
 
 async def unlink_deleted_eventbrite_event(context, event_id):

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import core.db as db
 from bot.callbacks.venues import handle_venue_pick
 from bot.handlers.control import (
-    bot_eb_notif_toggle_command, bot_settings_clear_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_pause_command, bot_resume_command, bot_status_command,
+    bot_eventbrite_notif_toggle_command, bot_settings_clear_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_pause_command, bot_resume_command, bot_status_command,
 )
 from bot.state import runtime_state
 from bot.handlers.edit import event_edit_command
@@ -94,27 +94,27 @@ class TestEbNotifToggle(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def test_toggle_flips_the_announcements_and_tells_the_admin(self):
         update = admin_update(user=make_user(998877, "admin_boss"))
         with as_admin_chat(), eventbrite_credentials(), patch("bot.handlers.control.logger") as mock_logger:
-            await bot_eb_notif_toggle_command(update, make_context())
+            await bot_eventbrite_notif_toggle_command(update, make_context())
             self.assertFalse(runtime_state.eventbrite_booking_notifications)
             self.assertIs(db.get_setting("eventbrite_booking_notifications"), False)
             self.assertIn("DISATTIVATI", update.message.reply_text.call_args.args[0])
             self.assertTrue(any("998877" in msg and "OFF" in msg for msg in _info_messages(mock_logger)))
 
-            await bot_eb_notif_toggle_command(update, make_context())
+            await bot_eventbrite_notif_toggle_command(update, make_context())
             self.assertTrue(runtime_state.eventbrite_booking_notifications)
             self.assertIn("ATTIVI", update.message.reply_text.call_args.args[0])
 
     async def test_without_eventbrite_nothing_changes(self):
         update = admin_update()
         with as_admin_chat(), patched_config(EVENTBRITE_TOKEN=None):
-            await bot_eb_notif_toggle_command(update, make_context())
+            await bot_eventbrite_notif_toggle_command(update, make_context())
         self.assertTrue(runtime_state.eventbrite_booking_notifications)
         self.assertIn("non è configurato", update.message.reply_text.call_args.args[0])
 
     async def test_outsiders_cannot_toggle_it(self):
         update = admin_update()
         with patch("bot.common.auth.config.ADMIN_CHAT_ID", "12345"), eventbrite_credentials():
-            await bot_eb_notif_toggle_command(update, make_context())
+            await bot_eventbrite_notif_toggle_command(update, make_context())
         self.assertTrue(runtime_state.eventbrite_booking_notifications)
 
     async def test_status_shows_the_announcements_only_with_eventbrite(self):
@@ -143,7 +143,7 @@ class TestSettingsClear(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         with as_admin_chat(), eventbrite_credentials():
             await bot_pause_command(update, make_context())
             await bot_eventbrite_only_toggle_command(update, make_context())
-            await bot_eb_notif_toggle_command(update, make_context())
+            await bot_eventbrite_notif_toggle_command(update, make_context())
             db.set_setting("eventbrite_venue", "v2")
             runtime_state.eventbrite_venue = "v2"
 

@@ -9,9 +9,11 @@ from core import config
 from core.db import update_event_field
 from utils.image_utils import save_image_locally, delete_local_image
 from utils.templates.edit import (
-    EDIT_EVENT_ID_UNKNOWN, EDIT_IMAGE_MISSING, EDIT_IMAGE_SAVE_ERROR, EDIT_NO_REPLY, EDIT_PROMPT_EXPIRED, EDIT_PROMPT_MARKER,
+    EDIT_EVENT_ID_UNKNOWN, EDIT_IMAGE_MISSING, EDIT_IMAGE_SAVE_ERROR, EDIT_PROMPT_EXPIRED, EDIT_PROMPT_MARKER,
+    format_edit_usage,
 )
 from bot.common.auth import admin_only
+from bot.common.messages import resolve_message
 from bot.common.parsing import extract_event_id_from_reply
 from bot.handlers.albums import extract_image_bytes_from_update
 from bot.keyboards import admin_card_keyboard
@@ -37,29 +39,33 @@ async def _edit_image(update, event_id, current_event, value):
     return success
 
 
-async def _resolve_edit_target(update, cmd, value):
-    """Returns (event_id, target_msg); event_id is None after an explanatory reply has been sent."""
-    reply_msg = update.message.reply_to_message
+async def _resolve_edit_target(message, cmd, value):
+    """Returns (event_id, target_msg, value); event_id is None after an explanatory reply has been sent.
 
-    if cmd == "/event_edit_image" and value.isdigit():
-        event_id = int(value)
-        target_msg = reply_msg if reply_msg and extract_event_id_from_reply(reply_msg) == event_id else None
-        return event_id, target_msg
+    Like the other event commands, the event comes from the replied-to card (the whole text is then the value) or
+    from a leading id (`/event_edit_title 12 Nuovo titolo`). target_msg is the card to redraw when it is at hand.
+    """
+    reply_msg = message.reply_to_message
+    card_id = extract_event_id_from_reply(reply_msg) if reply_msg else None
+    parts = value.split(maxsplit=1)
+    explicit_id = int(parts[0]) if parts and parts[0].isdigit() else None
+    is_image = cmd == "/event_edit_image"
 
-    if not reply_msg:
-        await update.message.reply_text(EDIT_NO_REPLY)
-        return None, None
-
-    event_id = extract_event_id_from_reply(reply_msg)
-    if not event_id:
-        await update.message.reply_text(EDIT_EVENT_ID_UNKNOWN)
-        return None, None
-    return event_id, reply_msg
+    if card_id and not (is_image and explicit_id):
+        return card_id, reply_msg, value
+    if explicit_id and (is_image or not card_id):
+        rest = parts[1].strip() if len(parts) > 1 else ""
+        return explicit_id, reply_msg if card_id == explicit_id else None, rest
+    await message.reply_text(EDIT_EVENT_ID_UNKNOWN if reply_msg and not is_image else format_edit_usage(cmd))
+    return None, None, None
 
 
 @admin_only()
 async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text_parts = (update.message.text or update.message.caption or "").split(maxsplit=1)
+    message = resolve_message(update)
+    if not message:
+        return
+    text_parts = (message.text or message.caption or "").split(maxsplit=1)
     if not text_parts:
         return
     cmd = text_parts[0].lower().split("@")[0]
@@ -68,12 +74,12 @@ async def event_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if cmd not in EDIT_COMMAND_FIELDS:
         return
 
-    event_id, target_msg = await _resolve_edit_target(update, cmd, value)
+    event_id, target_msg, value = await _resolve_edit_target(message, cmd, value)
     if not event_id:
         return
 
     async def reply(text, parse_mode=None):
-        await update.message.reply_text(text, **({"parse_mode": parse_mode} if parse_mode else {}))
+        await message.reply_text(text, **({"parse_mode": parse_mode} if parse_mode else {}))
 
     await apply_edit(
         context, event_id, cmd, value, reply, update.effective_user, target_msg=target_msg, update=update,

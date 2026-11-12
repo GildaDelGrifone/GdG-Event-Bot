@@ -38,7 +38,8 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def test_admin_commands(self):
         update = admin_update()
         reply_text = update.message.reply_text
-        context = make_context(args=[str(self.event_id), "@peach", "2"])
+        context = make_context()
+        update.message.text = " ".join(["/event_sub_add", str(self.event_id), "@peach", "2"])
 
         with admin_chat_with_discussion():
             await event_sub_add_command(update, context)
@@ -47,7 +48,7 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seats_of(self.event_id, "peach"), 2)
 
             reply_text.reset_mock()
-            context.args = [str(self.event_id), "@peach", "1"]
+            update.message.text = " ".join(["/event_sub_remove", str(self.event_id), "@peach", "1"])
             await event_sub_remove_command(update, context)
             reply_text.assert_called_once()
             self.assertIn("Rimossi 1 posto/i", reply_text.call_args[0][0])
@@ -64,7 +65,8 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     async def test_admin_commands_reply_mode(self):
         update = admin_update(reply_to=admin_card(self.event_id, text=None, message_id=9999))
         reply_text = update.message.reply_text
-        context = make_context(args=["@bowser", "1"])
+        context = make_context()
+        update.message.text = " ".join(["/event_sub_add", "@bowser", "1"])
 
         with admin_chat_with_discussion():
             await event_sub_add_command(update, context)
@@ -74,7 +76,7 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
             # Remove via reply
             reply_text.reset_mock()
-            context.args = ["@bowser"]
+            update.message.text = " ".join(["/event_sub_remove", "@bowser"])
             await event_sub_remove_command(update, context)
             reply_text.assert_called_once()
             self.assertIn("Rimossi", reply_text.call_args[0][0])
@@ -82,7 +84,8 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_admin_action_notice_on_admin_commands(self):
         update = admin_update(user=make_user(username="chief_admin"))
-        context = make_context(args=[str(self.event_id), "@wario", "2"])
+        context = make_context()
+        update.message.text = " ".join(["/event_sub_add", str(self.event_id), "@wario", "2"])
         send_message = context.bot.send_message
 
         with admin_chat_with_discussion():
@@ -98,7 +101,7 @@ class TestSubscriberCommands(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
             # /event_sub_remove
             send_message.reset_mock()
-            context.args = [str(self.event_id), "@wario", "1"]
+            update.message.text = " ".join(["/event_sub_remove", str(self.event_id), "@wario", "1"])
             await event_sub_remove_command(update, context)
             send_message.assert_called_once()
             call_kwargs = send_message.call_args[1]
@@ -129,7 +132,8 @@ class TestUnpublishedEventSubscribers(TempDBMixin, unittest.IsolatedAsyncioTestC
         self.update = admin_update(user=make_user(111, "chief_admin"))
 
     async def test_unpublished_event_sub_add_command_does_not_send_discussion_notice(self):
-        context = make_context(args=[str(self.pending_event_id), "@player1", "2"])
+        context = make_context()
+        self.update.message.text = " ".join(["/event_sub_add", str(self.pending_event_id), "@player1", "2"])
 
         with admin_chat_with_discussion():
             await event_sub_add_command(self.update, context)
@@ -145,7 +149,8 @@ class TestUnpublishedEventSubscribers(TempDBMixin, unittest.IsolatedAsyncioTestC
 
     async def test_unpublished_event_sub_remove_command_does_not_send_discussion_notice(self):
         db.admin_add_subscriber(self.pending_event_id, "@player1", seats=2)
-        context = make_context(args=[str(self.pending_event_id), "@player1", "1"])
+        context = make_context()
+        self.update.message.text = " ".join(["/event_sub_remove", str(self.pending_event_id), "@player1", "1"])
 
         with admin_chat_with_discussion():
             await event_sub_remove_command(self.update, context)

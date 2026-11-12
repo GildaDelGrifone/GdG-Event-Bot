@@ -524,7 +524,9 @@ def create_story_image(event_data, original_image_path, output_dir):
 
         # Save
         daily_dir = get_daily_dir(output_dir, event_data.get('normalized_date'))
-        filename = f"story_{uuid.uuid4()}.jpg"
+        # The event id in the name lets a permanent deletion find the event's stories (utils.night_images.story_prefix)
+        event_id = event_data.get('id')
+        filename = f"story_{event_id}_{uuid.uuid4()}.jpg" if event_id else f"story_{uuid.uuid4()}.jpg"
         filepath = os.path.join(daily_dir, filename)
         story_img.save(filepath, quality=90)
         return filepath

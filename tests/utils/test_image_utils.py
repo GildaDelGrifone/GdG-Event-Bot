@@ -17,6 +17,7 @@ from utils.image_utils import (
     compress_image_to_bytes,
     create_collage,
     create_collage_from_bytes,
+    create_story_image,
     move_image_locally,
     pad_to_aspect,
     save_compressed_image,
@@ -211,6 +212,22 @@ class TestPadToAspect(TempDirMixin, unittest.TestCase):
         self.assertLess(centre[2], 60)
         with Image.open(source) as original:
             self.assertEqual(original.size, (300, 600))
+
+
+
+class TestStoryImageName(TempDirMixin, unittest.TestCase):
+    """The event id in the story file name lets a permanent deletion find the event's stories."""
+
+    EVENT = {"title": "Titolo", "system": "D&D", "seats": "3/3", "normalized_date": "28-10-2026"}
+
+    def test_name_carries_the_event_id(self):
+        path = create_story_image({**self.EVENT, "id": 42}, None, self.temp_dir)
+        self.assertTrue(os.path.basename(path).startswith("story_42_"))
+        self.assertTrue(os.path.isfile(path))
+
+    def test_name_without_an_id(self):
+        path = create_story_image(dict(self.EVENT), None, self.temp_dir)
+        self.assertRegex(os.path.basename(path), r"^story_[0-9a-f-]{36}\.jpg$")
 
 
 if __name__ == "__main__":

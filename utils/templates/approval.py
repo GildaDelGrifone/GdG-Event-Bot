@@ -56,6 +56,9 @@ REACTIVATED_SUFFIX = "\n\n✅ RIATTIVATO"
 DISCARDED_SUFFIX = "\n\n❌ SCARTATO"
 
 
+DELETED_SUFFIX = "\n\n🗑️ ELIMINATO"
+
+
 POPUP_RESTORED = "Evento ripristinato: è di nuovo in attesa di approvazione."
 
 
@@ -80,6 +83,49 @@ POPUP_ALREADY_CANCELLED = "Evento già annullato."
 POPUP_REACTIVATED = "Evento riattivato!"
 
 
+POPUP_DELETION_ABORTED = "Eliminazione interrotta."
+
+
+POPUP_ALREADY_DELETED = "Questo evento è già stato eliminato."
+
+
+POPUP_DELETE_ONLY_CANCELLED = "Si possono eliminare solo gli eventi annullati: annulla prima l'evento."
+
+
+POPUP_DELETE_EB_ORDERS_OPEN = (
+    "L'evento ha ancora prenotazioni attive su Eventbrite: annullale dalla dashboard "
+    "(🔁 Completa annullamento) e poi riprova a eliminarlo."
+)
+
+
+POPUP_DELETE_EB_BUSY = "Pubblicazione su Eventbrite in corso: riprova tra qualche secondo."
+
+
+def format_delete_eventbrite_failed(event_id, reason):
+    return (
+        f"⚠️ Evento #{event_id} non eliminato: Eventbrite ha rifiutato la cancellazione ({reason}).\n"
+        "Non è stato toccato niente: risolvi su Eventbrite e riprova."
+    )
+
+
+def format_event_deleted_report(event_id, leftovers):
+    """leftovers: (description, link or None) of the public messages the bot could not delete."""
+    lines = [f"🗑️ Evento #{event_id} eliminato, ma questi messaggi non si sono potuti cancellare (fallo a mano):"]
+    for description, link in leftovers:
+        lines.append(f"- {description}: {link}" if link else f"- {description}")
+    return "\n".join(lines)
+
+
+def format_delete_db_failed(event_id):
+    return f"❌ Evento #{event_id}: errore del database durante l'eliminazione, l'evento è ancora salvato. Controlla i log e riprova."
+
+
+LEFTOVER_CHANNEL_POST = "post sul canale"
+
+
+LEFTOVER_DISCUSSION_REPLY = "messaggio di prenotazione nel gruppo di discussione"
+
+
 STORY_GENERATION_PROGRESS = "⏳ Generazione e pubblicazione Storia Instagram in corso..."
 
 
@@ -95,3 +141,53 @@ def format_channel_publish_error(event_id, error):
 
 def format_approved_without_telegram(event_id):
     return f"🔇 Evento #{event_id} approvato senza pubblicazione su Telegram."
+
+
+# /event_cancel, /event_cancel_eventbrite, /event_delete: same confirmation as the card buttons, sent as a reply
+
+EVENT_CANCEL_USAGE = "❌ Rispondi al messaggio di un evento (quello con i pulsanti) oppure usa: /event_cancel <id>"
+
+
+EVENT_CANCEL_EVENTBRITE_USAGE = (
+    "❌ Rispondi al messaggio di un evento (quello con i pulsanti) oppure usa: /event_cancel_eventbrite <id>"
+)
+
+
+EVENT_DELETE_USAGE = "❌ Rispondi al messaggio di un evento (quello con i pulsanti) oppure usa: /event_delete <id>"
+
+
+CANCEL_ONLY_APPROVED = "❌ Si possono annullare solo gli eventi pubblicati."
+
+
+def _event_label(event):
+    return f"#{event['id']} «{event.get('title') or 'Senza titolo'}»"
+
+
+def format_cancel_prompt(event):
+    return (
+        f"⚠️ Annullare l'evento {_event_label(event)}?\n"
+        "Il post nel canale verrà segnato come annullato e gli iscritti avvisati nel gruppo."
+    )
+
+
+def format_eb_cancel_prompt(event):
+    return f"⚠️ Annullare l'evento {_event_label(event)} solo su Eventbrite?\nSu Telegram resta attivo."
+
+
+def format_delete_prompt(event):
+    return (
+        f"🗑️ Eliminare per sempre l'evento {_event_label(event)}?\n"
+        "Spariscono post nel canale, messaggio di prenotazione nel gruppo, immagini e prenotazioni. Non si può annullare."
+    )
+
+
+def format_cancel_done(event_id):
+    return f"⚠️ Evento #{event_id} annullato."
+
+
+def format_eb_cancel_done(event_id):
+    return f"🚫 Annullamento su Eventbrite dell'evento #{event_id} avviato."
+
+
+def format_delete_done(event_id):
+    return f"🗑️ Evento #{event_id} eliminato."

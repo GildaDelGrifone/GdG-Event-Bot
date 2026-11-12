@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 USAGE = GENERATE_USAGE
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_generate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/event_generate in ADMIN_CHAT_ID."""
     msg = resolve_message(update)
