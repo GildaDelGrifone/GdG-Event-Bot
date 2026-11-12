@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timedelta
 
 import core.db as db
+from core.db.connection import execute
 from tests.support.db import TempDBMixin, create_event
 
 
@@ -16,6 +17,24 @@ class TestDeleteEvent(TempDBMixin, unittest.TestCase):
         self.assertTrue(res)
         self.assertIsNone(db.get_event(event_id))
         self.assertEqual(len(db.get_reservations_for_event(event_id)), 0)
+
+
+class TestImagePathInUse(TempDBMixin, unittest.TestCase):
+    def test_only_other_rows_count(self):
+        event_id = create_event(image_path="data/2026/10/28/event_a.jpg")
+        self.assertFalse(db.image_path_in_use("data/2026/10/28/event_a.jpg", event_id))
+        self.assertFalse(db.image_path_in_use(None, event_id))
+
+    def test_another_event_with_the_same_file(self):
+        event_id = create_event(image_path="data/2026/10/28/event_a.jpg")
+        create_event(image_path="data/2026/10/28/event_a.jpg")
+        self.assertTrue(db.image_path_in_use("data/2026/10/28/event_a.jpg", event_id))
+
+    def test_a_repost_template_with_the_same_file(self):
+        event_id = create_event(image_path="data/2026/10/28/event_a.jpg")
+        execute("INSERT INTO scheduled_events (title, text, image_path) VALUES ('T', 'x', ?)",
+                   ("data/2026/10/28/event_a.jpg",))
+        self.assertTrue(db.image_path_in_use("data/2026/10/28/event_a.jpg", event_id))
 
 
 class TestDiscardedEvents(TempDBMixin, unittest.TestCase):

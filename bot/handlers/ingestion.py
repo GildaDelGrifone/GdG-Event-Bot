@@ -74,7 +74,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-@admin_only(notify=True)
+@admin_only()
 async def manual_trigger_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/event_process (/ep): text comes from the command, else the replied message, else the album caption."""
     message = resolve_message(update)

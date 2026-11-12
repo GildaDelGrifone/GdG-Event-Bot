@@ -16,13 +16,14 @@ from core.eventbrite import eventbrite_enabled
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.control import (
     bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command,
-    bot_eb_notif_toggle_command, bot_settings_clear_command,
+    bot_eventbrite_notif_toggle_command, bot_settings_clear_command,
 )
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
+from bot.handlers.event_status import event_cancel_command, event_cancel_eventbrite_command, event_delete_command
 from bot.handlers.ingestion import process_message, manual_trigger_command
 from bot.handlers.public import event_mine_command, event_next_command, event_subs_command, start_command
-from bot.handlers.recap import manual_recap_command, recap_article_command, recap_reminder_send_command, handle_discussion_forward
+from bot.handlers.recap import manual_recap_command, recap_article_generate_command, recap_reminder_send_command, handle_discussion_forward
 from bot.handlers.repost import event_repost_command, event_schedule_invoke_command
 from bot.handlers.repost_schedule import (
     event_schedule_command, event_schedule_update_command, event_schedule_list_command,
@@ -138,14 +139,14 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)") | filters.CaptionRegex(r"^/(?:event_subs|subs)(?:_\d+|\s+\d+|$)"), event_subs_command))
     application.add_handler(CommandHandler("recap_generate", manual_recap_command))
     application.add_handler(CommandHandler("rg", manual_recap_command))
-    application.add_handler(CommandHandler("recap_article", recap_article_command, block=False))
+    application.add_handler(CommandHandler("recap_article_generate", recap_article_generate_command, block=False))
     application.add_handler(CommandHandler("recap_reminder_send", recap_reminder_send_command))
     application.add_handler(CommandHandler("bot_pause", bot_pause_command))
     application.add_handler(CommandHandler("bot_resume", bot_resume_command))
     application.add_handler(CommandHandler("bot_status", bot_status_command))
     application.add_handler(CommandHandler("bot_eventbrite_only_toggle", bot_eventbrite_only_toggle_command))
     application.add_handler(CommandHandler("bot_eventbrite_venue", bot_eventbrite_venue_command))
-    application.add_handler(CommandHandler("bot_eb_notif_toggle", bot_eb_notif_toggle_command))
+    application.add_handler(CommandHandler("bot_eventbrite_notif_toggle", bot_eventbrite_notif_toggle_command))
     application.add_handler(CommandHandler("bot_settings_clear", bot_settings_clear_command))
     
     edit_cmds = [
@@ -158,6 +159,9 @@ def main():
         application.add_handler(CommandHandler(cmd, event_edit_command, block=False))
     application.add_handler(CommandHandler("event_regenerate_story", event_regenerate_story_command, block=False))
     application.add_handler(CommandHandler("event_publish_eventbrite", event_publish_eventbrite_command, block=False))
+    application.add_handler(CommandHandler("event_cancel", event_cancel_command))
+    application.add_handler(CommandHandler("event_cancel_eventbrite", event_cancel_eventbrite_command))
+    application.add_handler(CommandHandler("event_delete", event_delete_command))
     application.add_handler(CommandHandler("event_sub_add", event_sub_add_command))
     application.add_handler(CommandHandler("event_sub_remove", event_sub_remove_command))
     application.add_handler(CommandHandler("event_repost", event_repost_command, block=False))
@@ -169,12 +173,12 @@ def main():
     # Caption command handlers (PTB CommandHandler only matches message.text, not message.caption)
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_edit_"), event_edit_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_process|ep)(\s|$|@)"), manual_trigger_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_generate|eg)(\s|$|@)"), event_generate_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_regenerate_story|ers)(\s|$|@)"), event_regenerate_story_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_generate(\s|$|@)"), event_generate_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_regenerate_story(\s|$|@)"), event_regenerate_story_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_publish_eventbrite(\s|$|@)"), event_publish_eventbrite_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(recap_generate|rg)(\s|$|@)"), manual_recap_command))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/recap_article(\s|$|@)"), recap_article_command, block=False))
-    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/(event_repost|er)(\s|$|@)"), event_repost_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/recap_article_generate(\s|$|@)"), recap_article_generate_command, block=False))
+    application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_repost(\s|$|@)"), event_repost_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule(\s|$|@)"), event_schedule_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule_invoke(\s|$|@)"), event_schedule_invoke_command, block=False))
     application.add_handler(MessageHandler(filters.CaptionRegex(r"^/event_schedule_update(\s|$|@)"), event_schedule_update_command, block=False))

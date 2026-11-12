@@ -74,6 +74,17 @@ def delete_event(event_id):
     return True
 
 
+@db_safe(default=True)
+def image_path_in_use(image_path, exclude_event_id):
+    """True when another event or a repost template still points to image_path (so the file must stay)."""
+    if not image_path:
+        return False
+    return bool(
+        fetch_one('SELECT 1 FROM events WHERE image_path = ? AND id != ? LIMIT 1', (image_path, exclude_event_id))
+        or fetch_one('SELECT 1 FROM scheduled_events WHERE image_path = ? LIMIT 1', (image_path,))
+    )
+
+
 @db_safe(default=False)
 def discard_event(event_id):
     """Hides a pending event (status 'discarded', reservations and image kept) until purge_discarded_events."""

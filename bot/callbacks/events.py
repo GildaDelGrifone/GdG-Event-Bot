@@ -11,7 +11,10 @@ from core.db import (
 from utils.image_utils import create_story_image
 from utils.night_images import restore_image_file
 from utils.templates.approval import (
-    APPROVED_SUFFIX, CANCELLED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_CANCELLATION_ABORTED,
+    APPROVED_SUFFIX, CANCELLED_SUFFIX, DELETED_SUFFIX, DISCARDED_SUFFIX, POPUP_ALREADY_CANCELLED, POPUP_ALREADY_DELETED,
+    POPUP_CANCELLATION_ABORTED, POPUP_DELETE_EB_BUSY, POPUP_DELETE_EB_ORDERS_OPEN, POPUP_DELETE_ONLY_CANCELLED,
+    POPUP_DELETION_ABORTED, format_cancel_done, format_delete_db_failed, format_delete_done, format_eb_cancel_done,
+    format_delete_eventbrite_failed, format_event_deleted_report,
     POPUP_LOADING_LOGO, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, POPUP_REACTIVATED, POPUP_RESTORE_GONE, POPUP_RESTORED,
     POPUP_RESTORED_WITHOUT_IMAGE, REACTIVATED_SUFFIX,
     STORY_GENERATED_CAPTION, STORY_GENERATION_ERROR, STORY_GENERATION_PROGRESS, format_approved_without_telegram,
@@ -24,11 +27,14 @@ from bot.common.auth import describe_user
 from bot.common.media import send_photo_resilient
 from bot.common.messages import edit_card, send_image_or_error, with_html_fallback
 from bot.keyboards import (
-    get_approval_keyboard, get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_discarded_event_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
-    get_eventbrite_cancel_confirmation_keyboard,
+    COMMAND_MARKER, get_approval_keyboard, get_approved_event_keyboard, get_cancel_confirmation_keyboard, get_discarded_event_keyboard, get_cancelled_event_keyboard, get_event_booking_keyboard,
+    get_delete_confirmation_keyboard, get_eventbrite_cancel_confirmation_keyboard,
 )
+from bot.service.deletion import delete_event_everywhere
+from bot.service.edits import redraw_stored_admin_card
 from bot.service.eventbrite import (
-    cancel_on_eventbrite, cancel_only_on_eventbrite, finish_eventbrite_cancellation, reactivate_on_eventbrite,
+    cancel_on_eventbrite, cancel_only_on_eventbrite, eventbrite_cancellable, finish_eventbrite_cancellation,
+    reactivate_on_eventbrite,
     retry_logo_on_eventbrite, start_eventbrite_publish,
 )
 from bot.service.posts import update_event_messages
@@ -36,7 +42,7 @@ from bot.state import runtime_state
 
 logger = logging.getLogger(__name__)
 
-STATUS_SUFFIXES = (APPROVED_SUFFIX, CANCELLED_SUFFIX, REACTIVATED_SUFFIX, DISCARDED_SUFFIX)
+STATUS_SUFFIXES = (APPROVED_SUFFIX, CANCELLED_SUFFIX, REACTIVATED_SUFFIX, DISCARDED_SUFFIX, DELETED_SUFFIX)
 
 
 def update_status_suffix(msg_text, new_suffix):
@@ -59,6 +65,28 @@ async def _mark_admin_card(query, suffix, action, keyboard=None, use_html=False)
         await (with_html_fallback(edit) if use_html else edit())
     except Exception as e:
         logger.error(f"Error updating admin message on {action}: {e}")
+
+
+def _parse_payload(payload):
+    """(event_id, from_command): confirmation prompts sent by a command carry COMMAND_MARKER after the id."""
+    from_command = payload.endswith(COMMAND_MARKER)
+    return int(payload[:-len(COMMAND_MARKER)] if from_command else payload), from_command
+
+
+async def _set_card(query, context, from_command, event, suffix, action, keyboard):
+    """Status line and buttons of the admin card: the clicked card, or the stored one after a command prompt."""
+    if from_command:
+        await redraw_stored_admin_card(context.bot, event, suffix, keyboard)
+    else:
+        await _mark_admin_card(query, suffix, action, keyboard=keyboard)
+
+
+async def _close_prompt(query, text):
+    """Replaces a command's confirmation prompt with the outcome, without buttons."""
+    try:
+        await edit_card(query, text)
+    except Exception as e:
+        logger.debug(f"Could not close the confirmation prompt: {e}")
 
 
 async def _publish_to_channel(context, query, event_id, event):
@@ -199,16 +227,11 @@ async def handle_eventbrite_recreate(query, context, payload):
     await start_eventbrite_publish(context, event_id, query.message.chat_id, recreate=True)
 
 
-def _eventbrite_cancellable(event):
-    return bool(event and event.get('status') == 'approved' and event.get('eventbrite_event_id')
-                and event.get('eventbrite_status') in ('live', 'unpublished'))
-
-
 async def handle_eventbrite_cancel_ask(query, context, payload):
     """[🚫 Annulla su Eventbrite] only asks for confirmation; the Telegram event is never touched."""
     event_id = int(payload)
     event = get_event(event_id)
-    if not _eventbrite_cancellable(event):
+    if not eventbrite_cancellable(event):
         await query.answer(POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, show_alert=True)
         return
     logger.info(f"{describe_user(query.from_user)} asked to cancel event #{event_id} on Eventbrite only.")
@@ -220,13 +243,17 @@ async def handle_eventbrite_cancel_ask(query, context, payload):
 
 
 async def handle_eventbrite_cancel_do(query, context, payload):
-    event_id = int(payload)
+    event_id, from_command = _parse_payload(payload)
     event = get_event(event_id)
-    if not _eventbrite_cancellable(event):
+    if not eventbrite_cancellable(event):
         await query.answer(POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE, show_alert=True)
+        if from_command:
+            await _close_prompt(query, POPUP_NOTHING_TO_CANCEL_ON_EVENTBRITE)
         return
     await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id} on Eventbrite only.")
+    if from_command:  # the card is refreshed by cancel_only_on_eventbrite through admin_message_id
+        await _close_prompt(query, format_eb_cancel_done(event_id))
     await cancel_only_on_eventbrite(context, event, query.message.chat_id)
 
 
@@ -281,12 +308,14 @@ async def handle_restore_event(query, context, payload):
     await _mark_admin_card(query, "", "restore", keyboard=get_approval_keyboard(event_id))
 
 
-async def _change_published_state(query, context, event_id, status, suffix, keyboard, action, send_notice):
+async def _change_published_state(query, context, event_id, status, suffix, keyboard, action, send_notice,
+                                  from_command=False):
     update_event_status(event_id, status)
-    await _mark_admin_card(query, suffix, action, keyboard=keyboard)
     event = get_event(event_id)
+    await _set_card(query, context, from_command, event or {'id': event_id}, suffix, action, keyboard)
     if event:
-        await update_event_messages(context, event_id, event=event, current_query=query)
+        # A command prompt is not the discussion reply, so it must not be passed on as the message to edit
+        await update_event_messages(context, event_id, event=event, current_query=None if from_command else query)
         await send_notice(context, event)
 
 
@@ -308,8 +337,11 @@ async def handle_cancel_event(query, context, payload):
 
 async def handle_cancel_abort(query, context, payload):
     await query.answer(POPUP_CANCELLATION_ABORTED)
-    event_id = int(payload)
+    event_id, from_command = _parse_payload(payload)
     logger.info(f"{describe_user(query.from_user)} aborted the cancellation of event #{event_id}.")
+    if from_command:  # the card was never touched
+        await _close_prompt(query, POPUP_CANCELLATION_ABORTED)
+        return
     try:
         await query.edit_message_reply_markup(reply_markup=get_approved_event_keyboard(event_id, get_event(event_id)))
     except Exception as e:
@@ -317,19 +349,23 @@ async def handle_cancel_abort(query, context, payload):
 
 
 async def handle_cancel_confirm(query, context, payload):
-    event_id = int(payload)
+    event_id, from_command = _parse_payload(payload)
     event = get_event(event_id)
-    if not event:
-        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
-        return
-    if event.get('status') == 'cancelled':
-        await query.answer(POPUP_ALREADY_CANCELLED)
+    if not event or event.get('status') == 'cancelled':
+        if not event:
+            await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
+        else:
+            await query.answer(POPUP_ALREADY_CANCELLED)
+        if from_command:
+            await _close_prompt(query, POPUP_ALREADY_CANCELLED if event else POPUP_EVENT_NOT_FOUND)
         return
     await query.answer()
     logger.info(f"{describe_user(query.from_user)} cancelled event #{event_id}.")
+    if from_command:
+        await _close_prompt(query, format_cancel_done(event_id))
     await _change_published_state(
         query, context, event_id, "cancelled", CANCELLED_SUFFIX, get_cancelled_event_keyboard(event_id), "cancel",
-        send_cancellation_notice,
+        send_cancellation_notice, from_command=from_command,
     )
     event = get_event(event_id)
     if event and event.get('eventbrite_event_id'):
@@ -337,8 +373,11 @@ async def handle_cancel_confirm(query, context, payload):
 
 
 async def handle_reactivate_event(query, context, payload):
-    await query.answer(POPUP_REACTIVATED)
     event_id = int(payload)
+    if not get_event(event_id):  # deleted for good through another card
+        await query.answer(POPUP_EVENT_NOT_FOUND, show_alert=True)
+        return
+    await query.answer(POPUP_REACTIVATED)
     logger.info(f"{describe_user(query.from_user)} reactivated event #{event_id}.")
     await _change_published_state(
         query, context, event_id, "approved", APPROVED_SUFFIX, get_approved_event_keyboard(event_id, get_event(event_id)),
@@ -347,3 +386,100 @@ async def handle_reactivate_event(query, context, payload):
     event = get_event(event_id)
     if event and event.get('eventbrite_event_id'):
         await reactivate_on_eventbrite(context, event)
+
+
+async def _refuse_delete(query, event, from_command=False):
+    """True (after a popup) when the event cannot be deleted: already gone, or not cancelled."""
+    if event and event.get('status') == 'cancelled':
+        return False
+    popup = POPUP_DELETE_ONLY_CANCELLED if event else POPUP_ALREADY_DELETED
+    await query.answer(popup, show_alert=True)
+    if from_command:
+        await _close_prompt(query, popup)
+    elif not event:
+        await _mark_admin_card(query, DELETED_SUFFIX, "delete", keyboard=InlineKeyboardMarkup([]))
+    else:
+        await _show_real_state(query, event)
+    return True
+
+
+async def _restore_cancelled_buttons(query, event_id):
+    try:
+        await query.edit_message_reply_markup(reply_markup=get_cancelled_event_keyboard(event_id))
+    except Exception as e:
+        logger.error(f"Could not restore the cancelled-card buttons of event #{event_id}: {e}")
+
+
+async def _reply_to_card(context, query, text):
+    try:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id, reply_to_message_id=query.message.message_id, text=text,
+            disable_web_page_preview=True,
+        )
+    except TelegramError as e:
+        logger.error(f"Could not reply to the admin card: {e}")
+
+
+async def handle_delete_event(query, context, payload):
+    """[🗑️ Elimina evento] on a cancelled card only asks for confirmation: the deletion cannot be undone."""
+    event_id = int(payload)
+    if await _refuse_delete(query, get_event(event_id)):
+        return
+    logger.info(f"{describe_user(query.from_user)} asked to delete event #{event_id} (confirmation requested).")
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=get_delete_confirmation_keyboard(event_id))
+    except Exception as e:
+        logger.error(f"Could not show the delete confirmation for event #{event_id}: {e}")
+
+
+async def handle_delete_abort(query, context, payload):
+    event_id, from_command = _parse_payload(payload)
+    if await _refuse_delete(query, get_event(event_id), from_command):
+        return
+    await query.answer(POPUP_DELETION_ABORTED)
+    logger.info(f"{describe_user(query.from_user)} aborted the deletion of event #{event_id}.")
+    if from_command:  # the card was never touched
+        await _close_prompt(query, POPUP_DELETION_ABORTED)
+    else:
+        await _restore_cancelled_buttons(query, event_id)
+
+
+async def handle_delete_confirm(query, context, payload):
+    """Deletes a cancelled event everywhere except the admin chat (see bot.service.deletion)."""
+    event_id, from_command = _parse_payload(payload)
+    event = get_event(event_id)
+    if await _refuse_delete(query, event, from_command):
+        return
+    if event_id in runtime_state.eventbrite_publishing:
+        await query.answer(POPUP_DELETE_EB_BUSY, show_alert=True)
+        return
+    if event.get('eventbrite_event_id') and event.get('eventbrite_status') == 'closed':
+        await query.answer(POPUP_DELETE_EB_ORDERS_OPEN, show_alert=True)
+        if from_command:
+            await _close_prompt(query, POPUP_DELETE_EB_ORDERS_OPEN)
+        else:
+            await _restore_cancelled_buttons(query, event_id)
+        return
+    await query.answer()
+    logger.info(f"{describe_user(query.from_user)} confirmed the permanent deletion of event #{event_id}.")
+    try:  # one click only: a second confirm while Eventbrite answers must not start another deletion
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception as e:
+        logger.debug(f"Could not remove the delete confirmation buttons: {e}")
+
+    result = await delete_event_everywhere(context, event)
+    failure = (format_delete_eventbrite_failed(event_id, result.eventbrite_error) if result.eventbrite_error
+               else format_delete_db_failed(event_id) if result.db_failed else None)
+    if failure:
+        if from_command:  # the card still shows the cancelled buttons: only the prompt changes
+            await _close_prompt(query, failure)
+        else:
+            await _reply_to_card(context, query, failure)
+            await _restore_cancelled_buttons(query, event_id)
+        return
+    await _set_card(query, context, from_command, event, DELETED_SUFFIX, "delete", InlineKeyboardMarkup([]))
+    if from_command:
+        await _close_prompt(query, format_delete_done(event_id))
+    if result.leftovers:
+        await _reply_to_card(context, query, format_event_deleted_report(event_id, result.leftovers))

@@ -77,7 +77,7 @@ async def _reply_schedule_card(message, sched_ev, prefix=""):
     await message.reply_text(prefix + format_schedule_repost_message(sched_ev), reply_markup=kb, parse_mode="HTML")
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
@@ -163,7 +163,7 @@ async def event_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
     await message.reply_text(msg_text, reply_markup=kb, parse_mode="HTML")
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_schedule_update_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
@@ -200,7 +200,7 @@ async def event_schedule_update_command(update: Update, context: ContextTypes.DE
         await message.reply_text(SCHEDULE_UPDATE_ERROR)
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_schedule_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:

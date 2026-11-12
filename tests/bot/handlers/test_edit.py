@@ -314,6 +314,47 @@ class TestEventEditFields(OldEventMixin, unittest.IsolatedAsyncioTestCase):
         )
 
 
+class TestEventEditById(OldEventMixin, unittest.IsolatedAsyncioTestCase):
+    """`/event_edit_* <id> <valore>`: the same [ID] form as the other event commands."""
+
+    async def _edit(self, text, reply_to=None, **config):
+        update = admin_update(text, reply_to=reply_to)
+        with as_admin_chat(**config):
+            await event_edit_command(update, self.context)
+        return update
+
+    def replies(self, update):
+        return [call.args[0] for call in update.message.reply_text.call_args_list]
+
+    async def test_id_then_value(self):
+        update = await self._edit(f"/event_edit_title {self.event_id} Nuovo Titolo")
+        self.assertEqual(db.get_event(self.event_id)["title"], "Nuovo Titolo")
+        self.assertIn("aggiornato con successo", self.replies(update)[-1])
+
+    async def test_numeric_value_after_the_id(self):
+        await self._edit(f"/event_edit_seats {self.event_id} 3/6")
+        self.assertEqual(db.get_event(self.event_id)["max_seats"], 6)
+
+    async def test_reply_to_the_card_keeps_the_whole_text_as_value(self):
+        await self._edit("/event_edit_title 2026 Odissea", reply_to=admin_card(self.event_id))
+        self.assertEqual(db.get_event(self.event_id)["title"], "2026 Odissea")
+
+    async def test_without_card_or_id_shows_the_usage(self):
+        update = await self._edit("/event_edit_title Nuovo Titolo")
+        self.assertEqual(self.replies(update), [
+            "Rispondi alla scheda dell'evento che vuoi modificare, oppure usa: /event_edit_title <id> <valore>"])
+        self.assertEqual(db.get_event(self.event_id)["title"], "Old Event")
+
+    async def test_stored_card_is_redrawn_when_edited_by_id(self):
+        db.update_event_field(self.event_id, "admin_message_id", 500)
+        await self._edit(f"/event_edit_title {self.event_id} Nuovo Titolo")
+        edit = self.context.bot.edit_message_caption.call_args.kwargs
+        self.assertEqual(edit["message_id"], 500)
+        self.assertIn("Nuovo Titolo", edit["caption"])
+        self.assertIn(f"publish_event_{self.event_id}",
+                      [b.callback_data for row in edit["reply_markup"].inline_keyboard for b in row])
+
+
 class TestEventEditTypeCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         super().setUp()

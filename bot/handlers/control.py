@@ -49,7 +49,7 @@ async def bot_eventbrite_only_toggle_command(update: Update, context: ContextTyp
 
 
 @admin_only()
-async def bot_eb_notif_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def bot_eventbrite_notif_toggle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eventbrite_enabled():
         await update.message.reply_text(EVENTBRITE_NOT_CONFIGURED_SHORT_TEXT)
         return

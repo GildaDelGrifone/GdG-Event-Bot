@@ -109,7 +109,7 @@ class TestDiff(PollCase):
         event_id = self.make_event()
         self.orders = {"o1": ("Mario R.", 1)}
 
-        with patch.object(runtime_state, "eventbrite_booking_notifications", False):  # /bot_eb_notif_toggle
+        with patch.object(runtime_state, "eventbrite_booking_notifications", False):  # /bot_eventbrite_notif_toggle
             await poll_eventbrite_bookings(self.bot)
 
         self.assertEqual(self.discussion_calls(), [])

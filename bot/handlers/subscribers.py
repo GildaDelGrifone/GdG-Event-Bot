@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 from core.db import get_event, admin_add_subscriber, admin_remove_subscriber, get_reservation_by_user
 from bot.common.auth import admin_only, describe_user
+from bot.common.messages import command_tokens, resolve_message
 from bot.common.parsing import extract_event_id_from_reply
 from bot.handlers.edit import handle_edit_reply, is_edit_prompt
 from bot.service.notices import send_admin_action_notice
@@ -71,24 +72,28 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _add_subscriber_and_notify(update, context, int(m.group(1)), parts[0], seats, source="reply")
 
 
-async def _parse_subscriber_command(update, args, command, default_seats):
+async def _parse_subscriber_command(update, command, default_seats):
     """Returns (event_id, username, seats), or None after replying with usage/validation errors."""
-    reply_msg = update.message.reply_to_message
+    message = resolve_message(update)
+    if not message:
+        return None
+    args = command_tokens(message)
+    reply_msg = message.reply_to_message
     event_id = extract_event_id_from_reply(reply_msg) if reply_msg else None
 
     if event_id:
         positional = args
         if not positional:
-            await update.message.reply_text(format_subscriber_usage_reply(command), parse_mode="HTML")
+            await message.reply_text(format_subscriber_usage_reply(command), parse_mode="HTML")
             return None
     else:
         if len(args) < 2:
-            await update.message.reply_text(format_subscriber_usage(command), parse_mode="HTML")
+            await message.reply_text(format_subscriber_usage(command), parse_mode="HTML")
             return None
         try:
             event_id = int(args[0])
         except ValueError:
-            await update.message.reply_text(SUBSCRIBER_EVENT_ID_NOT_INT)
+            await message.reply_text(SUBSCRIBER_EVENT_ID_NOT_INT)
             return None
         positional = args[1:]
 
@@ -97,14 +102,14 @@ async def _parse_subscriber_command(update, args, command, default_seats):
         try:
             seats = int(positional[1])
         except ValueError:
-            await update.message.reply_text(SUBSCRIBER_SEATS_NOT_INT)
+            await message.reply_text(SUBSCRIBER_SEATS_NOT_INT)
             return None
     return event_id, positional[0], seats
 
 
 @admin_only()
 async def event_sub_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    parsed = await _parse_subscriber_command(update, context.args or [], "/event_sub_add", default_seats=1)
+    parsed = await _parse_subscriber_command(update, "/event_sub_add", default_seats=1)
     if parsed:
         event_id, username, seats = parsed
         await _add_subscriber_and_notify(update, context, event_id, username, seats, source="/event_sub_add")
@@ -112,7 +117,7 @@ async def event_sub_add_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 @admin_only()
 async def event_sub_remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    parsed = await _parse_subscriber_command(update, context.args or [], "/event_sub_remove", default_seats=None)
+    parsed = await _parse_subscriber_command(update, "/event_sub_remove", default_seats=None)
     if not parsed:
         return
     event_id, username, seats = parsed

@@ -16,12 +16,12 @@ class TestDescribeUser(unittest.TestCase):
 
 
 class TestAdminOnly(unittest.IsolatedAsyncioTestCase):
-    async def test_admin_only_notify_replies_to_outsiders(self):
+    async def test_commands_that_used_to_answer_outsiders_are_silent_too(self):
         update = make_update(chat_id=999)
         with patched_config(ADMIN_CHAT_ID="111"), \
              patch("bot.handlers.repost_schedule.get_all_scheduled_events") as get_all:
             await event_schedule_list_command(update, make_context())
-        update.message.reply_text.assert_called_once_with("Non sei autorizzato.")
+        update.message.reply_text.assert_not_called()
         get_all.assert_not_called()
 
     async def test_admin_only_silent_for_outsiders(self):

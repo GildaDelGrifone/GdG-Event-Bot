@@ -32,7 +32,12 @@ EDIT_TYPE_INVALID = (
 )
 
 
-EDIT_NO_REPLY = "Rispondi al messaggio dell'evento che vuoi modificare."
+def format_edit_usage(command):
+    """No event card replied to and no id given."""
+    if command == "/event_edit_image":
+        return ("Rispondi alla scheda dell'evento allegando la nuova foto, "
+                "oppure usa /event_edit_image <id> con la foto allegata (o in risposta alla foto).")
+    return f"Rispondi alla scheda dell'evento che vuoi modificare, oppure usa: {command} <id> <valore>"
 
 
 EDIT_EVENT_ID_UNKNOWN = ("Impossibile determinare l'ID dell'evento da questo messaggio. "

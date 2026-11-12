@@ -18,7 +18,7 @@ class BotRuntimeState:
     eventbrite_only: bool = field(default_factory=lambda: config.EVENTBRITE_ONLY_MODE)
     # Venue picked with /bot_eventbrite_venue for new Eventbrite events (None = the default venue)
     eventbrite_venue: str | None = None
-    # /bot_eb_notif_toggle: announce Eventbrite bookings/releases (seats sync either way)
+    # /bot_eventbrite_notif_toggle: announce Eventbrite bookings/releases (seats sync either way)
     eventbrite_booking_notifications: bool = field(default_factory=lambda: config.EVENTBRITE_BOOKING_NOTIFICATIONS)
     venue_names: dict = field(default_factory=dict)
     # Eventbrite publishes running in the background: the tasks (kept so they are not garbage collected) and the

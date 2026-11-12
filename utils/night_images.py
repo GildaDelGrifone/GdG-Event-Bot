@@ -11,12 +11,18 @@ ARCHIVE_NAME = "archive.zip"
 COLLAGE_PREFIX = "collage_"
 
 
+def story_prefix(event_id):
+    """File-name prefix of the story images of one event (create_story_image); used to find them on deletion."""
+    return f"story_{event_id}_"
+
+
 def day_folder(date):
     return os.path.join(config.DATA_DIR, date.strftime("%Y"), date.strftime("%m"), date.strftime("%d"))
 
 
 def candidate_folders(date, events):
-    """The folders that can hold the night's images: the ones of the stored event image paths, then the day folder."""
+    """The folders that can hold the night's images: the ones of the stored event image paths, then the day folder
+    (left out when date is None)."""
     folders = []
     for ev in events:
         if not ev.get('image_path'):
@@ -26,7 +32,8 @@ def candidate_folders(date, events):
         parts = folder.split(os.sep)
         if not os.path.isabs(folder) and parts[0] == "data":  # stored relative to the repo; DATA_DIR may live elsewhere
             folders.append(os.path.join(config.DATA_DIR, *parts[1:]))
-    folders.append(day_folder(date))
+    if date is not None:
+        folders.append(day_folder(date))
     return list(dict.fromkeys(folders))
 
 
@@ -91,3 +98,62 @@ def restore_image_file(path):
         return False
     extract_member(found[0], found[1], folder)
     return os.path.isfile(path)
+
+
+def remove_from_archive(zip_path, names):
+    """Rewrites zip_path without the members whose base name is in `names` (the zip is deleted if nothing is left).
+
+    Returns the base names actually removed.
+    """
+    names = set(names)
+    if not names or not os.path.isfile(zip_path):
+        return []
+    with zipfile.ZipFile(zip_path) as archive:
+        infos = archive.infolist()
+        removed = [info for info in infos if os.path.basename(info.filename) in names]
+        if not removed:
+            return []
+        kept = [info for info in infos if info not in removed]
+        if kept:
+            tmp_path = f"{zip_path}.tmp"
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as target:
+                for info in kept:
+                    target.writestr(info, archive.read(info))
+    if kept:
+        os.replace(tmp_path, zip_path)
+    else:
+        os.remove(zip_path)
+    return [os.path.basename(info.filename) for info in removed]
+
+
+def _event_date(event):
+    try:
+        return datetime.strptime((event.get('normalized_date') or '').strip(), "%d-%m-%Y")
+    except ValueError:
+        return None
+
+
+def delete_event_images(event, keep_image=False):
+    """Deletes the event image and the event's story images, loose or inside an archive.zip, from the folders that
+    can hold them (the image's folder and the event day's folder). keep_image=True leaves `image_path` alone (another
+    row still uses the file). Returns the base names deleted."""
+    folders = candidate_folders(_event_date(event), [event])
+    image_name = os.path.basename(event['image_path']) if event.get('image_path') and not keep_image else None
+    prefix = story_prefix(event['id'])
+
+    def wanted(name):
+        return name == image_name or (name.startswith(prefix) and name.endswith(".jpg"))
+
+    deleted = []
+    for folder in folders:
+        for path in glob.glob(os.path.join(folder, "*")):
+            name = os.path.basename(path)
+            if os.path.isfile(path) and wanted(name):
+                os.remove(path)
+                deleted.append(name)
+        zip_path = os.path.join(folder, ARCHIVE_NAME)
+        if os.path.isfile(zip_path):
+            with zipfile.ZipFile(zip_path) as archive:
+                members = {os.path.basename(info.filename) for info in archive.infolist()}
+            deleted += remove_from_archive(zip_path, [name for name in members if wanted(name)])
+    return deleted

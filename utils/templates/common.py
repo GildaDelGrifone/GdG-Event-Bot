@@ -22,7 +22,6 @@ def format_event_title_link(event):
     return f'<b>{escaped_title}</b>'
 
 
-UNAUTHORIZED_REPLY = "Non sei autorizzato."
 
 
 POPUP_EVENT_NOT_FOUND = "Evento non trovato."

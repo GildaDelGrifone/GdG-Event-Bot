@@ -7,6 +7,8 @@ from bot.keyboards import (
     get_approved_event_keyboard,
     get_cancel_confirmation_keyboard,
     get_cancelled_event_keyboard,
+    get_delete_confirmation_keyboard,
+    get_eventbrite_cancel_confirmation_keyboard,
     get_event_booking_keyboard,
     get_schedule_repost_keyboard,
     get_subscribers_management_keyboard,
@@ -51,6 +53,7 @@ class TestEventKeyboards(TempDBMixin, unittest.TestCase):
         cancelled_kb = get_cancelled_event_keyboard(event_id)
         self.assertEqual(cancelled_kb.inline_keyboard[0][0].callback_data, f"reactivate_event_{event_id}")
         self.assertEqual(cancelled_kb.inline_keyboard[0][1].callback_data, f"manage_subs_{event_id}")
+        self.assertEqual(cancelled_kb.inline_keyboard[1][0].callback_data, f"delete_event_{event_id}")
 
         subs_kb = get_subscribers_management_keyboard(event_id, db.get_reservations_for_event(event_id))
         self.assertTrue(any("sub_inc_" in data for data in callbacks(subs_kb)))
@@ -216,6 +219,28 @@ class TestCancelConfirmationKeyboard(TempDBMixin, unittest.TestCase):
         event_id = create_subscribed_event()
         db.apply_eventbrite_order(event_id, "o1", "Mario R.", 1)
         self.assertEqual(self.rows(event_id)[0][0], ("✅ Sì, annulla", f"cancel_confirm_{event_id}"))
+
+
+
+class TestDeleteConfirmationKeyboard(unittest.TestCase):
+    def test_confirm_and_back(self):
+        rows = [[(b.text, b.callback_data) for b in row] for row in get_delete_confirmation_keyboard(5).inline_keyboard]
+        self.assertEqual(rows, [[("✅ Sì, elimina per sempre", "delete_confirm_5"), ("↩️ Indietro", "delete_abort_5")]])
+
+
+class TestCommandConfirmationKeyboards(unittest.TestCase):
+    """The prompts of /event_cancel, /event_cancel_eventbrite and /event_delete mark their callbacks with _cmd."""
+
+    def callbacks(self, markup):
+        return [b.callback_data for row in markup.inline_keyboard for b in row]
+
+    def test_command_marker(self):
+        self.assertEqual(self.callbacks(get_cancel_confirmation_keyboard(5, from_command=True)),
+                         ["cancel_confirm_5_cmd", "cancel_abort_5_cmd"])
+        self.assertEqual(self.callbacks(get_eventbrite_cancel_confirmation_keyboard(5, from_command=True)),
+                         ["eb_cancel_do_5_cmd", "cancel_abort_5_cmd"])
+        self.assertEqual(self.callbacks(get_delete_confirmation_keyboard(5, from_command=True)),
+                         ["delete_confirm_5_cmd", "delete_abort_5_cmd"])
 
 
 if __name__ == "__main__":

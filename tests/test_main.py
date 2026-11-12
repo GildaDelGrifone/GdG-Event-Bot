@@ -9,10 +9,11 @@ from telegram.ext import CommandHandler, filters
 from main import global_error_handler, main, post_init, warn_if_boto3_missing
 from bot.service.open_seats import scheduled_open_seats_reminder
 from bot.service.reminders import send_event_reminders
-from bot.handlers.recap import recap_article_command, recap_reminder_send_command
+from bot.handlers.recap import recap_article_generate_command, recap_reminder_send_command
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.edit import event_edit_command
 from bot.handlers.eventbrite import event_publish_eventbrite_command
+from bot.handlers.event_status import event_cancel_command, event_cancel_eventbrite_command, event_delete_command
 from bot.handlers.ingestion import manual_trigger_command
 from bot.service.eventbrite_cleanup import delete_cancelled_eventbrite_events
 from bot.service.eventbrite_poll import poll_eventbrite_bookings
@@ -216,7 +217,7 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
                 else:
                     add_cron.assert_not_called()
 
-    def test_recap_article_command_is_registered_for_text_and_caption_without_blocking(self):
+    def test_recap_article_generate_command_is_registered_for_text_and_caption_without_blocking(self):
         added = []
         mock_app = MagicMock()
         mock_app.add_handler.side_effect = lambda h, group=0: added.append(h)
@@ -233,11 +234,11 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
             except Exception:
                 pass
 
-        ours = [h for h in added if getattr(h, "callback", None) is recap_article_command]
+        ours = [h for h in added if getattr(h, "callback", None) is recap_article_generate_command]
         self.assertEqual(len(ours), 2)
         self.assertTrue(all(h.block is False for h in ours))
         command_handler = next(h for h in ours if isinstance(h, CommandHandler))
-        self.assertEqual(command_handler.commands, {"recap_article"})
+        self.assertEqual(command_handler.commands, {"recap_article_generate"})
 
         reminder = [h for h in added if getattr(h, "callback", None) is recap_reminder_send_command]
         self.assertEqual([h.commands for h in reminder], [{"recap_reminder_send"}])
@@ -266,6 +267,42 @@ class TestEventbriteWiring(unittest.IsolatedAsyncioTestCase):
         self.assertIn("event_publish_eventbrite", command.commands)
         caption = next(h for h in ours if not isinstance(h, CommandHandler))
         self.assertIn("event_publish_eventbrite", caption.filters.pattern.pattern)
+
+
+    def test_cancel_and_delete_commands_are_registered(self):
+        added = []
+        mock_app = MagicMock()
+        mock_app.add_handler.side_effect = lambda h, group=0: added.append(h)
+        mock_builder = MagicMock()
+        for name in ("token", "connect_timeout", "read_timeout", "write_timeout", "pool_timeout", "post_init", "post_shutdown"):
+            getattr(mock_builder, name).return_value = mock_builder
+        mock_builder.build.return_value = mock_app
+
+        with patch("main.init_db"), patch("main.Application.builder", return_value=mock_builder), \
+             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"), \
+             patched_config(TELEGRAM_BOT_TOKEN="fake_token", ADMIN_CHAT_ID="999"):
+            try:
+                main()
+            except Exception:
+                pass
+
+        for callback, name in ((event_cancel_command, "event_cancel"),
+                               (event_cancel_eventbrite_command, "event_cancel_eventbrite"),
+                               (event_delete_command, "event_delete")):
+            with self.subTest(name):
+                ours = [h for h in added if getattr(h, "callback", None) is callback]
+                self.assertEqual([h.commands for h in ours], [{name}])
+
+        # Renamed / removed names are gone: no command and no caption alias
+        commands = set().union(*(h.commands for h in added if isinstance(h, CommandHandler)))
+        self.assertIn("bot_eventbrite_notif_toggle", commands)
+        self.assertIn("recap_article_generate", commands)
+        for gone in ("bot_eb_notif_toggle", "recap_article", "er", "eg", "ers"):
+            self.assertNotIn(gone, commands)
+        captions = " ".join(h.filters.pattern.pattern for h in added
+                            if hasattr(getattr(h, "filters", None), "pattern"))
+        for gone in ("|er)", "|eg)", "|ers)", "recap_article("):
+            self.assertNotIn(gone, captions)
 
 
 if __name__ == "__main__":

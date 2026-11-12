@@ -43,7 +43,7 @@ async def extract_repost_content(update: Update):
     return text, image_bytes, target_msg
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_repost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:
@@ -124,7 +124,7 @@ def _invoke_overrides(sched_ev, extra_tokens, today=None):
     return override_date + time_suffix, override_seats
 
 
-@admin_only(notify=True)
+@admin_only()
 async def event_schedule_invoke_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
     if not message:

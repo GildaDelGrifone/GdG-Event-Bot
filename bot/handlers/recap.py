@@ -20,7 +20,7 @@ from utils.templates.recap import (
 )
 from bot.callbacks.recap import run_article_pipeline
 from bot.common.auth import admin_only, describe_user
-from bot.common.messages import is_not_modified_error
+from bot.common.messages import command_tokens, is_not_modified_error, resolve_message
 from bot.keyboards import get_event_booking_keyboard
 from bot.service.open_seats import open_seat_events, send_open_seats_after_recap, send_open_seats_reminder
 from bot.state import runtime_state
@@ -30,30 +30,30 @@ logger = logging.getLogger(__name__)
 
 @admin_only()
 async def manual_recap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
+    msg = resolve_message(update)
+    if not msg:
+        return
+    args = command_tokens(msg)  # read from the message, so a photo caption works like typed text
     logger.info(f"{describe_user(update.effective_user)} triggered manual recap (args={args}).")
     date_str = None
     if args:
         parsed = parse_user_date(args[0])
         if not parsed:
-            if update.message:
-                await update.message.reply_text(RECAP_INVALID_DATE)
+            await msg.reply_text(RECAP_INVALID_DATE)
             return
         date_str = parsed[0].strftime("%d-%m-%Y")
 
-    reply_id = update.message.message_id if update.message else None
-    success = await generate_daily_recap(context.bot, date_str, is_manual=True, reply_to_message_id=reply_id)
+    success = await generate_daily_recap(context.bot, date_str, is_manual=True, reply_to_message_id=msg.message_id)
     if success:
-        done_text = format_recap_done(date_str)
-        if update.message:
-            await update.message.reply_text(done_text)
-        else:
-            await context.bot.send_message(chat_id=config.ADMIN_CHAT_ID, text=done_text)
+        await msg.reply_text(format_recap_done(date_str))
 
 
 @admin_only()
 async def recap_reminder_send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Posts the open-seats list in the discussion group now, even if it already went out today (counts as today's post)."""
+    msg = resolve_message(update)
+    if not msg:
+        return
     logger.info(f"{describe_user(update.effective_user)} requested the open-seats list (/recap_reminder_send).")
     if not config.DISCUSSION_GROUP_ID:
         reply = OPEN_SEATS_NO_DISCUSSION_GROUP
@@ -62,18 +62,21 @@ async def recap_reminder_send_command(update: Update, context: ContextTypes.DEFA
     else:
         count = await send_open_seats_reminder(context.bot)
         reply = format_open_seats_posted(count) if count else OPEN_SEATS_SEND_FAILED
-    await update.message.reply_text(reply)
+    await msg.reply_text(reply)
 
 
 @admin_only()
-async def recap_article_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def recap_article_generate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Reruns only the article (collage, images, AI text, draft) for a date, today by default."""
-    args = context.args
+    msg = resolve_message(update)
+    if not msg:
+        return
+    args = command_tokens(msg)
     logger.info(f"{describe_user(update.effective_user)} triggered manual article regeneration (args={args}).")
     if args:
         parsed = parse_user_date(args[0])
         if not parsed:
-            await update.message.reply_text(RECAP_ARTICLE_INVALID_DATE)
+            await msg.reply_text(RECAP_ARTICLE_INVALID_DATE)
             return
         date_str, no_events = parsed[0].strftime("%d-%m-%Y"), format_recap_no_events_for_date
     else:
@@ -81,9 +84,9 @@ async def recap_article_command(update: Update, context: ContextTypes.DEFAULT_TY
 
     events = get_pending_events_for_recap(date_str)
     if not events:
-        await update.message.reply_text(no_events(date_str))
+        await msg.reply_text(no_events(date_str))
         return
-    await update.message.reply_text(format_recap_article_started(date_str))
+    await msg.reply_text(format_recap_article_started(date_str))
     await run_article_pipeline(context.bot, config.ADMIN_CHAT_ID, date_str, events)
 
 

@@ -20,6 +20,7 @@ from bot.common.media import send_photo_resilient
 from bot.common.messages import CAPTION_LIMIT, is_not_modified_error, truncate_caption, with_html_fallback
 from bot.common.parsing import UNLIMITED_SEATS_DISPLAY, parse_seats_input
 from bot.common.previews import build_admin_warning_block
+from bot.keyboards import admin_card_keyboard
 from bot.service.posts import update_event_messages
 
 logger = logging.getLogger(__name__)
@@ -177,17 +178,42 @@ def _plain_field_editor(field):
     return edit
 
 
+def _admin_card_text(event, has_photo, suffix):
+    """The admin card text: warnings, the public post text and the status line (cut to a caption for photo cards)."""
+    final_text = format_public_event_message(event)
+    warning_block = build_admin_warning_block(
+        event, final_text, has_image=has_photo, check_date_anomalies=event.get('status') == 'pending'
+    )
+    text = warning_block + final_text + suffix
+    return truncate_caption(text) if has_photo else text
+
+
+async def redraw_stored_admin_card(bot, event, suffix, keyboard):
+    """Redraws the event's admin card (events.admin_message_id) when it is not the message at hand, e.g. after a
+    command. Photo cards get a caption edit; text cards (Telegram: "no caption") a text edit. No stored card: no-op."""
+    message_id = event.get('admin_message_id')
+    if not (message_id and config.ADMIN_CHAT_ID):
+        return
+    target = dict(chat_id=config.ADMIN_CHAT_ID, message_id=message_id, reply_markup=keyboard)
+    try:
+        try:
+            await with_html_fallback(lambda **kw: bot.edit_message_caption(
+                caption=_admin_card_text(event, True, suffix), **target, **kw))
+        except Exception as e:
+            if "no caption" not in str(e).lower():
+                raise
+            await with_html_fallback(lambda **kw: bot.edit_message_text(
+                text=_admin_card_text(event, False, suffix), **target, **kw))
+    except Exception as e:
+        if not is_not_modified_error(e) and "message to edit not found" not in str(e).lower():
+            logger.error(f"Could not redraw the admin card of event #{event['id']}: {e}")
+
+
 async def refresh_admin_message(target_msg, event, image_changed, keyboard=None):
     has_photo = bool(getattr(target_msg, "photo", None))
     image_path = event.get('image_path')
     will_have_photo = has_photo or bool(image_changed and image_path and os.path.exists(image_path))
-    final_text = format_public_event_message(event)
-    warning_block = build_admin_warning_block(
-        event, final_text, has_image=will_have_photo, check_date_anomalies=event.get('status') == 'pending'
-    )
-    new_text = warning_block + final_text + STATUS_SUFFIXES.get(event['status'], "")
-    if will_have_photo:
-        new_text = truncate_caption(new_text)
+    new_text = _admin_card_text(event, will_have_photo, STATUS_SUFFIXES.get(event['status'], ""))
     keyboard = keyboard if keyboard is not None else target_msg.reply_markup
 
     try:
@@ -260,6 +286,9 @@ async def apply_edit(context, event_id, cmd, value, reply, admin_user, target_ms
     if target_msg:
         keyboard = card_keyboard(event) if card_keyboard else None
         await refresh_admin_message(target_msg, event, image_changed=(field == "image_path"), keyboard=keyboard)
+    else:  # `/event_edit_* <id>` without the card at hand: redraw the stored one (text and buttons; not the photo)
+        keyboard = card_keyboard(event) if card_keyboard else admin_card_keyboard(event)
+        await redraw_stored_admin_card(context.bot, event, STATUS_SUFFIXES.get(event['status'], ""), keyboard)
 
     if event['status'] in ['approved', 'cancelled']:
         await update_event_messages(
