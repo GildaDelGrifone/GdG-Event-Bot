@@ -210,9 +210,15 @@ class TestEventbriteHook(unittest.IsolatedAsyncioTestCase):
         with patch("bot.service.posts.sync_eventbrite", new_callable=AsyncMock) as mock_sync:
             await update_event_messages(self.context, event_id=1, event=event)
             await update_event_messages(self.context, event_id=1, event=event, update_image=True, eventbrite_content=True)
+            await update_event_messages(self.context, event_id=1, event=event, eventbrite_content=True,
+                                        eventbrite_type_changed=True)
         self.assertEqual(mock_sync.call_args_list[0].args, (self.context, event))
-        self.assertEqual(mock_sync.call_args_list[0].kwargs, {"content_changed": False, "image_changed": False})
-        self.assertEqual(mock_sync.call_args_list[1].kwargs, {"content_changed": True, "image_changed": True})
+        self.assertEqual(mock_sync.call_args_list[0].kwargs,
+                         {"content_changed": False, "image_changed": False, "type_changed": False})
+        self.assertEqual(mock_sync.call_args_list[1].kwargs,
+                         {"content_changed": True, "image_changed": True, "type_changed": False})
+        self.assertEqual(mock_sync.call_args_list[2].kwargs,
+                         {"content_changed": True, "image_changed": False, "type_changed": True})
 
     async def test_events_without_an_eventbrite_id_make_no_http_calls(self):
         with eventbrite_credentials(), patch("core.eventbrite.client.requests") as mock_requests:

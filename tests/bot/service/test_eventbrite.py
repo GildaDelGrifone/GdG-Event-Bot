@@ -695,7 +695,7 @@ class TestCollections(EventbriteServiceCase):
         self.link(event_id)
         db.update_event_field(event_id, "is_roleplay", 1)
         with self.collections():
-            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True, type_changed=True)
         self.mocks["remove_event_from_collection"].assert_called_once_with("tavolo", "eb1")
         self.mocks["add_event_to_collection"].assert_called_once_with("gdr", "eb1")
 
@@ -704,9 +704,20 @@ class TestCollections(EventbriteServiceCase):
         self.link(event_id)
         self.mocks["remove_event_from_collection"].side_effect = EventbriteError(400, "NOT_IN", "")
         with self.collections():
-            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True, type_changed=True)
         self.mocks["add_event_to_collection"].assert_called_once_with("gdr", "eb1")
         self.assertEqual(self.texts(), [])
+
+    async def test_other_content_edits_leave_the_collection_alone(self):
+        # Eventbrite refuses (INVALID) re-adding an event already in the collection: a seats/title edit must not try
+        event_id = self.make_event(is_roleplay=1)
+        self.link(event_id)
+        self.mocks["add_event_to_collection"].side_effect = EventbriteError(400, "ARGUMENTS_ERROR", "event_ids.0 - INVALID")
+        with self.collections():
+            await service.sync_eventbrite(self.context, db.get_event(event_id), content_changed=True)
+        self.mocks["add_event_to_collection"].assert_not_called()
+        self.mocks["remove_event_from_collection"].assert_not_called()
+        self.assertFalse(any("collezione" in t for t in self.texts()))
 
 
 class TestNoticesReplyToTheAdminCard(EventbriteServiceCase):
