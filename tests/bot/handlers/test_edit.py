@@ -515,6 +515,9 @@ class TestEventbriteEdits(OldEventMixin, unittest.IsolatedAsyncioTestCase):
                 _, update_messages = await self._edit(text)
                 update_messages.assert_awaited_once()
                 self.assertIs(update_messages.call_args.kwargs["eventbrite_content"], expected)
+                # only a type switch moves the event between Eventbrite collections
+                self.assertIs(update_messages.call_args.kwargs["eventbrite_type_changed"],
+                              text.startswith("/event_edit_type"))
 
     async def test_booked_count_below_eventbrite_seats_is_rejected(self):
         self._with_eventbrite_booking(2)  # booked_seats == 2, all on Eventbrite

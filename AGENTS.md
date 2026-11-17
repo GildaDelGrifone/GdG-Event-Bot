@@ -300,7 +300,7 @@ Optional. An approved event can also be published on **Eventbrite** so people ou
 
 **Description:** `description_modules` builds one structured-content text module: `Sistema`, `Master`/`Host`, `Posti totali: <max_seats>` (omitted for unlimited and `0/0` events; `seats` is therefore in `EVENTBRITE_CONTENT_FIELDS`), `Dettagli`, the description, the association address and the `Evento su Telegram` link.
 
-**Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited. A failure is only a warning to the admins. Already published events are not backfilled.
+**Collections:** with `EVENTBRITE_COLLECTION_ROLEPLAY` / `EVENTBRITE_COLLECTION_BOARDGAMES` set, `_publish_blocking` adds the event to the collection of its type (`core.eventbrite.collections`: `POST /collections/{id}/events/`, `event_ids` as a string; undocumented by Eventbrite but confirmed on a real account), and `sync_eventbrite` moves it when `is_roleplay` is edited (`type_changed`, set by `apply_edit` only for that field: Eventbrite refuses re-adding an event already in a collection, so other content edits leave collections alone). A failure is only a warning to the admins. Already published events are not backfilled.
 
 **Admin notices:** every Eventbrite notice about one event is sent as a reply to that event's admin card (`notify_admin(..., event_id=)`; plain message if the card is gone). The nightly cleanup summary covers several events, so it is a plain message.
 

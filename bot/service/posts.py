@@ -126,7 +126,8 @@ async def _sync_discussion_reply(bot, event_id, event, keyboard, current_query):
             logger.error(f"Error updating discussion reply for event {event_id}: {e}")
 
 
-async def update_event_messages(context, event_id, event=None, current_query=None, update_image=False, eventbrite_content=False):
+async def update_event_messages(context, event_id, event=None, current_query=None, update_image=False, eventbrite_content=False,
+                                eventbrite_type_changed=False):
     """Re-renders an event's public channel post and discussion-group booking reply, then syncs Eventbrite (if linked)."""
     if event is None:
         event = get_event(event_id)
@@ -151,6 +152,7 @@ async def update_event_messages(context, event_id, event=None, current_query=Non
 
     await _sync_public_post(context.bot, event_id, event, public_text, keyboard, update_image)
     await _sync_discussion_reply(context.bot, event_id, event, keyboard, current_query)
-    await sync_eventbrite(context, event, content_changed=eventbrite_content, image_changed=update_image)
+    await sync_eventbrite(context, event, content_changed=eventbrite_content, image_changed=update_image,
+                          type_changed=eventbrite_type_changed)
     if promoted:
         await announce_promotions(context.bot, event, promoted)

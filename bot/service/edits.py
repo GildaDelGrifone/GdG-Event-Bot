@@ -294,6 +294,7 @@ async def apply_edit(context, event_id, cmd, value, reply, admin_user, target_ms
         await update_event_messages(
             context, event_id, event=event, update_image=(field == "image_path"),
             eventbrite_content=field in EVENTBRITE_CONTENT_FIELDS,
+            eventbrite_type_changed=(field == "is_roleplay"),
         )
 
     await reply(format_edit_done(field))

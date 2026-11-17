@@ -93,7 +93,7 @@ def _push_content(event, include_dates=True):
     return warning
 
 
-def _sync_blocking(event, content_changed, image_changed):
+def _sync_blocking(event, content_changed, image_changed, type_changed=False):
     warnings = []
     if event.get('status') == 'approved':
         _push_capacity(event)
@@ -101,7 +101,9 @@ def _sync_blocking(event, content_changed, image_changed):
         warning = _push_content(event)
         if warning:
             warnings.append(warning)
-        # content_changed also covers a roleplay <-> board game switch: move the event to the right collection
+    if type_changed:
+        # Only a roleplay <-> board game switch moves the event: Eventbrite refuses (INVALID) adding an event to a
+        # collection it is already in, so re-adding it on every content edit produced a false warning
         warning = _assign_collection(event, leave_other=True)
         if warning:
             warnings.append(warning)
@@ -116,15 +118,17 @@ def _sync_blocking(event, content_changed, image_changed):
     return warnings, logo_error
 
 
-async def sync_eventbrite(context, event, content_changed=False, image_changed=False):
-    """Pushes capacity (always, for approved events), and content/logo when flagged. Never raises."""
+async def sync_eventbrite(context, event, content_changed=False, image_changed=False, type_changed=False):
+    """Pushes capacity (always, for approved events), content/logo when flagged, and moves the event to the collection
+    of its type when type_changed (roleplay <-> board game). Never raises."""
     if not eventbrite_enabled() or not event or not event.get('eventbrite_event_id'):
         return
     # 'closed' = cancellation in progress: never reopen sales or rename it back
     if event.get('eventbrite_status') in ('canceled', 'draft', 'closed'):
         return
     try:
-        warnings, logo_error = await asyncio.to_thread(_sync_blocking, event, content_changed, image_changed)
+        warnings, logo_error = await asyncio.to_thread(
+            _sync_blocking, event, content_changed, image_changed, type_changed)
         for warning in warnings:
             await notify_admin(context, config.ADMIN_CHAT_ID, warning, event_id=event['id'])
         if logo_error:
