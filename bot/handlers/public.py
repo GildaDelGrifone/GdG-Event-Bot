@@ -14,7 +14,7 @@ from utils.templates.public import (
 )
 from utils.templates.subscribers import format_event_participants_message
 from utils.date_utils import DAYS_IT, event_date_tuple, parse_day_filter
-from bot.common.auth import describe_user, is_admin_chat
+from bot.common.auth import describe_user, is_command_chat
 from bot.common.messages import reply_in_chunks, resolve_message
 from bot.service.listings import event_links, event_title_and_date, format_event_mine_entry_for, render_my_bookings
 
@@ -41,21 +41,9 @@ def _day_argument(message):
     return parts[1].strip() if len(parts) > 1 else ""
 
 
-def _event_listing_allowed(update):
-    """/event_next and /event_mine answer in the admin chat, in private chats and in the discussion group (unless ALLOW_GROUP_EVENT_NEXT is off)."""
-    chat = update.effective_chat
-    is_admin = is_admin_chat(update)
-    is_discussion_group = bool(config.DISCUSSION_GROUP_ID and str(chat.id) == str(config.DISCUSSION_GROUP_ID))
-    is_private_chat = getattr(chat, "type", "") == "private"
-
-    if not (is_admin or is_private_chat or is_discussion_group):
-        return False
-    return not (is_discussion_group and not is_admin and not config.ALLOW_GROUP_EVENT_NEXT)
-
-
 async def event_next_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = resolve_message(update)
-    if not message or not update.effective_chat or not _event_listing_allowed(update):
+    if not message or not update.effective_chat or not is_command_chat(update):
         return
 
     chat = update.effective_chat
@@ -98,7 +86,7 @@ async def event_mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """The events the calling user is booked to, today and in the future."""
     message = resolve_message(update)
     user = update.effective_user
-    if not message or not user or not update.effective_chat or not _event_listing_allowed(update):
+    if not message or not user or not update.effective_chat or not is_command_chat(update):
         return
 
     logger.info(f"{describe_user(user, role='User')} requested their bookings (/event_mine) in chat {update.effective_chat.id}.")

@@ -2,11 +2,12 @@ import datetime
 import unittest
 from unittest.mock import MagicMock, patch
 
-from telegram import BotCommandScopeChat, BotCommandScopeDefault, Chat, Message, Update, User
+from telegram import BotCommandScopeAllPrivateChats, BotCommandScopeChat, BotCommandScopeDefault, Chat, Message, Update, User
 from telegram.error import NetworkError
 from telegram.ext import CommandHandler, filters
 
 from main import global_error_handler, main, post_init, warn_if_boto3_missing
+from bot.common.auth import drop_commands_outside_command_chats
 from bot.service.open_seats import scheduled_open_seats_reminder
 from bot.service.reminders import send_event_reminders
 from bot.handlers.recap import recap_article_generate_command, recap_reminder_send_command
@@ -107,8 +108,10 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         set_commands = mock_app.bot.set_my_commands
         self.assertEqual(set_commands.call_count, 2)
 
+        # The command menu is only for private chats: the old menu for every chat (groups included) is removed
+        self.assertIsInstance(mock_app.bot.delete_my_commands.call_args.kwargs.get("scope"), BotCommandScopeDefault)
         cmds1, kwargs1 = set_commands.call_args_list[0][0][0], set_commands.call_args_list[0][1]
-        self.assertIsInstance(kwargs1.get("scope"), BotCommandScopeDefault)
+        self.assertIsInstance(kwargs1.get("scope"), BotCommandScopeAllPrivateChats)
         self.assertTrue(any(c.command == "start" for c in cmds1))
         self.assertTrue(any(c.command == "event_mine" for c in cmds1))
 
@@ -129,6 +132,46 @@ class TestHandlerRegistration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<Titolo>", title_cmd.description)
         date_cmd = next(c for c in cmds2 if c.command == "event_edit_date")
         self.assertIn("<DD-MM-YYYY HH:MM>", date_cmd.description)
+
+
+class TestCommandGate(unittest.TestCase):
+    def _registered(self):
+        added = []
+        mock_app = MagicMock()
+        mock_app.add_handler.side_effect = lambda h, group=0: added.append((h, group))
+        mock_builder = MagicMock()
+        for name in ("token", "connect_timeout", "read_timeout", "write_timeout", "pool_timeout", "post_init", "post_shutdown"):
+            getattr(mock_builder, name).return_value = mock_builder
+        mock_builder.build.return_value = mock_app
+        with patch("main.init_db"), patch("main.Application.builder", return_value=mock_builder), \
+             patch("main.TELEGRAM_BOT_TOKEN", "fake_token"), \
+             patched_config(TELEGRAM_BOT_TOKEN="fake_token", ADMIN_CHAT_ID="999"):
+            main()
+        return added
+
+    @staticmethod
+    def _update(chat_type="supergroup", **content):
+        message = Message(message_id=1, date=datetime.datetime.now(), chat=Chat(id=-100888, type=chat_type),
+                          from_user=User(id=1, is_bot=False, first_name="User"), **content)
+        if chat_type == "channel":
+            return Update(update_id=1, channel_post=message)
+        return Update(update_id=1, message=message)
+
+    def test_every_command_passes_the_gate_before_any_command_handler(self):
+        added = self._registered()
+        gates = [(h, group) for h, group in added if getattr(h, "callback", None) is drop_commands_outside_command_chats]
+        self.assertEqual(len(gates), 1)
+        gate, gate_group = gates[0]
+        self.assertTrue(gate.block)  # ApplicationHandlerStop only stops later groups from a blocking handler
+        self.assertLess(gate_group, min(group for h, group in added if h is not gate))
+
+        for content in ({"text": "/start"}, {"text": "/event_next@GdG_Event_bot"}, {"text": "/subs_12"},
+                        {"caption": "/ep testo"}):
+            with self.subTest(content=content):
+                self.assertTrue(gate.check_update(self._update(**content)))
+        self.assertTrue(gate.check_update(self._update("channel", text="/start")))
+        self.assertFalse(gate.check_update(self._update(text="ciao a tutti")))
+        self.assertFalse(gate.check_update(self._update(caption="Titolo: evento")))
 
 
 class TestRequiredSettings(unittest.TestCase):

@@ -129,16 +129,8 @@ class TestEventNextCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         reply_text.assert_called_once()
         self.assertIn("Nessun evento in programma", reply_text.call_args[0][0])
 
-    async def test_event_next_command_discussion_group_allowed(self):
-        reply_text = await self._event_next(DISCUSSION_GROUP, "supergroup", DISCUSSION_GROUP_ID=DISCUSSION_GROUP,
-                                            ALLOW_GROUP_EVENT_NEXT=True)
-
-        reply_text.assert_called_once()
-        self.assertIn("Nessun evento in programma", reply_text.call_args[0][0])
-
-    async def test_event_next_command_discussion_group_disabled(self):
-        reply_text = await self._event_next(DISCUSSION_GROUP, "supergroup", DISCUSSION_GROUP_ID=DISCUSSION_GROUP,
-                                            ALLOW_GROUP_EVENT_NEXT=False)
+    async def test_event_next_command_silent_in_discussion_group(self):
+        reply_text = await self._event_next(DISCUSSION_GROUP, "supergroup", DISCUSSION_GROUP_ID=DISCUSSION_GROUP)
 
         reply_text.assert_not_called()
 
@@ -150,7 +142,6 @@ class TestEventMineCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
     async def _event_mine(self, chat_id, chat_type="private", user=None, **config_values):
         update = make_update(chat_id=chat_id, chat_type=chat_type, user=user or make_user(1001, "mario"))
-        config_values.setdefault("ALLOW_GROUP_EVENT_NEXT", True)
         with patched_config(ADMIN_CHAT_ID=ADMIN_CHAT, DISCUSSION_GROUP_ID=DISCUSSION_GROUP, **config_values):
             await event_mine_command(update, make_context(bot_username="GdG_Event_bot"))
         return update.message.reply_text
@@ -182,8 +173,8 @@ class TestEventMineCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0][0].callback_data, f"mineunbook_{mine}")
         self.assertIn("calendar.google.com", rows[0][1].url)
 
-        group = await self._event_mine(DISCUSSION_GROUP, "supergroup")
-        self.assertNotIn("reply_markup", group.call_args.kwargs)
+        admin = await self._event_mine(ADMIN_CHAT, "group")
+        self.assertNotIn("reply_markup", admin.call_args.kwargs)
 
     async def test_no_bookings_gets_the_empty_message(self):
         self._event("Evento Libero")
@@ -200,18 +191,18 @@ class TestEventMineCommand(TempDBMixin, unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Non risulti prenotato", reply_text.call_args[0][0])
 
-    async def test_answers_in_admin_chat_private_chat_and_discussion_group(self):
+    async def test_answers_in_admin_chat_and_private_chat(self):
         db.book_seat(self._event("Mio Evento"), 1001, "mario")
 
-        for chat_id, chat_type in ((ADMIN_CHAT, "group"), (12345, "private"), (DISCUSSION_GROUP, "supergroup")):
+        for chat_id, chat_type in ((ADMIN_CHAT, "group"), (12345, "private")):
             with self.subTest(chat_id=chat_id):
                 reply_text = await self._event_mine(chat_id, chat_type)
                 self.assertIn("Mio Evento", reply_text.call_args[0][0])
 
-    async def test_discussion_group_can_be_switched_off_and_other_chats_are_ignored(self):
+    async def test_silent_in_the_discussion_group_and_other_groups(self):
         db.book_seat(self._event("Mio Evento"), 1001, "mario")
 
-        (await self._event_mine(DISCUSSION_GROUP, "supergroup", ALLOW_GROUP_EVENT_NEXT=False)).assert_not_called()
+        (await self._event_mine(DISCUSSION_GROUP, "supergroup")).assert_not_called()
         (await self._event_mine(55555, "supergroup")).assert_not_called()
 
     async def test_start_deep_link_opens_the_personal_list(self):

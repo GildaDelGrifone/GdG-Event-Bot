@@ -1,7 +1,7 @@
 import importlib.util
 import os
 import logging
-from telegram import Update, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+from telegram import Update, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeDefault, BotCommandScopeChat
 from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
@@ -13,6 +13,7 @@ from core.config import (
 )
 from core.db import init_db
 from core.eventbrite import eventbrite_enabled
+from bot.common.auth import drop_commands_outside_command_chats
 from bot.handlers.albums import cache_admin_media_group
 from bot.handlers.control import (
     bot_pause_command, bot_resume_command, bot_eventbrite_only_toggle_command, bot_eventbrite_venue_command, bot_status_command,
@@ -70,14 +71,16 @@ async def post_init(application: Application):
         add_interval_job(poll_eventbrite_bookings, config.EVENTBRITE_POLL_MINUTES, [application.bot])
         add_cron_job(delete_cancelled_eventbrite_events, *config.EVENTBRITE_CLEANUP_TIME, [application.bot])
 
-    # Default commands for users in private chats / groups
+    # Default commands for users in private chats (commands are never answered in groups or the channel)
     default_commands = [BotCommand(name, description) for name, description in DEFAULT_COMMAND_DESCRIPTIONS]
 
     # Admin commands available in ADMIN_CHAT_ID with syntax descriptions
     admin_commands = [BotCommand(name, description) for name, description in ADMIN_COMMAND_DESCRIPTIONS]
 
     try:
-        await application.bot.set_my_commands(default_commands, scope=BotCommandScopeDefault())
+        # The menu used to be registered for every chat: drop it there so groups show no command menu
+        await application.bot.delete_my_commands(scope=BotCommandScopeDefault())
+        await application.bot.set_my_commands(default_commands, scope=BotCommandScopeAllPrivateChats())
         if ADMIN_CHAT_ID:
             admin_target = int(ADMIN_CHAT_ID) if str(ADMIN_CHAT_ID).lstrip("-").isdigit() else str(ADMIN_CHAT_ID)
             await application.bot.set_my_commands(
@@ -128,6 +131,13 @@ def main():
         .build()
     )
     
+    # Commands are answered only in private chats and ADMIN_CHAT_ID: anywhere else (channel, discussion group,
+    # other groups) any message starting with '/' stops here, before every command handler
+    application.add_handler(
+        MessageHandler(filters.Regex(r"^/") | filters.CaptionRegex(r"^/"), drop_commands_outside_command_chats),
+        group=-2,
+    )
+
     # Handlers for admin commands
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("event_process", manual_trigger_command, block=False))

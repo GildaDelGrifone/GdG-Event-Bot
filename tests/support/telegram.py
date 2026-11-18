@@ -7,7 +7,7 @@ ADMIN_USERNAME = "testadmin"
 
 _BOT_COROUTINES = (
     "send_message", "send_photo", "copy_message", "edit_message_text", "edit_message_caption",
-    "edit_message_media", "edit_message_reply_markup", "delete_message", "set_my_commands", "get_me",
+    "edit_message_media", "edit_message_reply_markup", "delete_message", "set_my_commands", "delete_my_commands", "get_me",
 )
 
 
